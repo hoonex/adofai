@@ -6,6 +6,7 @@ import tempfile
 import os
 import zipfile
 import io
+import requests
 import google.generativeai as genai
 
 # 1. Gemini API Setup
@@ -13,22 +14,21 @@ genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 model = genai.GenerativeModel('gemini-2.5-flash')
 
 st.set_page_config(page_title="ADOFAI AI Generator", page_icon="🧊")
-st.title("🧊 얼불춤(ADOFAI) AI 맵 자동 생성기")
-st.write("음원 분석 및 ZIP 패키지 자동 생성 버전")
+st.title("🧊 얼불춤(ADOFAI) URL 자동 생성기")
+st.write("음원 분석 후 서버에 업로드하여 다이렉트 URL을 발급합니다.")
 
-# Allow all file types to prevent selection issues
-uploaded_file = st.file_uploader("음악 파일 업로드 (모든 확장자 가능)", type=None)
+uploaded_file = st.file_uploader("음악 파일 업로드", type=None)
 
 if uploaded_file is not None:
-    st.info("🎵 오디오 Onset 분석 및 맵 구조 조립 중...")
+    st.info("🎵 오디오 분석 및 패키지 생성 중...")
     
-    with st.spinner("비트 추출 및 패키지 생성 중..."):
+    with st.spinner("처리 중..."):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
             tmp_file.write(uploaded_file.read())
             tmp_file_path = tmp_file.name
 
         try:
-            # 2. Audio Analysis (Onset Detection)
+            # Audio Analysis & AI Settings (Same as previous logic)
             y, sr = librosa.load(tmp_file_path)
             onset_frames = librosa.onset.onset_detect(y=y, sr=sr)
             onset_times = librosa.frames_to_time(onset_frames, sr=sr)
@@ -36,7 +36,6 @@ if uploaded_file is not None:
             tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
             bpm_value = float(tempo[0]) if isinstance(tempo, np.ndarray) else float(tempo)
             
-            # 3. Angle Calculation
             angle_data = [0]
             for i in range(1, len(onset_times)):
                 time_diff = onset_times[i] - onset_times[i-1]
@@ -45,14 +44,12 @@ if uploaded_file is not None:
                 else:
                     angle_data.append(0)
 
-            # 4. AI Settings Design
             prompt = f"""
             너는 A Dance of Fire and Ice 맵 디자이너야.
             BPM {bpm_value:.1f}의 곡에 어울리는 맵 배경색과 트랙 색상을 JSON으로 짜줘.
             반드시 아래 4개의 키만 포함된 순수 JSON 객체 하나만 출력해:
             "trackColor", "backgroundColor", "bgImage", "hitsound"
             """
-            
             response = model.generate_content(prompt)
             ai_settings_text = response.text.replace("```json", "").replace("```", "").strip()
             
@@ -61,10 +58,8 @@ if uploaded_file is not None:
             except:
                 ai_settings = {"trackColor": "ff0000", "backgroundColor": "000000"}
 
-            # Ensure the "song" key perfectly matches the uploaded file's name
             audio_filename = uploaded_file.name
 
-            # 5. String Concat for ADOFAI Custom Format
             settings_block = {
                 "version": 11,
                 "artist": "AI",
@@ -104,25 +99,32 @@ if uploaded_file is not None:
     "decorations": []
 }}"""
 
-            # 6. Create ZIP archive in memory
+            # Create ZIP archive in memory
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-                # Add the map file
                 zip_file.writestr("level.adofai", adofai_str)
-                
-                # Reset file pointer and add the original audio file
                 uploaded_file.seek(0)
                 zip_file.writestr(audio_filename, uploaded_file.read())
 
-            st.success("✨ 맵 생성이 완료되었습니다!")
-            st.write(f"- **추출된 메인 BPM:** {bpm_value:.1f}")
-            st.write(f"- **감지된 타일 수:** {len(angle_data)}개")
+            st.success("✨ Map generation complete! Uploading to server...")
+
+            # Upload to file.io for a direct URL
+            files = {'file': (f'{audio_filename}_map.zip', zip_buffer.getvalue(), 'application/zip')}
+            upload_res = requests.post('https://file.io', files=files)
             
-            # Download button for the ZIP package
+            if upload_res.status_code == 200:
+                download_link = upload_res.json().get('link')
+                st.write("### 🔗 Direct URL Generated:")
+                st.code(download_link, language="text")
+                st.write("*Note: This URL is via a free API (file.io) and may expire after one use.*")
+            else:
+                st.error("Failed to upload and generate URL.")
+
+            # Backup manual download
             st.download_button(
-                label="📦 맵 패키지(.zip) 다운로드",
+                label="📦 Fallback: Download .zip manually",
                 data=zip_buffer.getvalue(),
-                file_name="AI_Generated_Map.zip",
+                file_name=f"AI_{audio_filename}.zip",
                 mime="application/zip"
             )
 
