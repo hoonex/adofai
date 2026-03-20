@@ -16,7 +16,8 @@ st.title("🧊 얼불춤(ADOFAI) AI 맵 자동 생성기")
 st.write("음악 파일을 올리면 AI가 비트를 분석하고 고퀄리티 맵을 텍스트 기반으로 찍어냅니다.")
 
 # 파일 업로더
-uploaded_file = st.file_uploader("음악 파일 업로드 (MP3, WAV 등)", type=["mp3", "wav", "ogg"])
+uploaded_file = st.file_uploader("음악 파일 업로드 (모든 파일 가능)", type=None)
+
 
 if uploaded_file is not None:
     st.info("🎵 음악 분석 및 맵 생성 중... (AI가 기믹을 디자인하고 있습니다)")
