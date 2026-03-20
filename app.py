@@ -7,6 +7,8 @@ import os
 import zipfile
 import io
 import requests
+import random
+import string
 import google.generativeai as genai
 
 # 1. Gemini API Setup
@@ -106,26 +108,28 @@ if uploaded_file is not None:
                 uploaded_file.seek(0)
                 zip_file.writestr(audio_filename, uploaded_file.read())
 
-            st.success("✨ Map generation complete! Uploading to Catbox server...")
+            st.success("✨ 맵 완성! Unity 엔진 호환 서버로 링크 생성 중...")
 
-            # Upload to Catbox.moe for a direct URL
-            url = "https://catbox.moe/user/api.php"
-            data = {"reqtype": "fileupload"}
-            files = {"fileToUpload": (f"{audio_filename}_map.zip", zip_buffer.getvalue(), "application/zip")}
+            # Filebin 서버로 업로드 (게임 엔진 다운로드 차단 회피)
+            bin_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=12))
+            safe_filename = "AI_Map_Package.zip" # 인코딩 에러 방지를 위해 영어로 고정
+            upload_url = f"https://filebin.net/{bin_id}/{safe_filename}"
             
-            upload_res = requests.post(url, data=data, files=files)
+            headers = {"Content-Type": "application/zip"}
+            upload_res = requests.post(upload_url, data=zip_buffer.getvalue(), headers=headers)
             
-            if upload_res.status_code == 200 and "catbox.moe" in upload_res.text:
-                download_link = upload_res.text.strip()
-                st.write("### 🔗 Direct URL Generated:")
+            # Filebin은 업로드 성공 시 201 Created를 반환함
+            if upload_res.status_code == 201:
+                download_link = upload_url
+                st.write("### 🔗 얼불춤(ADOFAI) 다이렉트 URL:")
                 st.code(download_link, language="text")
-                st.write("*Note: Copy and paste this URL directly into ADOFAI.*")
+                st.write("이 링크를 복사해서 얼불춤에 그대로 붙여넣으면 다운로드 에러가 안 날 거야!")
             else:
-                st.error(f"Failed to upload to Catbox. Response: {upload_res.text}")
+                st.error(f"서버 업로드에 실패했어. 상태 코드: {upload_res.status_code}")
 
             # Backup manual download
             st.download_button(
-                label="📦 Fallback: Download .zip manually",
+                label="📦 혹시 모르니 수동 다운로드(.zip)",
                 data=zip_buffer.getvalue(),
                 file_name=f"AI_{audio_filename}.zip",
                 mime="application/zip"
