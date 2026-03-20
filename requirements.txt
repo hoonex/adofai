@@ -3,3 +3,4 @@ librosa
 soundfile
 google-generativeai
 numpy
+requests
