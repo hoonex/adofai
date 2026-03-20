@@ -6,120 +6,118 @@ import tempfile
 import os
 import google.generativeai as genai
 
-# 1. Gemini API 설정 (Streamlit Secrets 활용)
-# Streamlit 대시보드의 Advanced settings -> Secrets에 GEMINI_API_KEY="네_키" 입력
+# 1. Gemini API 설정 (스트림릿 Secrets 사용)
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model = genai.GenerativeModel('gemini-2.5-flash') # 빠른 처리를 위해 Flash 모델 사용
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 st.set_page_config(page_title="ADOFAI AI Generator", page_icon="🧊")
 st.title("🧊 얼불춤(ADOFAI) AI 맵 자동 생성기")
-st.write("음악 파일을 올리면 AI가 비트를 분석하고 고퀄리티 맵을 텍스트 기반으로 찍어냅니다.")
+st.write("음원 분석 및 ADOFAI 독자 규격 변환 알고리즘 적용 버전")
 
-# 파일 업로더
-uploaded_file = st.file_uploader("음악 파일 업로드 (모든 파일 가능)", type=None)
-
+# 모든 파일 허용으로 수정
+uploaded_file = st.file_uploader("음악 파일 업로드 (모든 확장자 가능)", type=None)
 
 if uploaded_file is not None:
-    st.info("🎵 음악 분석 및 맵 생성 중... (AI가 기믹을 디자인하고 있습니다)")
+    st.info("🎵 오디오 Onset(타격점) 분석 및 맵 구조 조립 중...")
     
     with st.spinner("비트 추출 및 타일 연산 중..."):
-        # 임시 파일로 저장하여 librosa가 읽을 수 있게 처리
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
             tmp_file.write(uploaded_file.read())
             tmp_file_path = tmp_file.name
 
         try:
-            # 2. 오디오 수학적 분석 (BPM & Onset)
+            # 2. 오디오 분석 (Onset Detection - 실제 소리가 튀는 구간 감지)
             y, sr = librosa.load(tmp_file_path)
-            tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
-            beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+            onset_frames = librosa.onset.onset_detect(y=y, sr=sr)
+            onset_times = librosa.frames_to_time(onset_frames, sr=sr)
             
-            # BPM이 배열 형태로 반환될 수 있으므로 스칼라 값으로 변환
+            # 기본 템포 추출
+            tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
             bpm_value = float(tempo[0]) if isinstance(tempo, np.ndarray) else float(tempo)
             
-            # 3. 타일 배치 알고리즘 (기본 변환 공식)
-            # 가장 기본적인 1비트 = 1타일(직진 0도 또는 90도 꺾임) 로직
-            # 추후 이 부분을 엇박자 감지 로직으로 고도화 가능
-            angle_data = [0] # 첫 시작 타일
-            for i in range(1, len(beat_times)):
-                time_diff = beat_times[i] - beat_times[i-1]
-                # 간격이 일정하면 직진(0), 짧아지면(엇박) 꺾기(90) - 예시 로직
-                if time_diff < (60 / bpm_value) * 0.8:
+            # 3. 타일 각도(angleData) 계산 로직
+            # 타격점 간의 시간차를 계산해 직진(0)과 꺾임(90) 배치
+            angle_data = [0]
+            for i in range(1, len(onset_times)):
+                time_diff = onset_times[i] - onset_times[i-1]
+                # 빠른 엇박자 구간이면 90도 꺾기
+                if time_diff < (60 / bpm_value) * 0.5:
                     angle_data.append(90)
                 else:
                     angle_data.append(0)
 
-            # 4. AI 기믹 디자인 (Gemini API 호출)
+            # 4. AI 설정 및 장식(Decorations) 디자인
             prompt = f"""
-            너는 얼불춤(A Dance of Fire and Ice) 맵 제작 장인이야.
-            내가 분석한 노래의 BPM은 {bpm_value:.1f}이고, 총 비트 수는 {len(beat_times)}개야.
-            이 곡에 어울리는 맵의 기본 설정(Settings)을 JSON 형식으로만 출력해줘.
-            JSON의 키값은 "trackColor", "backgroundColor", "hitsound", "bgImage" 를 포함해야 해.
-            오직 JSON 코드만 반환해.
+            너는 A Dance of Fire and Ice 맵 디자이너야.
+            BPM {bpm_value:.1f}의 곡에 어울리는 맵 배경색과 트랙 색상을 JSON으로 짜줘.
+            반드시 아래 4개의 키만 포함된 순수 JSON 객체 하나만 출력해:
+            "trackColor", "backgroundColor", "bgImage", "hitsound"
             """
             
             response = model.generate_content(prompt)
-            # 응답에서 JSON 파싱 (마크다운 백틱 제거)
             ai_settings_text = response.text.replace("```json", "").replace("```", "").strip()
             
             try:
                 ai_settings = json.loads(ai_settings_text)
             except:
-                # 파싱 실패 시 기본값 (안전 장치)
                 ai_settings = {"trackColor": "ff0000", "backgroundColor": "000000"}
 
-            # 5. 최종 .adofai JSON 구조 조립
-            adofai_map = {
-                "pathData": "", # angleData를 쓰면 pathData는 비워둠
-                "angleData": angle_data,
-                "settings": {
-                    "version": 11,
-                    "artist": "AI Generated",
-                    "song": uploaded_file.name,
-                    "author": "ADOFAI AI",
-                    "separateCountdownTime": True,
-                    "previewImage": "",
-                    "previewIcon": "",
-                    "previewIconColor": "0082ba",
-                    "previewSongStart": 0,
-                    "previewSongDuration": 10,
-                    "seizureWarning": False,
-                    "levelDesc": "AI가 자동으로 분석하고 생성한 맵입니다.",
-                    "levelTags": "",
-                    "artistPermission": "",
-                    "artistLinks": "",
-                    "syncTrack": 0,
-                    "timeSignature": 4,
-                    "volume": 100,
-                    "overlayColor": "000000",
-                    "layer1Image": "",
-                    "layer1Position": [0, 0],
-                    "layer1Size": [100, 100],
-                    "bpm": bpm_value,
-                    "offset": 0,
-                    "pitch": 100,
-                    **ai_settings # AI가 생성한 설정 덮어쓰기
-                },
-                "actions": [] # 추후 카메라 흔들림 등 이벤트 자동화 추가 위치
+            # 5. 얼불춤 독자 규격에 맞춘 텍스트 강제 조립 (String Concat)
+            # json.dumps 전체 적용 시 발생하는 파싱 에러를 막기 위해 구조를 직접 짭니다.
+            settings_block = {
+                "version": 11,
+                "artist": "AI",
+                "song": uploaded_file.name,
+                "author": "ADOFAI Generator",
+                "separateCountdownTime": True,
+                "previewImage": "",
+                "previewIcon": "",
+                "previewIconColor": "0082ba",
+                "previewSongStart": 0,
+                "previewSongDuration": 10,
+                "seizureWarning": False,
+                "levelDesc": "Generated by AI",
+                "levelTags": "",
+                "artistPermission": "",
+                "artistLinks": "",
+                "syncTrack": 0,
+                "timeSignature": 4,
+                "volume": 100,
+                "overlayColor": "000000",
+                "layer1Image": "",
+                "layer1Position": [0, 0],
+                "layer1Size": [100, 100],
+                "bpm": bpm_value,
+                "offset": 0,
+                "pitch": 100,
+                **ai_settings
             }
 
-            # JSON을 텍스트로 변환 (들여쓰기 없이 압축하면 용량이 줄어듦)
-            map_json_str = json.dumps(adofai_map)
+            settings_json = json.dumps(settings_block, ensure_ascii=False)
+            angle_json = json.dumps(angle_data)
+            
+            # 빈 actions와 최신 버전에 필요한 decorations 배열 추가
+            # 여기서 괄호 형태를 게임 엔진이 좋아하는 형태로 맞춰줌
+            adofai_str = f"""{{
+    "angleData": {angle_json},
+    "settings": {settings_json},
+    "actions": [],
+    "decorations": []
+}}"""
 
             st.success("✨ 맵 생성이 완료되었습니다!")
-            st.write(f"- **분석된 BPM:** {bpm_value:.1f}")
-            st.write(f"- **생성된 타일 수:** {len(angle_data)}개")
+            st.write(f"- **추출된 메인 BPM:** {bpm_value:.1f}")
+            st.write(f"- **감지된 타일 수:** {len(angle_data)}개")
             
             # 다운로드 버튼
             st.download_button(
                 label="📥 .adofai 맵 파일 다운로드",
-                data=map_json_str,
-                file_name=f"AI_Generated_{uploaded_file.name}.adofai",
-                mime="application/json"
+                data=adofai_str,
+                file_name=f"AI_Map.adofai",
+                mime="text/plain" # JSON 파싱 오류를 피하기 위해 일반 텍스트 포맷으로 전달
             )
 
         except Exception as e:
             st.error(f"에러가 발생했습니다: {e}")
         finally:
-            # 서버 용량 관리를 위해 임시 파일 삭제
             os.remove(tmp_file_path)
