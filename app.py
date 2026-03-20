@@ -4,49 +4,48 @@ import numpy as np
 import json
 import tempfile
 import os
+import zipfile
+import io
 import google.generativeai as genai
 
-# 1. Gemini API 설정 (스트림릿 Secrets 사용)
+# 1. Gemini API Setup
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 model = genai.GenerativeModel('gemini-2.5-flash')
 
 st.set_page_config(page_title="ADOFAI AI Generator", page_icon="🧊")
 st.title("🧊 얼불춤(ADOFAI) AI 맵 자동 생성기")
-st.write("음원 분석 및 ADOFAI 독자 규격 변환 알고리즘 적용 버전")
+st.write("음원 분석 및 ZIP 패키지 자동 생성 버전")
 
-# 모든 파일 허용으로 수정
+# Allow all file types to prevent selection issues
 uploaded_file = st.file_uploader("음악 파일 업로드 (모든 확장자 가능)", type=None)
 
 if uploaded_file is not None:
-    st.info("🎵 오디오 Onset(타격점) 분석 및 맵 구조 조립 중...")
+    st.info("🎵 오디오 Onset 분석 및 맵 구조 조립 중...")
     
-    with st.spinner("비트 추출 및 타일 연산 중..."):
+    with st.spinner("비트 추출 및 패키지 생성 중..."):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
             tmp_file.write(uploaded_file.read())
             tmp_file_path = tmp_file.name
 
         try:
-            # 2. 오디오 분석 (Onset Detection - 실제 소리가 튀는 구간 감지)
+            # 2. Audio Analysis (Onset Detection)
             y, sr = librosa.load(tmp_file_path)
             onset_frames = librosa.onset.onset_detect(y=y, sr=sr)
             onset_times = librosa.frames_to_time(onset_frames, sr=sr)
             
-            # 기본 템포 추출
             tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
             bpm_value = float(tempo[0]) if isinstance(tempo, np.ndarray) else float(tempo)
             
-            # 3. 타일 각도(angleData) 계산 로직
-            # 타격점 간의 시간차를 계산해 직진(0)과 꺾임(90) 배치
+            # 3. Angle Calculation
             angle_data = [0]
             for i in range(1, len(onset_times)):
                 time_diff = onset_times[i] - onset_times[i-1]
-                # 빠른 엇박자 구간이면 90도 꺾기
                 if time_diff < (60 / bpm_value) * 0.5:
                     angle_data.append(90)
                 else:
                     angle_data.append(0)
 
-            # 4. AI 설정 및 장식(Decorations) 디자인
+            # 4. AI Settings Design
             prompt = f"""
             너는 A Dance of Fire and Ice 맵 디자이너야.
             BPM {bpm_value:.1f}의 곡에 어울리는 맵 배경색과 트랙 색상을 JSON으로 짜줘.
@@ -62,12 +61,14 @@ if uploaded_file is not None:
             except:
                 ai_settings = {"trackColor": "ff0000", "backgroundColor": "000000"}
 
-            # 5. 얼불춤 독자 규격에 맞춘 텍스트 강제 조립 (String Concat)
-            # json.dumps 전체 적용 시 발생하는 파싱 에러를 막기 위해 구조를 직접 짭니다.
+            # Ensure the "song" key perfectly matches the uploaded file's name
+            audio_filename = uploaded_file.name
+
+            # 5. String Concat for ADOFAI Custom Format
             settings_block = {
                 "version": 11,
                 "artist": "AI",
-                "song": uploaded_file.name,
+                "song": audio_filename,
                 "author": "ADOFAI Generator",
                 "separateCountdownTime": True,
                 "previewImage": "",
@@ -96,8 +97,6 @@ if uploaded_file is not None:
             settings_json = json.dumps(settings_block, ensure_ascii=False)
             angle_json = json.dumps(angle_data)
             
-            # 빈 actions와 최신 버전에 필요한 decorations 배열 추가
-            # 여기서 괄호 형태를 게임 엔진이 좋아하는 형태로 맞춰줌
             adofai_str = f"""{{
     "angleData": {angle_json},
     "settings": {settings_json},
@@ -105,19 +104,29 @@ if uploaded_file is not None:
     "decorations": []
 }}"""
 
+            # 6. Create ZIP archive in memory
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+                # Add the map file
+                zip_file.writestr("level.adofai", adofai_str)
+                
+                # Reset file pointer and add the original audio file
+                uploaded_file.seek(0)
+                zip_file.writestr(audio_filename, uploaded_file.read())
+
             st.success("✨ 맵 생성이 완료되었습니다!")
             st.write(f"- **추출된 메인 BPM:** {bpm_value:.1f}")
             st.write(f"- **감지된 타일 수:** {len(angle_data)}개")
             
-            # 다운로드 버튼
+            # Download button for the ZIP package
             st.download_button(
-                label="📥 .adofai 맵 파일 다운로드",
-                data=adofai_str,
-                file_name=f"AI_Map.adofai",
-                mime="text/plain" # JSON 파싱 오류를 피하기 위해 일반 텍스트 포맷으로 전달
+                label="📦 맵 패키지(.zip) 다운로드",
+                data=zip_buffer.getvalue(),
+                file_name="AI_Generated_Map.zip",
+                mime="application/zip"
             )
 
         except Exception as e:
-            st.error(f"에러가 발생했습니다: {e}")
+            st.error(f"Error occurred: {e}")
         finally:
             os.remove(tmp_file_path)
