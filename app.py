@@ -9,7 +9,7 @@ import io
 import requests
 import random
 import string
-import soundfile as sf
+import subprocess
 import google.generativeai as genai
 
 # 1. Gemini API Setup
@@ -17,36 +17,43 @@ try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-2.5-flash')
 except Exception as e:
-    st.error(f"API Key 설정 에러: {e}")
+    st.error(f"API Key Error: {e}")
     st.stop()
 
 st.set_page_config(page_title="ADOFAI AI Generator Pro", page_icon="🧊")
 st.title("🧊 얼불춤(ADOFAI) AI 맵 자동 생성기 PRO")
-st.write("모바일 완벽 호환 OGG 인코딩 & 부드러운 채보 알고리즘 적용")
+st.write("메모리 최적화 & FFmpeg OGG 다이렉트 변환 탑재 버전")
 
-uploaded_file = st.file_uploader("음악 파일 업로드", type=None)
+uploaded_file = st.file_uploader("음악 파일 업로드 (MP3, WAV 등)", type=None)
 
 if uploaded_file is not None:
-    st.info("🎵 오디오 분석 및 순정 OGG 인코딩 중... (시간이 조금 걸릴 수 있어!)")
+    st.info("🎵 오디오 최적화 및 스마트 채보 분석 중... (서버 뻗음 방지 적용됨)")
     
-    with st.spinner("처리 중..."):
+    with st.spinner("Processing..."):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
             tmp_file.write(uploaded_file.read())
             tmp_file_path = tmp_file.name
 
-        try:
-            # 2. 오디오 로드 (모바일 유니티 에러 방지를 위해 OGG로 재인코딩할 준비)
-            y_stereo, sr = librosa.load(tmp_file_path, sr=None, mono=False)
-            
-            # 분석용 모노 변환
-            if y_stereo.ndim > 1:
-                y_mono = librosa.to_mono(y_stereo)
-                audio_export = y_stereo.T # soundfile 저장을 위한 형태 변환
-            else:
-                y_mono = y_stereo
-                audio_export = y_stereo
+        ogg_path = tmp_file_path + ".ogg"
 
-            # 3. 비트 및 에너지 분석
+        try:
+            # 2. FFmpeg Direct Conversion (Bypasses Python RAM limit)
+            try:
+                subprocess.run(
+                    ["ffmpeg", "-i", tmp_file_path, "-map", "0:a", "-c:a", "libvorbis", "-b:a", "128k", ogg_path, "-y"],
+                    check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                )
+            except FileNotFoundError:
+                st.error("🚨 FFmpeg is missing! Please create a `packages.txt` file in your GitHub with the word `ffmpeg` in it.")
+                st.stop()
+            except subprocess.CalledProcessError as e:
+                st.error(f"Audio conversion failed: {e.stderr.decode()}")
+                st.stop()
+
+            # 3. Lightweight Audio Load (Low Sample Rate, Mono) to save memory
+            y_mono, sr = librosa.load(ogg_path, sr=22050, mono=True)
+
+            # 4. Beat and Energy Analysis
             onset_frames = librosa.onset.onset_detect(y=y_mono, sr=sr)
             onset_times = librosa.frames_to_time(onset_frames, sr=sr)
             
@@ -57,10 +64,10 @@ if uploaded_file is not None:
             mean_energy = np.mean(rms)
             times_rms = librosa.times_like(rms)
 
-            # 4. 스마트 타일 배치 (Delta Angle Engine - 부드럽고 예쁜 곡선형 맵)
+            # 5. Smart Tile Engine (Delta Curve Algorithm)
             current_angle = 0
             angle_data = [current_angle]
-            pattern_dir = 1 # 1은 우회전, -1은 좌회전 패턴
+            pattern_dir = 1 
             
             for i in range(1, len(onset_times)):
                 time_diff = onset_times[i] - onset_times[i-1]
@@ -69,32 +76,28 @@ if uploaded_file is not None:
                 energy_idx = np.argmin(np.abs(times_rms - current_time))
                 current_energy = rms[0, energy_idx]
                 
-                # 맵이 한쪽으로만 감기지 않게 가끔 방향 전환
                 if random.random() < 0.15:
                     pattern_dir *= -1
                     
                 if current_energy > mean_energy * 1.3:
-                    # 음악이 터지는 하이라이트 구간
                     if time_diff < (60 / bpm_value) * 0.6: 
-                        delta = 90 * pattern_dir  # 화려한 계단식 지그재그
+                        delta = 90 * pattern_dir  # Zig-zag for fast beats
                     else:
-                        delta = 45 * pattern_dir  # 큼직한 소용돌이 곡선
+                        delta = 45 * pattern_dir  # Swirl curves for drops
                 else:
-                    # 음악이 잔잔한 구간
                     if i % 4 == 0:
-                        delta = 45 * pattern_dir  # 살짝 꺾어주기
+                        delta = 45 * pattern_dir
                     else:
-                        delta = 0  # 직진
+                        delta = 0  # Straight line
                         
-                # 절대 각도로 변환해서 저장
                 current_angle = (current_angle + delta) % 360
                 angle_data.append(int(current_angle))
 
-            # 5. 디자인 설정
+            # 6. AI Color Design
             prompt = f"""
-            너는 A Dance of Fire and Ice 맵 디자이너야.
-            BPM {bpm_value:.1f}의 곡에 어울리는 트랙 색상과 배경 색상을 디자인해.
-            반드시 아래 2개의 키만 포함된 순수 JSON 객체 하나만 출력해:
+            You are an ADOFAI map designer.
+            Design trackColor and backgroundColor for a {bpm_value:.1f} BPM song.
+            Output ONLY a pure JSON object with these 2 keys. Ensure high contrast.
             "trackColor", "backgroundColor"
             """
             try:
@@ -107,10 +110,9 @@ if uploaded_file is not None:
                 color_track = "ffffff"
                 color_bg = "000000"
 
-            # 무조건 OGG 파일로 고정
             safe_audio_filename = "song.ogg"
 
-            # 6. 유니티 호환 세팅
+            # 7. Engine Settings
             settings_block = {
                 "version": 11,
                 "artist": "AI Generator Pro",
@@ -186,34 +188,33 @@ if uploaded_file is not None:
     "decorations": []
 }}"""
 
-            # 7. 오디오 OGG 변환 및 ZIP 압축
+            # 8. Create Final ZIP
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-                # 맵 텍스트 추가
                 zip_file.writestr("level.adofai", adofai_str)
-                
-                # 오디오를 순수 OGG로 인코딩해서 추가 (메타데이터 싹 지움)
-                audio_buffer = io.BytesIO()
-                sf.write(audio_buffer, audio_export, sr, format='OGG')
-                zip_file.writestr(safe_audio_filename, audio_buffer.getvalue())
+                with open(ogg_path, "rb") as f:
+                    zip_file.writestr(safe_audio_filename, f.read())
 
-            st.success("✨ 고퀄리티 맵 & OGG 사운드 변환 완료!")
+            st.success("✨ Processing Complete! Uploading...")
 
-            # 8. Filebin 업로드
+            # 9. Upload to Filebin
             bin_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=12))
-            upload_url = f"https://filebin.net/{bin_id}/AI_Pro_Map_Package.zip"
+            upload_url = f"https://filebin.net/{bin_id}/AI_Pro_Map.zip"
             
             headers = {"Content-Type": "application/zip"}
             upload_res = requests.post(upload_url, data=zip_buffer.getvalue(), headers=headers)
             
             if upload_res.status_code == 201:
-                st.write("### 🔗 얼불춤(ADOFAI) 다이렉트 URL:")
+                st.write("### 🔗 ADOFAI Direct URL:")
                 st.code(upload_url, language="text")
-                st.write("이제 음악 무조건 나오고, 트랙도 훨씬 자연스럽게 꼬불꼬불 그려질 거야!")
+                st.write("메모리 에러 해결 완료! 이제 맵이랑 음악이 제대로 출력될 거야.")
             else:
-                st.error(f"서버 업로드 실패. 상태 코드: {upload_res.status_code}")
+                st.error(f"Upload failed: {upload_res.status_code}")
 
         except Exception as e:
-            st.error(f"에러가 발생했어: {e}")
+            st.error(f"Error: {e}")
         finally:
-            os.remove(tmp_file_path)
+            if os.path.exists(tmp_file_path):
+                os.remove(tmp_file_path)
+            if os.path.exists(ogg_path):
+                os.remove(ogg_path)
