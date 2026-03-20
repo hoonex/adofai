@@ -28,7 +28,7 @@ if uploaded_file is not None:
             tmp_file_path = tmp_file.name
 
         try:
-            # Audio Analysis & AI Settings (Same as previous logic)
+            # Audio Analysis & AI Settings
             y, sr = librosa.load(tmp_file_path)
             onset_frames = librosa.onset.onset_detect(y=y, sr=sr)
             onset_times = librosa.frames_to_time(onset_frames, sr=sr)
@@ -106,19 +106,22 @@ if uploaded_file is not None:
                 uploaded_file.seek(0)
                 zip_file.writestr(audio_filename, uploaded_file.read())
 
-            st.success("✨ Map generation complete! Uploading to server...")
+            st.success("✨ Map generation complete! Uploading to Catbox server...")
 
-            # Upload to file.io for a direct URL
-            files = {'file': (f'{audio_filename}_map.zip', zip_buffer.getvalue(), 'application/zip')}
-            upload_res = requests.post('https://file.io', files=files)
+            # Upload to Catbox.moe for a direct URL
+            url = "https://catbox.moe/user/api.php"
+            data = {"reqtype": "fileupload"}
+            files = {"fileToUpload": (f"{audio_filename}_map.zip", zip_buffer.getvalue(), "application/zip")}
             
-            if upload_res.status_code == 200:
-                download_link = upload_res.json().get('link')
+            upload_res = requests.post(url, data=data, files=files)
+            
+            if upload_res.status_code == 200 and "catbox.moe" in upload_res.text:
+                download_link = upload_res.text.strip()
                 st.write("### 🔗 Direct URL Generated:")
                 st.code(download_link, language="text")
-                st.write("*Note: This URL is via a free API (file.io) and may expire after one use.*")
+                st.write("*Note: Copy and paste this URL directly into ADOFAI.*")
             else:
-                st.error("Failed to upload and generate URL.")
+                st.error(f"Failed to upload to Catbox. Response: {upload_res.text}")
 
             # Backup manual download
             st.download_button(
