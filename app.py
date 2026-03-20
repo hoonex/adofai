@@ -66,7 +66,7 @@ if uploaded_file is not None:
 
             audio_filename = uploaded_file.name
 
-            # 4. 얼불춤 유니티 엔진 완벽 호환 순정 세팅 (Enum 에러 방지용 강제 고정값)
+            # 4. 얼불춤 유니티 엔진 완벽 호환 순정 세팅 (True/False -> Enabled/Disabled 수정 완료)
             settings_block = {
                 "version": 11,
                 "artist": "AI Generated",
@@ -104,7 +104,7 @@ if uploaded_file is not None:
                 "beatsAhead": 3,
                 "beatsBehind": 4,
                 "backgroundColor": color_bg,
-                "showDefaultBGIfNoImage": "True",
+                "showDefaultBGIfNoImage": "Enabled",  # 이 부분이 "True"에서 "Enabled"로 수정됨!
                 "bgImage": "",
                 "bgImageColor": "ffffff",
                 "parallax": [100, 100],
@@ -164,7 +164,7 @@ if uploaded_file is not None:
                 download_link = upload_url
                 st.write("### 🔗 얼불춤(ADOFAI) 다이렉트 URL:")
                 st.code(download_link, language="text")
-                st.write("이제 Enum(Value cannot be null) 에러가 발생하지 않을 거야!")
+                st.write("이제 에러 없이 한 번에 맵이 열릴 거야!")
             else:
                 st.error(f"서버 업로드에 실패했어. 상태 코드: {upload_res.status_code}")
 
