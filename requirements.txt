@@ -4,3 +4,4 @@ soundfile
 google-generativeai
 numpy
 requests
+mutagen
