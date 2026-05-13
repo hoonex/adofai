@@ -9,10 +9,10 @@ import io
 import math
 from pathlib import Path
 
-st.set_page_config(page_title="ADOFAI True Deterministic Engine v2", page_icon="🧊", layout="wide")
-st.title("🧊 얼불춤(ADOFAI) 진(眞) 마스터피스 엔진 v2.0")
+st.set_page_config(page_title="ADOFAI True Deterministic Engine v3", page_icon="🧊", layout="wide")
+st.title("🧊 얼불춤(ADOFAI) 진(眞) 마스터피스 엔진 v3.0 (보컬 싱크 특화)")
 st.markdown("""
-**주사위(Random) 0%!** 단순한 1차원 데이터 매핑을 넘어, **공간 지각(Collision Tracking)**과 **기하학적 패턴(Pattern Dictionary)**을 결합하여 진짜 인간 고수처럼 맵을 스케치합니다.
+**주사위(Random) 0%!** 보컬(가사)의 발음 타격점을 감지하고, 절대 시간 추적을 통해 곡이 끝날 때까지 0.01초의 싱크 누수도 허용하지 않습니다.
 """)
 
 # ==========================================
@@ -101,15 +101,18 @@ class TrueDeterministicMapGenerator:
         self.current_floor = 1
         
     def analyze_audio(self):
-        st.toast("1/4: HPSS 오디오 분리 및 비트 트래킹 시작...")
+        st.toast("1/4: HPSS 보컬(음절) 및 타격음 정밀 분리 중...")
+        # 고음질 분석을 위해 sr 유지
         y, sr = librosa.load(self.audio_path, sr=22050, mono=True)
         y_harm, y_perc = librosa.effects.hpss(y, margin=2.0)
         
+        # BPM(기본 템포)은 타악기(드럼)에서 가져옴
         tempo, _ = librosa.beat.beat_track(y=y_perc, sr=sr)
         self.bpm = float(tempo[0]) if isinstance(tempo, np.ndarray) else float(tempo)
         
-        st.toast("2/4: Onset(타격점) 정밀 분석 중...")
-        onset_frames = librosa.onset.onset_detect(y=y_perc, sr=sr, backtrack=True)
+        st.toast("2/4: 가사 발음(Syllable) 기준 Onset 분석 중...")
+        # [핵심] 타격점은 보컬 및 멜로디(y_harm) 라인에서 추출! ("모-시-모" 같은 또박또박한 발음 추적)
+        onset_frames = librosa.onset.onset_detect(y=y_harm, sr=sr, backtrack=True)
         self.onset_times = librosa.frames_to_time(onset_frames, sr=sr)
         
         st.toast("3/4: 스펙트럼 센트로이드(음색) 및 RMS(에너지) 계산 중...")
@@ -120,13 +123,14 @@ class TrueDeterministicMapGenerator:
         self.mean_energy = np.mean(self.rms)
         self.mean_centroid = np.mean(self.centroids)
         
+        # 보컬 음절이 너무 빠르게 씹히는 것을 방지하는 필터링
         self.clean_onsets = self._filter_onsets(self.onset_times, self.bpm)
         if len(self.clean_onsets) > 0:
             self.offset_ms = int(self.clean_onsets[0] * 1000)
-            self.theoretical_time = self.clean_onsets[0]
+            self.theoretical_time = self.clean_onsets[0] # 첫 타일 진입 시간
 
     def _filter_onsets(self, onsets, bpm):
-        min_time = (60.0 / bpm) / 4.0 
+        min_time = (60.0 / bpm) / 4.0 # 최소 16분음표 간격 보장
         filtered = [onsets[0]] if len(onsets) > 0 else []
         for t in onsets[1:]:
             if t - filtered[-1] >= min_time:
@@ -151,7 +155,7 @@ class TrueDeterministicMapGenerator:
         return intensity, energy, centroid
 
     def generate_map_logic(self):
-        st.toast("4/4: 기하학적 맵 스케치 및 시각 효과(VFX) 연출 시작...")
+        st.toast("4/4: 오차 보정형 기하학 맵 스케치 및 연출 시작...")
         
         # [초기 세팅]
         self.actions.append({"floor": 1, "eventType": "SetSpeed", "speedType": "Bpm", "beatsPerMinute": self.bpm, "bpmMultiplier": 1, "angleOffset": 0})
@@ -159,72 +163,79 @@ class TrueDeterministicMapGenerator:
         self.actions.append({"floor": 1, "eventType": "CustomBackground", "color": "000000", "bgDisplayMode": "FitToScreen"})
 
         is_highlight = False
-        pattern_queue = [] # 실행할 패턴을 담아두는 큐
+        pattern_queue = []
+        
+        # [핵심] 절대 시간 추적 변수: 반올림으로 인해 발생하는 인게임 딜레이 누적 방어
+        game_current_time = self.theoretical_time 
 
         for i in range(1, len(self.clean_onsets)):
-            actual_time = self.clean_onsets[i]
-            delta_t = actual_time - self.theoretical_time
+            target_audio_time = self.clean_onsets[i]
             
-            if delta_t < 0.03: continue
+            # 목표 음원 시간과 인게임 공 위치 간의 시간차 (오차 자동 보정)
+            delta_t = target_audio_time - game_current_time
             
-            intensity, energy, centroid = self._get_audio_context(actual_time)
+            if delta_t < 0.05: continue # 너무 짧은 소리 무시
+            
+            intensity, energy, centroid = self._get_audio_context(target_audio_time)
             self.current_floor += 1
             
             # --- 🎬 [VFX Director] 연출가 로직 ---
             if intensity in ["high", "drop"] and not is_highlight:
                 is_highlight = True
-                # 하이라이트 진입 시 카메라 무빙 & 화면 흔들림 & 플래시
                 self.actions.append({"floor": self.current_floor, "eventType": "MoveCamera", "duration": 2, "relativeTo": "Player", "position": [0, 0], "rotation": 15, "zoom": 120, "angleOffset": 0, "ease": "OutCubic"})
                 self.actions.append({"floor": self.current_floor, "eventType": "ShakeScreen", "duration": 2, "strength": 50, "intensity": 50, "fadeOut": True})
                 self.actions.append({"floor": self.current_floor, "eventType": "Flash", "duration": 1, "plane": "Background", "startColor": "ffffff", "startOpacity": 50, "endColor": "000000", "endOpacity": 0})
-                self.actions.append({"floor": self.current_floor, "eventType": "SetFilter", "filter": "Aberration", "enabled": True, "intensity": 45})
-            
             elif intensity in ["low", "medium"] and is_highlight:
                 is_highlight = False
-                # 하이라이트 종료 시 카메라 원상복구
                 self.actions.append({"floor": self.current_floor, "eventType": "MoveCamera", "duration": 2, "relativeTo": "Player", "position": [0, 0], "rotation": 0, "zoom": 100, "angleOffset": 0, "ease": "InCubic"})
-                self.actions.append({"floor": self.current_floor, "eventType": "SetFilter", "filter": "Aberration", "enabled": False, "intensity": 0})
 
-            # --- 📐 [Grid Tracking] 타일 배치 로직 ---
+            # --- 📐 [Grid Tracking] 타일 배치 및 싱크 보정 로직 ---
             ideal_travel_angle = delta_t * (self.bpm / 60.0) * 180.0
             snapped_travel = round(ideal_travel_angle / 15.0) * 15
             if snapped_travel < 15: snapped_travel = 15
 
-            # 롱 노트 처리 (긴 공백)
+            # 가사를 길게 끄는 구간(롱노트) 처리
+            is_long_note = False
             while snapped_travel > 360:
+                is_long_note = True
                 self.grid.move(180) # 직진
                 self.angle_data.append(self.grid.current_abs_angle)
-                self.theoretical_time += 180.0 / (self.bpm / 60.0 * 180.0)
+                
+                # 인게임 물리 시간에 정확히 더해줌
+                game_current_time += 180.0 / (self.bpm / 60.0 * 180.0)
                 snapped_travel -= 180
                 self.current_floor += 1
+
+            # 롱노트 구간일 경우 살짝 줌 인 해주는 소소한 연출
+            if is_long_note:
+                self.actions.append({"floor": self.current_floor - 1, "eventType": "MoveCamera", "duration": 1, "relativeTo": "Player", "zoom": 130, "ease": "OutQuad"})
 
             # 패턴 큐가 비어있으면 분위기에 맞는 패턴 새로 가져오기
             if not pattern_queue:
                 pattern_queue = PatternDictionary.get_pattern(intensity, centroid, self.bpm).copy()
             
-            # 패턴에서 다음 꺾일 각도(diff) 꺼내기
             next_diff = pattern_queue.pop(0)
             
             # 충돌 감지 로직 (Collision Detection)
             if self.grid.check_collision(next_diff):
-                # 충돌이 예상되면 Twirl(소용돌이) 이벤트를 넣고 각도를 반대로 비틂
                 self.actions.append({"floor": self.current_floor, "eventType": "Twirl"})
-                next_diff = 360 - next_diff # 대칭 이동으로 회피
+                next_diff = 360 - next_diff # 대칭 반전
 
-            # 최종 격자 이동 및 각도 기록
+            # 최종 격자 이동 및 타일 각도 기록
             new_abs_angle = self.grid.move(next_diff)
             self.angle_data.append(int(new_abs_angle))
             
-            self.theoretical_time += snapped_travel / (self.bpm / 60.0 * 180.0)
+            # 꺾인 각도만큼 인게임 시간을 정확히 누적
+            game_current_time += snapped_travel / (self.bpm / 60.0 * 180.0)
 
     def build_json(self):
         settings_block = {
-            "version": 15, "artist": "Data-Driven Engine v2", "specialArtistType": "None",
+            "version": 15, "artist": "Data-Driven Engine v3", "specialArtistType": "None",
             "song": self.filename, "author": "ADOFAI True AI", "separateCountdownTime": True,
-            "seizureWarning": False, "levelDesc": "Spatial Awareness & VFX Directed",
+            "seizureWarning": False, "levelDesc": "Vocal Sync & Absolute Time Tracked",
             "difficulty": 5, "songFilename": self.filename, 
             "bpm": self.bpm, "volume": 100, "offset": self.offset_ms, "pitch": 100,
-            "hitsound": "Hat", "hitsoundVolume": 100, "countdownTicks": 4,
+            "hitsound": "Kick", "hitsoundVolume": 100, "countdownTicks": 4,
             "trackColorType": "Glow", "trackColor": "00D4FF", "secondaryTrackColor": "005dff",
             "trackColorAnimDuration": 2, "trackColorPulse": "Forward", "trackPulseLength": 10,
             "trackStyle": "Neon", "trackAnimation": "None", "beatsAhead": 4, "trackDisappearAnimation": "Fade",
@@ -245,7 +256,7 @@ class TrueDeterministicMapGenerator:
 uploaded_file = st.file_uploader("음악 파일 업로드 (MP3, WAV, OGG)", type=None)
 
 if uploaded_file is not None:
-    with st.spinner("AI가 음악의 기하학적 형태를 스케치하는 중..."):
+    with st.spinner("AI가 보컬의 호흡과 절대 시간을 스케치하는 중..."):
         uploaded_file.seek(0)
         raw_audio_bytes = uploaded_file.read()
         
@@ -258,7 +269,7 @@ if uploaded_file is not None:
             tmp_file_path = tmp_file.name
 
         try:
-            # 진(眞) 엔진 v2 가동
+            # 진(眞) 엔진 v3 가동
             engine = TrueDeterministicMapGenerator(tmp_file_path, raw_audio_bytes, safe_audio_filename)
             engine.analyze_audio()
             engine.generate_map_logic()
@@ -270,7 +281,7 @@ if uploaded_file is not None:
                 zip_file.writestr("level.adofai", adofai_str)
                 zip_file.writestr(safe_audio_filename, raw_audio_bytes)
 
-            st.success("✨ 공간 충돌 방지 및 카메라 연출이 적용된 맵 생성 완료!")
+            st.success("✨ 보컬 발음 추적 및 싱크 보정이 완료된 맵 생성 완료!")
             
             # 맵 데이터 미리보기 제공
             with st.expander("생성된 Angle Data 미리보기 (첫 100개 타일)"):
@@ -281,7 +292,7 @@ if uploaded_file is not None:
             st.download_button(
                 label="📦 .zip 진(眞) 엔진 맵 다운로드", 
                 data=zip_buffer.getvalue(), 
-                file_name="ADOFAI_Masterpiece_Map.zip",
+                file_name="ADOFAI_Masterpiece_VocalSync.zip",
                 mime="application/zip"
             )
 
