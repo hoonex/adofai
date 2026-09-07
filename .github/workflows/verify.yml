@@ -28,10 +28,8 @@ jobs:
       - name: Apply identity-checked desktop editor transform
         run: python tools/apply_hitmargin_editor_mode.py .work/hitmargin-mobile-mod
 
-      - name: Apply complete file dialog patch
-        run: |
-          git -C .work/hitmargin-mobile-mod apply --check "$GITHUB_WORKSPACE/patches/hitmargin/0002-complete-file-dialog-hooks.patch"
-          git -C .work/hitmargin-mobile-mod apply "$GITHUB_WORKSPACE/patches/hitmargin/0002-complete-file-dialog-hooks.patch"
+      - name: Apply identity-checked file dialog transform
+        run: python tools/apply_hitmargin_file_dialogs.py .work/hitmargin-mobile-mod
 
       - name: Check patched source for whitespace errors
         run: git -C .work/hitmargin-mobile-mod diff --check
