@@ -1,7 +1,0 @@
-streamlit
-librosa
-soundfile
-google-generativeai
-numpy
-requests
-mutagen
