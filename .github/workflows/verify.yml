@@ -17,8 +17,23 @@ jobs:
       - name: Run ADOFAI compatibility tests
         run: python -m unittest discover -s tests -v
 
-      - name: Prepare pinned mobile hook source and apply patches
-        run: bash scripts/prepare-upstream.sh
+      - name: Materialize pinned mobile hook source
+        run: |
+          set -euo pipefail
+          mkdir -p .work
+          git clone --filter=blob:none https://github.com/HitMargin/A-Dance-of-Fire-and-Ice-Mobile---Load-Custom-Level.git .work/hitmargin-mobile-mod
+          git -C .work/hitmargin-mobile-mod checkout --detach 74bcc7a0d8c8be1267504e21e28a35e199b5d4eb
+          test "$(git -C .work/hitmargin-mobile-mod rev-parse HEAD)" = 74bcc7a0d8c8be1267504e21e28a35e199b5d4eb
+
+      - name: Apply desktop editor mode patch
+        run: |
+          git -C .work/hitmargin-mobile-mod apply --check "$GITHUB_WORKSPACE/patches/hitmargin/0001-enable-editor-desktop-mode.patch"
+          git -C .work/hitmargin-mobile-mod apply "$GITHUB_WORKSPACE/patches/hitmargin/0001-enable-editor-desktop-mode.patch"
+
+      - name: Apply complete file dialog patch
+        run: |
+          git -C .work/hitmargin-mobile-mod apply --check "$GITHUB_WORKSPACE/patches/hitmargin/0002-complete-file-dialog-hooks.patch"
+          git -C .work/hitmargin-mobile-mod apply "$GITHUB_WORKSPACE/patches/hitmargin/0002-complete-file-dialog-hooks.patch"
 
       - name: Check patched source for whitespace errors
         run: git -C .work/hitmargin-mobile-mod diff --check
