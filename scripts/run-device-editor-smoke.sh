@@ -23,8 +23,9 @@ if [[ "$state" != "device" ]]; then
   exit 2
 fi
 
-if ! "$ADB_BIN" shell pm path "$PACKAGE" >/dev/null 2>&1; then
-  echo "package $PACKAGE is not installed" >&2
+PM_PATHS="$($ADB_BIN shell pm path "$PACKAGE" 2>/dev/null | tr -d '\r')"
+if ! grep -q '^package:' <<<"$PM_PATHS"; then
+  echo "package $PACKAGE is not installed or pm path returned no APKs" >&2
   exit 2
 fi
 
@@ -60,7 +61,7 @@ wait_for_process() {
 ui_state() {
   local file="$1"
   local marker="$2"
-  if [[ ! -s "$file" || "$(cat "$file")" == '<unavailable/>' ]]; then
+  if [[ ! -s "$file" ]] || grep -Fxq '<unavailable/>' "$file"; then
     printf 'UNPROVEN'
   elif grep -Fq "$marker" "$file"; then
     printf 'PASS'
@@ -80,6 +81,35 @@ log_state() {
   fi
 }
 
+log_presence() {
+  local marker="$1"
+  if [[ ! -s "$OUT/runtime.log" ]]; then
+    printf 'UNPROVEN'
+  elif grep -Fq "$marker" "$OUT/runtime.log"; then
+    printf 'PRESENT'
+  else
+    printf 'ABSENT'
+  fi
+}
+
+capture_runtime_logs() {
+  local launch_pid="$1"
+  local current_pid="$2"
+  : > "$OUT/runtime.log"
+
+  if ! "$ADB_BIN" logcat -d --pid "$launch_pid" -v threadtime > "$OUT/runtime.log" 2>/dev/null; then
+    "$ADB_BIN" logcat -d -v threadtime 'ADOFAI.MobileEditor:*' 'IL2CPP_EXPORTS:*' '*:S' > "$OUT/runtime.log" 2>/dev/null || true
+    return
+  fi
+
+  if [[ -n "$current_pid" && "$current_pid" != "$launch_pid" ]]; then
+    {
+      printf '\n--- process changed after launch: %s -> %s ---\n' "$launch_pid" "$current_pid"
+      "$ADB_BIN" logcat -d --pid "$current_pid" -v threadtime 2>/dev/null || true
+    } >> "$OUT/runtime.log"
+  fi
+}
+
 {
   echo "package=$PACKAGE"
   echo "captured_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -90,7 +120,7 @@ log_state() {
   echo "sdk=$($ADB_BIN shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r')"
 } > "$OUT/device.txt"
 
-"$ADB_BIN" shell pm path "$PACKAGE" | tr -d '\r' > "$OUT/pm-paths.txt"
+printf '%s\n' "$PM_PATHS" > "$OUT/pm-paths.txt"
 "$ADB_BIN" shell dumpsys package "$PACKAGE" > "$OUT/package.txt"
 
 printf '[1/6] Restarting the already-installed app (no data is cleared)...\n'
@@ -126,14 +156,12 @@ sleep 1
 capture_ui "06-after-preview"
 
 CURRENT_PID="$($ADB_BIN shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' | awk '{print $1}')"
+capture_runtime_logs "$PID" "$CURRENT_PID"
 if [[ -n "$CURRENT_PID" ]]; then
-  if ! "$ADB_BIN" logcat -d --pid "$CURRENT_PID" -v threadtime > "$OUT/runtime.log" 2>/dev/null; then
-    "$ADB_BIN" logcat -d -v threadtime 'ADOFAI.MobileEditor:*' 'IL2CPP_EXPORTS:*' '*:S' > "$OUT/runtime.log" 2>/dev/null || true
-  fi
   "$ADB_BIN" shell dumpsys meminfo "$PACKAGE" > "$OUT/meminfo.txt" 2>/dev/null || true
   "$ADB_BIN" shell dumpsys gfxinfo "$PACKAGE" framestats > "$OUT/gfxinfo-framestats.txt" 2>/dev/null || true
 else
-  printf 'Target process exited before evidence collection.\n' > "$OUT/runtime.log"
+  printf 'Target process was not running at final evidence collection.\n' > "$OUT/process-exit.txt"
 fi
 
 LAUNCHER_STATE="$(ui_state "$OUT/01-launcher.xml" 'text="Editor"')"
@@ -141,18 +169,21 @@ EDITOR_STATE="$(ui_state "$OUT/02-editor-open.xml" 'ADOFAI Mobile Editor')"
 LOAD_STATE="$(ui_state "$OUT/03-chart-loaded.xml" 'Loaded successfully')"
 SAVE_STATE="$(ui_state "$OUT/04-chart-saved.xml" 'Saved')"
 REOPEN_STATE="$(ui_state "$OUT/05-chart-reopened.xml" 'Loaded successfully')"
+SHELL_BOOTSTRAP_STATE="$(log_state 'MobileEditorShell launcher installed through injected DEX loader')"
 BRIDGE_STATE="$(log_state 'Mobile editor preview bridge installed on Unity game-thread input poll')"
 PREVIEW_STATE="$(log_state 'Mobile editor preview queued into current runtime')"
-PREVIEW_FAIL_STATE="$(log_state 'Mobile editor preview request failed closed')"
+PREVIEW_FAILURE_MARKER="$(log_presence 'Mobile editor preview request failed closed')"
 
 cat > "$OUT/REPORT.md" <<EOF
 # ADOFAI Mobile Editor device smoke evidence
 
 Package: \`$PACKAGE\`
 PID at launch: \`$PID\`
+PID at final capture: \`${CURRENT_PID:-not-running}\`
 
 | Boundary | Result | Evidence |
 | --- | --- | --- |
+| Injected DEX editor bootstrap executed | $SHELL_BOOTSTRAP_STATE | \`runtime.log\` |
 | Floating Editor launcher visible | $LAUNCHER_STATE | \`01-launcher.xml/png\` |
 | Android-native editor shell visible | $EDITOR_STATE | \`02-editor-open.xml/png\` |
 | Modern chart open reports success | $LOAD_STATE | \`03-chart-loaded.xml/png\` |
@@ -160,19 +191,21 @@ PID at launch: \`$PID\`
 | Saved chart reopens | $REOPEN_STATE | \`05-chart-reopened.xml/png\` |
 | Native preview bridge installed | $BRIDGE_STATE | \`runtime.log\` |
 | Preview reached current runtime LoadCustomLevel call | $PREVIEW_STATE | \`runtime.log\` |
-| Preview fail-closed marker observed | $PREVIEW_FAIL_STATE | \`runtime.log\` (PASS here means a failure marker was present) |
+| Preview fail-closed marker | $PREVIEW_FAILURE_MARKER | \`runtime.log\` |
 
 Interpretation rules:
 
-- \`PASS\` means the captured UI/log contains the exact repository-defined marker.
-- \`FAIL\` means evidence was captured but the marker was absent.
+- \`PASS\` means the captured UI/log contains the exact repository-defined success marker.
+- \`FAIL\` means evidence was captured but the success marker was absent.
 - \`UNPROVEN\` means the relevant Android evidence could not be captured.
+- The fail-closed row uses \`PRESENT\` / \`ABSENT\`; \`PRESENT\` is a runtime failure signal, not a pass.
 - A successful \`LoadCustomLevel\` call is not by itself proof that every chart event rendered correctly.
 - Screenshots and raw PID-scoped logs remain in this directory for manual reconciliation.
 - This harness does not prove performance, thermal, battery, every event type, every storage provider, or every device shape.
 EOF
 
 printf '\nEvidence captured in %s\n' "$OUT"
-printf 'Summary: launcher=%s editor=%s load=%s save=%s reopen=%s bridge=%s preview=%s\n' \
-  "$LAUNCHER_STATE" "$EDITOR_STATE" "$LOAD_STATE" "$SAVE_STATE" "$REOPEN_STATE" "$BRIDGE_STATE" "$PREVIEW_STATE"
+printf 'Summary: bootstrap=%s launcher=%s editor=%s load=%s save=%s reopen=%s bridge=%s preview=%s preview-failure=%s\n' \
+  "$SHELL_BOOTSTRAP_STATE" "$LAUNCHER_STATE" "$EDITOR_STATE" "$LOAD_STATE" "$SAVE_STATE" "$REOPEN_STATE" \
+  "$BRIDGE_STATE" "$PREVIEW_STATE" "$PREVIEW_FAILURE_MARKER"
 printf 'Read %s/REPORT.md and inspect the screenshots/log before promoting device-runtime claims.\n' "$OUT"
