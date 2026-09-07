@@ -104,6 +104,51 @@ def transform(text: str) -> str:
         "dirty close helper",
     )
 
+    text = replace_exact(
+        text,
+        '''                loadPath(path);
+''',
+        '''                confirmOpenPath(path);
+''',
+        "Open replacement ownership",
+    )
+
+    text = replace_exact(
+        text,
+        '''    private static void beginSaveAs() {
+''',
+        '''    private static void confirmOpenPath(final String path) {
+        if (!dirty) {
+            loadPath(path);
+            return;
+        }
+
+        final Activity owner = activity;
+        if (owner == null || owner.isFinishing()) {
+            setStatus("Unsaved changes: cannot replace the current chart safely without a foreground Activity", true);
+            return;
+        }
+
+        new android.app.AlertDialog.Builder(owner)
+                .setTitle("Unsaved changes")
+                .setMessage("Opening another chart will replace the current in-memory edits. Keep editing, or explicitly discard them and open the selected chart.")
+                .setPositiveButton("Discard & open", new android.content.DialogInterface.OnClickListener() {
+                    @Override public void onClick(android.content.DialogInterface ignored, int which) {
+                        // Do not clear the current session before the replacement has
+                        // actually loaded. If the selected file is unreadable or
+                        // malformed, loadPath fails closed and the dirty document stays.
+                        loadPath(path);
+                    }
+                })
+                .setNegativeButton("Keep editing", null)
+                .show();
+    }
+
+    private static void beginSaveAs() {
+''',
+        "dirty open helper",
+    )
+
     return text
 
 
@@ -122,7 +167,7 @@ def main() -> int:
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(rendered, encoding="utf-8")
-    print(f"Prepared dirty-close guarded mobile editor shell: {output}")
+    print(f"Prepared dirty-session guarded mobile editor shell: {output}")
     return 0
 
 
