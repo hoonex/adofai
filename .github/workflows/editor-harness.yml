@@ -1,4 +1,4 @@
-name: Build ADOFAI Editor Harness
+name: Build ADOFAI Companion Editor
 
 on:
   push:
@@ -8,13 +8,11 @@ on:
       - 'android/editor-harness/**'
       - 'android/mobile-editor-shell/**'
       - 'scripts/prepare-editor-harness.sh'
-      - 'scripts/prepare-upstream.sh'
       - 'tools/apply_mobile_editor_document_safety.py'
       - 'tools/apply_mobile_editor_json_strictness.py'
       - 'tools/apply_mobile_editor_picker_serialization.py'
       - 'tools/apply_mobile_editor_dirty_close_guard.py'
-      - 'tools/apply_hitmargin_storage_guard.py'
-      - 'tools/apply_hitmargin_picker_cancel_guard.py'
+      - 'tools/apply_companion_editor_mode.py'
       - '.github/workflows/editor-harness.yml'
   workflow_dispatch:
 
@@ -22,7 +20,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: editor-harness-${{ github.ref }}
+  group: companion-editor-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -49,24 +47,24 @@ jobs:
       - name: Install Android platform
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
 
-      - name: Prepare canonical editor sources
+      - name: Prepare canonical companion sources
         run: bash scripts/prepare-editor-harness.sh
 
-      - name: Build editor harness APK
+      - name: Build companion editor APK
         run: gradle --no-daemon -p android/editor-harness :app:assembleDebug
 
       - name: Stage artifact
         run: |
-          mkdir -p dist/editor-harness
+          mkdir -p dist/companion-editor
           cp android/editor-harness/app/build/outputs/apk/debug/app-debug.apk \
-            dist/editor-harness/ADOFAI-Editor-Harness.apk
-          sha256sum dist/editor-harness/ADOFAI-Editor-Harness.apk \
-            | tee dist/editor-harness/SHA256SUMS.txt
+            dist/companion-editor/ADOFAI-Companion-Editor.apk
+          sha256sum dist/companion-editor/ADOFAI-Companion-Editor.apk \
+            | tee dist/companion-editor/SHA256SUMS.txt
 
-      - name: Upload editor harness APK
+      - name: Upload companion editor APK
         uses: actions/upload-artifact@v4
         with:
-          name: adofai-editor-harness-apk
-          path: dist/editor-harness/
+          name: adofai-companion-editor-apk
+          path: dist/companion-editor/
           if-no-files-found: error
           retention-days: 14

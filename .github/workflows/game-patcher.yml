@@ -1,25 +1,13 @@
-name: Build ADOFAI Game Patcher
+name: Legacy ADOFAI Game Patcher (manual only)
 
 on:
-  push:
-    branches:
-      - feat/modern-mobile-editor
-    paths:
-      - 'android/game-patcher/**'
-      - 'android/mobile-editor-shell/**'
-      - 'native/MobileEditorBridge.*'
-      - 'scripts/build-payload.sh'
-      - 'scripts/prepare-upstream.sh'
-      - 'tools/apply_mobile_editor_*.py'
-      - 'tools/apply_hitmargin_*.py'
-      - '.github/workflows/game-patcher.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: game-patcher-${{ github.ref }}
+  group: legacy-game-patcher-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -61,7 +49,7 @@ jobs:
           test -s "$ASSETS/classes2.dex"
           test -s "$ASSETS/libOctober.so"
 
-      - name: Compile game patcher
+      - name: Compile legacy game patcher
         run: gradle --no-daemon -p android/game-patcher :app:testDebugUnitTest :app:assembleDebug
 
       - name: Stage artifact
