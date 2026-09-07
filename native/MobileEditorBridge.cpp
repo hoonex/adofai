@@ -13,21 +13,32 @@ using namespace BNM::Structures::Mono;
 namespace {
 std::mutex g_previewMutex;
 std::string g_pendingPreviewPath;
+bool g_previewDispatchInFlight = false;
 bool g_previewHookInstalled = false;
 int (*g_oldTouchCount)() = nullptr;
 
 bool QueuePreview(const char* path) {
     if (!g_previewHookInstalled || !path || !path[0]) return false;
     std::lock_guard<std::mutex> lock(g_previewMutex);
+    if (g_previewDispatchInFlight || !g_pendingPreviewPath.empty()) {
+        LOGW("Mobile editor preview rejected: another preview is pending or dispatching");
+        return false;
+    }
     g_pendingPreviewPath = path;
     return true;
 }
 
 bool TakePendingPreview(std::string& out) {
     std::lock_guard<std::mutex> lock(g_previewMutex);
-    if (g_pendingPreviewPath.empty()) return false;
+    if (g_previewDispatchInFlight || g_pendingPreviewPath.empty()) return false;
+    g_previewDispatchInFlight = true;
     out.swap(g_pendingPreviewPath);
     return true;
+}
+
+void FinishPreviewDispatch() {
+    std::lock_guard<std::mutex> lock(g_previewMutex);
+    g_previewDispatchInFlight = false;
 }
 
 bool SetRequiredPreviewState(const std::string& path) {
@@ -92,7 +103,9 @@ bool SetRequiredPreviewState(const std::string& path) {
 void DrainPreviewQueueOnGameThread() {
     std::string path;
     if (!TakePendingPreview(path)) return;
-    if (!SetRequiredPreviewState(path)) {
+    bool succeeded = SetRequiredPreviewState(path);
+    FinishPreviewDispatch();
+    if (!succeeded) {
         LOGE("Mobile editor preview request failed closed: %s", path.c_str());
     }
 }
