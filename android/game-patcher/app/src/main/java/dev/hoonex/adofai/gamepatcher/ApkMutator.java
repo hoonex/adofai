@@ -23,13 +23,26 @@ final class ApkMutator {
         copyFile(sourceApk, outputApk);
         File originalDex = new File(workDir, "base-classes.dex");
         File patchedDex = new File(workDir, "base-classes-patched.dex");
+        File originalManifest = new File(workDir, "base-AndroidManifest.xml");
+        File patchedManifest = new File(workDir, "base-AndroidManifest-patched.xml");
+
         extractEntry(sourceApk, "classes.dex", originalDex);
         DexBootstrapPatcher.patch(originalDex, payloadDex, patchedDex);
 
+        extractEntry(sourceApk, "AndroidManifest.xml", originalManifest);
+        ManifestStoragePatcher.patch(originalManifest, patchedManifest);
+
         try (ZipArchive zip = new ZipArchive(outputApk.toPath())) {
             deleteSignatureEntries(zip);
+            zip.delete("AndroidManifest.xml");
             zip.delete("classes.dex");
             zip.delete("classes2.dex");
+
+            FullFileSource manifest = new FullFileSource(
+                patchedManifest.toPath(), "AndroidManifest.xml", Deflater.NO_COMPRESSION
+            );
+            manifest.align(4);
+            zip.add(manifest);
 
             FullFileSource primary = new FullFileSource(
                 patchedDex.toPath(), "classes.dex", Deflater.NO_COMPRESSION
