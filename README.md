@@ -1,61 +1,143 @@
 # ADOFAI Modern Mobile Editor
 
-This repository is being rebuilt as a source-first patch project for a user-supplied A Dance of Fire and Ice Android APK.
+Source-first modernization of the old ADOFAI Android custom editor. The project patches an **APK supplied by the user**; it does not contain or redistribute the game.
 
-## Goal
+## Why this is not based on 2.4.0
 
-The old 2.4.0 custom mobile editor is not a good base for modern charts. Newer `.adofai` files contain schema and event types that the 2.4.0 engine does not know how to decode or render. A parser shim alone cannot add engine features that do not exist in that binary.
+The old `V2.4.0 Custom.apk` can be useful as a behavioral reference, but modern `.adofai` charts contain event/runtime behavior that did not exist in the 2.4.0 engine. Making its JSON parser accept new keys would not make the old engine render, edit, preview, or save those features correctly.
 
-The implementation therefore targets a newer mobile game engine and exposes/fixes its embedded editor rather than backporting years of editor/runtime behavior into 2.4.0.
+The patch therefore uses a current-enough Android ADOFAI engine and repairs/exposes its embedded editor.
 
-Current evidence-backed Android hook baseline:
+Pinned references:
 
-- HitMargin mobile custom-level project, pinned at commit `74bcc7a0d8c8be1267504e21e28a35e199b5d4eb`.
-- That project documents support for ADOFAI mobile 2.8.3–2.10.1 and hooks the IL2CPP runtime to expose level loading/editor behavior.
-- Modern `.adofai` compatibility is modeled against ADOFAI-JS pinned at `1f66bfa8c4146853d239c80c47ed2168d9208d02`.
+- Android IL2CPP hook baseline: `HitMargin/A-Dance-of-Fire-and-Ice-Mobile---Load-Custom-Level@74bcc7a0d8c8be1267504e21e28a35e199b5d4eb`
+- Modern `.adofai` model/event reference: `adofaiex/ADOFAI-JS@1f66bfa8c4146853d239c80c47ed2168d9208d02`
+- exact pins: `upstream.lock.json`
 
-Exact pins are stored in `upstream.lock.json`.
+## Implemented
 
-## What is implemented now
+### Modern chart compatibility
 
-### Modern map compatibility tooling
+`tools/adofai_compat.py` is lossless-first. It handles:
 
-`tools/adofai_compat.py` is a lossless-first parser/normalizer for `.adofai` files. It:
-
-- strips UTF-8 BOM safely;
-- accepts trailing commas;
-- repairs raw control characters embedded in strings;
-- accepts both `pathData` and `angleData`;
-- converts legacy `pathData` to `angleData` on request, including relative path symbols;
-- preserves unknown top-level settings and event payload fields instead of deleting them;
-- reports action/decorations event types and unknown modern event types;
-- writes normalized UTF-8 JSON without intentionally downgrading the chart.
-
-Examples:
+- UTF-8 BOM;
+- trailing commas;
+- raw control characters inside strings;
+- both `pathData` and `angleData`;
+- optional legacy `pathData` -> `angleData` conversion;
+- current action/decorations inventory, including newer input/particle event families;
+- unknown future top-level/settings/event payloads without silently deleting them.
 
 ```bash
 python3 tools/adofai_compat.py level.adofai
 python3 tools/adofai_compat.py level.adofai --normalize normalized.adofai
-python3 tools/adofai_compat.py level.adofai --normalize normalized.adofai --convert-path-data
 ```
 
-### Reproducible modern hook baseline
+### Mobile editor runtime fixes
 
-`scripts/prepare-upstream.sh` resolves the exact pinned HitMargin source into `.work/hitmargin-mobile-mod`. The repository never silently follows upstream `HEAD`.
+The source preparation layer verifies exact upstream Git blob identities before making each change. It currently fixes:
 
-## Planned runtime layers
+- missing installation of the existing `ADOBase.get_isMobile` hook;
+- editor scenes using the desktop editor layout/input branch rather than the restricted mobile branch;
+- `StandaloneFileBrowser.OpenFilePanel` Android bridge;
+- previously-unwired `SaveFilePanel` support;
+- previously-unwired `OpenFolderPanel` support;
+- safe empty-array/string cancellation results instead of null-return edge cases;
+- serialized file-dialog calls;
+- JNI attach/error paths that previously could leave the caller waiting;
+- `UnityPlayer.currentActivity` as the primary Activity source, with the older reflection route only as fallback;
+- Android 11+ all-files-access guidance for the raw-path level browser;
+- immediate completion on Activity/permission failures instead of leaving `isDone=false` until timeout.
 
-The patch is intentionally split into separate owners so one workaround does not hide another bug:
+The transforms live in:
 
-1. **APK identity / IL2CPP discovery** — resolve exact game version, ABI, Unity/IL2CPP metadata and hook signatures.
-2. **Editor exposure** — expose the current engine's editor scene and editor-only controls without globally pretending every scene is the Unity editor.
-3. **Android file I/O** — reliable open/save/folder selection under scoped storage, with a filesystem path the Unity/Mono code can actually use.
-4. **Map compatibility** — tolerate valid modern chart syntax without deleting unrecognized data.
-5. **Mobile input/UI fixes** — touch hit testing, keyboard/IME, viewport/safe-area, scrolling and selection behavior.
-6. **Verification** — fixture charts plus real-device editor open/edit/save/reopen tests.
+- `tools/apply_hitmargin_editor_mode.py`
+- `tools/apply_hitmargin_file_dialogs.py`
+- `tools/apply_hitmargin_storage_guard.py`
+
+Run all of them reproducibly with:
+
+```bash
+bash scripts/prepare-upstream.sh
+```
+
+### Verified Android payload build
+
+CI builds both payload components with a pinned Android toolchain:
+
+- `classes2.dex` — Java file-browser bridge
+- `libOctober.so` — arm64-v8a IL2CPP/JNI hook library
+
+Current build pin is Android NDK `29.0.14206865`. CI also records SHA-256 digests and uploads the two files as a workflow artifact.
+
+Local equivalent:
+
+```bash
+bash scripts/build-payload.sh
+```
+
+Output:
+
+```text
+dist/payload/classes2.dex
+dist/payload/libOctober.so
+dist/payload/SHA256SUMS.txt
+```
+
+## Build a patched APK from your own current game APK
+
+Requirements:
+
+- JDK 17
+- Android SDK with platform 35, build-tools 36.0.0 and NDK 29.0.14206865
+- `apktool`
+- `zipalign`
+- `apksigner`
+
+Then:
+
+```bash
+bash scripts/build-modded-apk.sh /path/to/your-current-adofai.apk dist/ADOFAI-Mobile-Editor.apk
+```
+
+The pipeline:
+
+1. resolves the exact pinned source;
+2. applies the identity-checked runtime fixes;
+3. builds DEX + native arm64 payloads;
+4. decodes the user-supplied APK with apktool;
+5. idempotently adds required storage manifest settings;
+6. rebuilds the APK;
+7. chooses a free `classesN.dex` slot instead of overwriting an existing secondary dex;
+8. injects the payload and replaces `lib/arm64-v8a/libOctober.so`;
+9. zipaligns and signs the result;
+10. verifies the final APK signature.
+
+By default the script creates/reuses a local debug signing key under `~/.adofai-mobile-editor/`. A build signed with a different key cannot update the official-store installation in place, so keep that key for subsequent patched builds or provide your own through the documented environment variables in `scripts/repack-apk.sh`.
+
+## Verification status
+
+Already proven in GitHub CI:
+
+- compatibility/unit tests;
+- exact pinned-source preparation;
+- all three editor/runtime transforms;
+- `git diff --check` after transforms;
+- Java -> DEX compilation;
+- arm64 native NDK compilation;
+- artifact integrity hashing/upload.
+
+Still requires a user-supplied **current** ADOFAI Android APK for the last evidence boundary:
+
+- repack/sign that exact game build;
+- install on a real Android device;
+- open representative modern maps;
+- edit and save them;
+- close/reopen and compare preserved chart data/assets;
+- exercise touch/keyboard/viewport/editor controls.
+
+Until those device checks are run, the repository should not claim every editor function is device-verified.
 
 ## Binary policy
 
-This repository does **not** commit or redistribute proprietary ADOFAI APK/game assets. Build/patch tooling operates on an APK supplied by the user.
-
-The uploaded `V2.4.0 Custom.apk` remains useful as a behavioral/reference binary, but it is not the target engine for full modern map support.
+No proprietary ADOFAI APK or game assets are committed here. The old uploaded 2.4.0 custom build is not redistributed and is not used as the target engine for modern chart support.
