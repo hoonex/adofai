@@ -30,6 +30,7 @@ jobs:
           set -euo pipefail
           SRC=.work/hitmargin-mobile-mod/app/src/main/jni
           JAVA=.work/hitmargin-mobile-mod/app/src/main/java/com/unity3d/player/FileSelector.java
+          SHELL=android/mobile-editor-shell/src/com/unity3d/player/MobileEditorShell.java
           grep -q 'enableEditorDesktopMode' "$SRC/Main.cpp"
           grep -q 'SaveFilePanel hook installed' "$SRC/FilePicker.cpp"
           grep -q 'OpenFolderPanel hook installed' "$SRC/FilePicker.cpp"
@@ -40,6 +41,12 @@ jobs:
           grep -q 'Class("UnityFileDialog", "FileBrowser")' "$SRC/FilePicker.cpp"
           grep -q 'Environment.isExternalStorageManager' "$JAVA"
           grep -q 'UnityPlayer.currentActivity unavailable' "$JAVA"
+          grep -q 'MobileEditorShell.installLauncher' "$SRC/FilePicker.cpp"
+          grep -q 'InstallMobileEditorPreviewBridge' "$SRC/Main.cpp"
+          grep -q 'MobileEditorBridge.cpp' "$SRC/Android.mk"
+          grep -q 'nativeQueuePreview' "$SHELL"
+          grep -q 'Os.rename' "$SHELL"
+          grep -q 'Unknown root fields and unknown event payloads remain' "$SHELL"
 
   android-build:
     needs: compatibility
