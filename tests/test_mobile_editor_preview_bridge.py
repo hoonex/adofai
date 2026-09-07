@@ -44,6 +44,31 @@ class MobileEditorPreviewBridgeTests(unittest.TestCase):
         self.assertIn("sceneToLoad.cast<String*>().Set(gameScene);", text)
         self.assertNotIn('sceneToLoad.cast<String*>().Set(CreateMonoString("scnGame"));', text)
 
+    def test_preview_queue_rejects_pending_or_dispatching_overlap(self):
+        text = self.text
+        self.assertIn("bool g_previewDispatchInFlight = false;", text)
+        self.assertIn(
+            "if (g_previewDispatchInFlight || !g_pendingPreviewPath.empty()) {",
+            text,
+        )
+        self.assertIn(
+            'LOGW("Mobile editor preview rejected: another preview is pending or dispatching");',
+            text,
+        )
+        take = text.index("bool TakePendingPreview")
+        finish = text.index("void FinishPreviewDispatch")
+        self.assertIn("g_previewDispatchInFlight = true;", text[take:finish])
+        self.assertIn("g_previewDispatchInFlight = false;", text[finish:])
+
+    def test_dispatch_owner_is_released_after_runtime_attempt(self):
+        text = self.text
+        drain = text[text.index("void DrainPreviewQueueOnGameThread") : text.index("int HookedTouchCount")]
+        attempt = drain.index("bool succeeded = SetRequiredPreviewState(path);")
+        release = drain.index("FinishPreviewDispatch();")
+        failure = drain.index("if (!succeeded)")
+        self.assertLess(attempt, release)
+        self.assertLess(release, failure)
+
     def test_preview_queue_still_drains_on_game_thread_hook(self):
         text = self.text
         self.assertIn("DrainPreviewQueueOnGameThread();", text)
