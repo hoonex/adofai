@@ -40,6 +40,8 @@ grep -q "This chart's settings field is not an object" "${GEN}/MobileEditorShell
 grep -q 'requestClose' "${GEN}/MobileEditorShell.java"
 grep -q 'Unsaved changes' "${GEN}/MobileEditorShell.java"
 grep -q 'Discard & close' "${GEN}/MobileEditorShell.java"
+grep -q 'confirmOpenPath' "${GEN}/MobileEditorShell.java"
+grep -q 'Discard & open' "${GEN}/MobileEditorShell.java"
 grep -q 'KEYCODE_BACK' "${GEN}/MobileEditorShell.java"
 grep -q 'setOnCancelListener' "${GEN}/CustomFileChooser.java"
 grep -q 'Environment.isExternalStorageManager' "${GEN}/FileSelector.java"
