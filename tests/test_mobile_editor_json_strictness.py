@@ -84,7 +84,8 @@ class MobileEditorJsonStrictnessTests(unittest.TestCase):
         javac = text.index("javac")
         self.assertLess(lossless, strict)
         self.assertLess(strict, javac)
-        self.assertIn('"${EDITOR_SHELL}" \\\n  "${EDITOR_SHELL}"', text)
+        strict_call = text[strict:javac]
+        self.assertGreaterEqual(strict_call.count('"${EDITOR_SHELL}"'), 2)
 
 
 if __name__ == "__main__":
