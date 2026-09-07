@@ -2,8 +2,10 @@
 set -euo pipefail
 
 PACKAGE="${ADOFAI_PACKAGE:-com.fizzd.connectedworlds}"
-EXPECTED_VERSION_NAME="${ADOFAI_EXPECTED_VERSION_NAME:-3.3.1}"
-EXPECTED_VERSION_CODE="${ADOFAI_EXPECTED_VERSION_CODE:-300382}"
+# These values are source-controlled evidence, not user configuration. Updating
+# them requires reconciling the hook/runtime surface in this repository first.
+EXPECTED_VERSION_NAME="3.3.1"
+EXPECTED_VERSION_CODE="300382"
 ADB_BIN="${ADB_BIN:-$(command -v adb || true)}"
 
 if [[ $# -gt 1 ]]; then
