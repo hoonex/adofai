@@ -36,13 +36,17 @@ def _ensure_one_local(method_body: str) -> str:
 
     registers_match = re.search(r"(?m)^(\s*)\.registers\s+(\d+)\s*$", method_body)
     if registers_match:
-        # onCreate is an instance method with p0 + p1, so v0 requires >= 3 total regs.
+        # onCreate is an instance method with p0 + p1. With .registers, v-register
+        # numbers include parameter registers. Increasing the total register count can
+        # silently change the meaning of existing raw vN parameter references, so only
+        # use v0 when the original method already reserved at least one local register.
         current = int(registers_match.group(2))
         if current >= 3:
             return method_body
-        start, end = registers_match.span()
-        replacement = f"{registers_match.group(1)}.registers 3"
-        return method_body[:start] + replacement + method_body[end:]
+        raise ValueError(
+            "UnityPlayerActivity.onCreate uses .registers with no scratch local; "
+            "refusing to renumber existing registers automatically"
+        )
 
     raise ValueError("onCreate has neither .locals nor .registers directive")
 
