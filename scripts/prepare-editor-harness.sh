@@ -37,7 +37,9 @@ grep -q 'Unexpected trailing content after JSON value' "${GEN}/MobileEditorShell
 grep -q 'requestClose' "${GEN}/MobileEditorShell.java"
 grep -q 'confirmOpenPath' "${GEN}/MobileEditorShell.java"
 grep -q 'confirmSaveAndPreview' "${GEN}/MobileEditorShell.java"
+grep -q 'Unsaved changes' "${GEN}/MobileEditorShell.java"
 grep -q 'Discard & open' "${GEN}/MobileEditorShell.java"
+grep -q 'Save & preview' "${GEN}/MobileEditorShell.java"
 
 test -s "${SAF_SELECTOR}"
 grep -q 'Intent.ACTION_OPEN_DOCUMENT' "${SAF_SELECTOR}"
