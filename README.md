@@ -117,7 +117,7 @@ By default the script creates/reuses a local debug signing key under `~/.adofai-
 
 ## Verification status
 
-Proven on branch commit `416c7521bac3a1dad223b538fbf9821c10a4cae6` by GitHub Actions run `34072702544`:
+Proven by GitHub Actions run `34072702544` on source commit `416c7521bac3a1dad223b538fbf9821c10a4cae6`:
 
 - Python and shell tooling syntax checks;
 - compatibility tests and APK packaging unit tests;
@@ -127,7 +127,7 @@ Proven on branch commit `416c7521bac3a1dad223b538fbf9821c10a4cae6` by GitHub Act
 - arm64 native NDK compilation;
 - SHA-256 generation and workflow-artifact upload.
 
-The resulting `mobile-editor-patch-binaries` artifact is tied to that exact source commit. This proves source transformation and payload compilation, not in-game behavior.
+The resulting `mobile-editor-patch-binaries` artifact is tied to that exact source commit. The commits after that verification anchor only update documentation. This proves source transformation and payload compilation, not in-game behavior.
 
 Still requires a user-supplied **current** ADOFAI Android APK for the last evidence boundary:
 
