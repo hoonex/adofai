@@ -91,6 +91,34 @@ class MobileEditorDirtyCloseTests(unittest.TestCase):
         finally:
             temp.cleanup()
 
+    def test_dirty_open_confirms_only_after_a_path_is_selected(self):
+        temp, generated = self.render()
+        try:
+            text = generated.read_text(encoding="utf-8")
+            begin = text.index("    private static void beginOpen() {")
+            helper = text.index("    private static void confirmOpenPath", begin)
+            open_flow = text[begin:helper]
+            self.assertIn('if (path.length() == 0) {\n                    setStatus("Open cancelled", false);\n                    return;', open_flow)
+            self.assertIn("confirmOpenPath(path);", open_flow)
+            self.assertNotIn("loadPath(path);", open_flow)
+
+            end = text.index("    private static void beginSaveAs()", helper)
+            confirm = text[helper:end]
+            self.assertIn("if (!dirty) {\n            loadPath(path);\n            return;", confirm)
+            self.assertIn('.setTitle("Unsaved changes")', confirm)
+            self.assertIn('.setPositiveButton("Discard & open"', confirm)
+            self.assertIn('.setNegativeButton("Keep editing", null)', confirm)
+            self.assertIn("loadPath(path);", confirm)
+            self.assertNotIn("document = null;", confirm)
+            self.assertNotIn("currentPath = null;", confirm)
+            self.assertNotIn("dirty = false;", confirm)
+            self.assertIn(
+                'setStatus("Unsaved changes: cannot replace the current chart safely without a foreground Activity", true);',
+                confirm,
+            )
+        finally:
+            temp.cleanup()
+
     def test_dirty_close_transform_fails_closed_if_close_surface_moves(self):
         temp, generated = self.render_before_dirty_close()
         try:
@@ -121,6 +149,30 @@ class MobileEditorDirtyCloseTests(unittest.TestCase):
         finally:
             temp.cleanup()
 
+    def test_dirty_close_transform_fails_closed_if_open_replacement_surface_moves(self):
+        temp, generated = self.render_before_dirty_close()
+        try:
+            text = generated.read_text(encoding="utf-8")
+            self.assertEqual(text.count("                loadPath(path);\n"), 1)
+            text = text.replace(
+                "                loadPath(path);\n",
+                "                loadPath(path.trim());\n",
+                1,
+            )
+            generated.write_text(text, encoding="utf-8")
+
+            result = subprocess.run(
+                ["python3", str(DIRTY_CLOSE), str(generated), str(generated)],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+            self.assertIn("Open replacement ownership", result.stderr)
+        finally:
+            temp.cleanup()
+
     def test_canonical_payload_and_harness_apply_guard_after_picker_transform(self):
         build = BUILD.read_text(encoding="utf-8")
         picker = build.index("apply_mobile_editor_picker_serialization.py")
@@ -134,7 +186,9 @@ class MobileEditorDirtyCloseTests(unittest.TestCase):
         dirty = harness.index("apply_mobile_editor_dirty_close_guard.py")
         self.assertLess(picker, dirty)
         self.assertIn("requestClose", harness)
+        self.assertIn("confirmOpenPath", harness)
         self.assertIn("Unsaved changes", harness)
+        self.assertIn("Discard & open", harness)
 
     def test_harness_rebuilds_when_dirty_close_guard_changes(self):
         workflow = HARNESS_WORKFLOW.read_text(encoding="utf-8")
