@@ -32,13 +32,13 @@ final class ApkMutator {
             zip.delete("classes2.dex");
 
             FullFileSource primary = new FullFileSource(
-                patchedDex.getAbsolutePath(), "classes.dex", Deflater.NO_COMPRESSION
+                patchedDex.toPath(), "classes.dex", Deflater.NO_COMPRESSION
             );
             primary.align(4);
             zip.add(primary);
 
             FullFileSource secondary = new FullFileSource(
-                payloadDex.getAbsolutePath(), "classes2.dex", Deflater.NO_COMPRESSION
+                payloadDex.toPath(), "classes2.dex", Deflater.NO_COMPRESSION
             );
             secondary.align(4);
             zip.add(secondary);
@@ -51,7 +51,7 @@ final class ApkMutator {
             deleteSignatureEntries(zip);
             zip.delete("lib/arm64-v8a/libOctober.so");
             FullFileSource library = new FullFileSource(
-                nativePayload.getAbsolutePath(), "lib/arm64-v8a/libOctober.so", Deflater.NO_COMPRESSION
+                nativePayload.toPath(), "lib/arm64-v8a/libOctober.so", Deflater.NO_COMPRESSION
             );
             library.align(16 * 1024);
             zip.add(library);
