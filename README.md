@@ -117,15 +117,17 @@ By default the script creates/reuses a local debug signing key under `~/.adofai-
 
 ## Verification status
 
-Already proven in GitHub CI:
+Proven on branch commit `416c7521bac3a1dad223b538fbf9821c10a4cae6` by GitHub Actions run `34072702544`:
 
-- compatibility/unit tests;
-- exact pinned-source preparation;
-- all three editor/runtime transforms;
-- `git diff --check` after transforms;
+- Python and shell tooling syntax checks;
+- compatibility tests and APK packaging unit tests;
+- exact pinned-source preparation and all runtime transforms;
+- editor-critical hook/storage guard presence checks;
 - Java -> DEX compilation;
 - arm64 native NDK compilation;
-- artifact integrity hashing/upload.
+- SHA-256 generation and workflow-artifact upload.
+
+The resulting `mobile-editor-patch-binaries` artifact is tied to that exact source commit. This proves source transformation and payload compilation, not in-game behavior.
 
 Still requires a user-supplied **current** ADOFAI Android APK for the last evidence boundary:
 
@@ -136,7 +138,7 @@ Still requires a user-supplied **current** ADOFAI Android APK for the last evide
 - close/reopen and compare preserved chart data/assets;
 - exercise touch/keyboard/viewport/editor controls.
 
-Until those device checks are run, the repository should not claim every editor function is device-verified.
+The currently supplied `V2.4.0 Custom.apk` is intentionally not used as that final target because its engine predates modern chart/runtime features. Until a current APK and real-device checks are available, the repository must not claim every editor function is device-verified.
 
 ## Binary policy
 
