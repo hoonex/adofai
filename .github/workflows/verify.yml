@@ -14,7 +14,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run ADOFAI compatibility tests
+      - name: Validate tooling syntax
+        run: |
+          python -m py_compile tools/*.py
+          bash -n scripts/*.sh
+
+      - name: Run compatibility and APK tooling tests
         run: python -m unittest discover -s tests -v
 
       - name: Prepare pinned mobile hook source
@@ -24,10 +29,13 @@ jobs:
         run: |
           set -euo pipefail
           SRC=.work/hitmargin-mobile-mod/app/src/main/jni
+          JAVA=.work/hitmargin-mobile-mod/app/src/main/java/com/unity3d/player/FileSelector.java
           grep -q 'enableEditorDesktopMode' "$SRC/Main.cpp"
           grep -q 'SaveFilePanel hook installed' "$SRC/FilePicker.cpp"
           grep -q 'OpenFolderPanel hook installed' "$SRC/FilePicker.cpp"
           grep -q 'PathToStringArray' "$SRC/FilePicker.cpp"
+          grep -q 'Environment.isExternalStorageManager' "$JAVA"
+          grep -q 'UnityPlayer.currentActivity unavailable' "$JAVA"
 
   android-build:
     needs: compatibility
@@ -50,45 +58,8 @@ jobs:
             'build-tools;36.0.0' \
             'ndk;29.0.14206865'
 
-      - name: Prepare pinned patched source
-        run: bash scripts/prepare-upstream.sh
-
-      - name: Build file picker DEX
-        run: |
-          set -euo pipefail
-          SRC=.work/hitmargin-mobile-mod/app/src/main/java/com/unity3d/player
-          OUT=.work/build
-          mkdir -p "$OUT/classes" "$OUT/dex"
-          javac \
-            -source 8 -target 8 \
-            -bootclasspath "$ANDROID_SDK_ROOT/platforms/android-35/android.jar" \
-            -d "$OUT/classes" \
-            "$SRC/CustomFileChooser.java" \
-            "$SRC/FileSelector.java"
-          jar cf "$OUT/filepicker.jar" -C "$OUT/classes" .
-          "$ANDROID_SDK_ROOT/build-tools/36.0.0/d8" \
-            --min-api 23 \
-            --output "$OUT/dex" \
-            "$OUT/filepicker.jar"
-          mv "$OUT/dex/classes.dex" "$OUT/classes2.dex"
-          test -s "$OUT/classes2.dex"
-
-      - name: Build native hook library
-        run: |
-          set -euo pipefail
-          JNI=.work/hitmargin-mobile-mod/app/src/main/jni
-          "$ANDROID_SDK_ROOT/ndk/29.0.14206865/ndk-build" \
-            -C "$JNI" \
-            -j2
-          LIB=.work/hitmargin-mobile-mod/app/src/main/libs/arm64-v8a/libOctober.so
-          test -s "$LIB"
-          cp "$LIB" .work/build/libOctober.so
-
-      - name: Record artifact integrity
-        run: |
-          cd .work/build
-          sha256sum classes2.dex libOctober.so > SHA256SUMS.txt
-          cat SHA256SUMS.txt
+      - name: Build canonical mobile editor payload
+        run: bash scripts/build-payload.sh .work/build
 
       - uses: actions/upload-artifact@v4
         with:
