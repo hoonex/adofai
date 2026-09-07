@@ -1,0 +1,28 @@
+{
+    "angleData": [0, 90, 180, 270,],
+    "settings": {
+        "version": 15,
+        "songFilename": "song.ogg",
+        "artist": "Fixture\nArtist",
+    },
+    "actions": [
+        {
+            "floor": 1,
+            "eventType": "SetSpeed",
+            "speedType": "Bpm",
+            "beatsPerMinute": 128,
+        },
+        {
+            "floor": 2,
+            "eventType": "SetInputEvent",
+            "eventTag": "mobile-test",
+        },
+    ],
+    "decorations": [
+        {
+            "floor": 2,
+            "eventType": "AddParticle",
+            "tag": "fixture-particle",
+        },
+    ],
+}
