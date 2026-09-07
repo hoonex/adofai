@@ -17,7 +17,7 @@ class EditorHarnessTests(unittest.TestCase):
         self.assertIn("MobileEditorShell.installLauncher();", text)
         self.assertIn("Preview는 여기서는 의도적으로 게임 런타임에 연결되지 않습니다", text)
         self.assertNotIn("System.loadLibrary", text)
-        self.assertNotIn("October", text)
+        self.assertNotIn("MobileEditorBootstrap", text)
         self.assertNotIn("nativeQueuePreview", text)
 
     def test_harness_manifest_requests_same_raw_path_storage_contract(self):
