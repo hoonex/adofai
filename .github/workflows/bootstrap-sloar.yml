@@ -1,0 +1,46 @@
+name: Bootstrap Sloar Chat Coder
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/bootstrap-sloar.yml
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out target repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve and install exact canonical Sloar
+        shell: bash
+        run: |
+          set -euo pipefail
+          SLOAR_SHA="7b2ed2c8b60e8e1d24dfe403a44754ebe43e6d00"
+          git clone --filter=blob:none https://github.com/hoonex/sloar-chat-coder.git /tmp/sloar-chat-coder
+          git -C /tmp/sloar-chat-coder checkout --detach "$SLOAR_SHA"
+          test "$(git -C /tmp/sloar-chat-coder rev-parse HEAD)" = "$SLOAR_SHA"
+
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          python3 /tmp/sloar-chat-coder/.agents/skills/sloar-chat-coder/scripts/install.py --target "$GITHUB_WORKSPACE"
+
+          grep -q 'version: "0.9.0"' .agents/skills/sloar-chat-coder/SKILL.md
+          test -f .agents/skills/web-design-guidance/SKILL.md
+          test -f .agents/skills/apple-web-design/SKILL.md
+          grep -q 'sloar-chat-coder:begin' AGENTS.md
+
+      - name: Publish clean Sloar installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Install Sloar Chat Coder 0.9.0"
+          git push origin HEAD:main
