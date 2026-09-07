@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -6,6 +7,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 REPACK = ROOT / "scripts" / "repack-split-apks.sh"
+PULL = ROOT / "scripts" / "pull-installed-splits.sh"
 
 
 class SplitScriptSafetyTests(unittest.TestCase):
@@ -69,6 +71,25 @@ class SplitScriptSafetyTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
             self.assertIn("repository root or its parent", result.stderr)
             self.assertTrue((ROOT / "AGENTS.md").is_file())
+
+    def test_pull_refuses_repository_root_before_device_access_or_rm(self):
+        env = os.environ.copy()
+        env["ADB_BIN"] = "/bin/true"
+        sentinel = ROOT / "AGENTS.md"
+        before = sentinel.read_bytes()
+
+        result = subprocess.run(
+            ["bash", str(PULL), str(ROOT)],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("contains protected path", result.stderr)
+        self.assertEqual(sentinel.read_bytes(), before)
 
 
 if __name__ == "__main__":
