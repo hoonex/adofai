@@ -48,6 +48,9 @@ mkdir -p "${OUT}/classes" "${OUT}/dex" "${GENERATED_JAVA_DIR}"
 python3 "${ROOT}/tools/apply_mobile_editor_document_safety.py" \
   "${EDITOR_SHELL_TEMPLATE}" \
   "${EDITOR_SHELL}"
+python3 "${ROOT}/tools/apply_mobile_editor_json_strictness.py" \
+  "${EDITOR_SHELL}" \
+  "${EDITOR_SHELL}"
 
 javac \
   -source 8 -target 8 \
