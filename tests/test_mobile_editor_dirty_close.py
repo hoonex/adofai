@@ -119,6 +119,31 @@ class MobileEditorDirtyCloseTests(unittest.TestCase):
         finally:
             temp.cleanup()
 
+    def test_dirty_preview_requires_explicit_save_before_preview(self):
+        temp, generated = self.render()
+        try:
+            text = generated.read_text(encoding="utf-8")
+            helper = text.index("    private static void confirmSaveAndPreview() {")
+            preview = text.index("    private static void previewCurrent() {", helper)
+            confirm = text[helper:preview]
+
+            self.assertIn('.setTitle("Save changes before preview?")', confirm)
+            self.assertIn('.setPositiveButton("Save & preview"', confirm)
+            self.assertIn('.setNegativeButton("Keep editing", null)', confirm)
+            self.assertIn("if (saveCurrent(false)) previewCurrent();", confirm)
+            self.assertNotIn("dirty = false;", confirm)
+            self.assertIn(
+                'setStatus("Unsaved changes: cannot confirm preview save without a foreground Activity", true);',
+                confirm,
+            )
+
+            preview_end = text.index("    private static void setStatus", preview)
+            preview_method = text[preview:preview_end]
+            self.assertIn("if (dirty) {\n            confirmSaveAndPreview();\n            return;\n        }", preview_method)
+            self.assertNotIn("if (dirty && !saveCurrent(false)) return;", preview_method)
+        finally:
+            temp.cleanup()
+
     def test_dirty_close_transform_fails_closed_if_close_surface_moves(self):
         temp, generated = self.render_before_dirty_close()
         try:
@@ -173,6 +198,29 @@ class MobileEditorDirtyCloseTests(unittest.TestCase):
         finally:
             temp.cleanup()
 
+    def test_dirty_close_transform_fails_closed_if_preview_autosave_surface_moves(self):
+        temp, generated = self.render_before_dirty_close()
+        try:
+            text = generated.read_text(encoding="utf-8")
+            original = "        if (dirty && !saveCurrent(false)) return;\n"
+            self.assertEqual(text.count(original), 1)
+            generated.write_text(
+                text.replace(original, "        if (dirty && !saveCurrent(true)) return;\n", 1),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                ["python3", str(DIRTY_CLOSE), str(generated), str(generated)],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+            self.assertIn("Preview autosave ownership", result.stderr)
+        finally:
+            temp.cleanup()
+
     def test_canonical_payload_and_harness_apply_guard_after_picker_transform(self):
         build = BUILD.read_text(encoding="utf-8")
         picker = build.index("apply_mobile_editor_picker_serialization.py")
@@ -187,8 +235,10 @@ class MobileEditorDirtyCloseTests(unittest.TestCase):
         self.assertLess(picker, dirty)
         self.assertIn("requestClose", harness)
         self.assertIn("confirmOpenPath", harness)
+        self.assertIn("confirmSaveAndPreview", harness)
         self.assertIn("Unsaved changes", harness)
         self.assertIn("Discard & open", harness)
+        self.assertIn("Save & preview", harness)
 
     def test_harness_rebuilds_when_dirty_close_guard_changes(self):
         workflow = HARNESS_WORKFLOW.read_text(encoding="utf-8")
