@@ -26,6 +26,13 @@ class DeviceSmokeHarnessTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertNotIn(command, self.text)
 
+    def test_smoke_edit_requires_copy_and_evidence_path_guard(self):
+        self.assertIn("First tap Save As", self.text)
+        self.assertIn("DIFFERENT disposable .adofai filename/path", self.text)
+        self.assertIn("preserve the original chart unchanged", self.text)
+        self.assertIn("refusing dangerous smoke evidence directory", self.text)
+        self.assertIn("refusing smoke evidence directory that contains protected path", self.text)
+
     def test_package_presence_requires_real_pm_path_output(self):
         self.assertIn("PM_PATHS=", self.text)
         self.assertIn("grep -q '^package:'", self.text)
@@ -186,8 +193,8 @@ esac
                 "Floating Editor launcher visible | PASS",
                 "Android-native editor shell visible | PASS",
                 "Modern chart open reports success | PASS",
-                "Save reports success | PASS",
-                "Saved chart reopens | PASS",
+                "Save-As smoke copy + edit/save reports success | PASS",
+                "Saved smoke copy reopens | PASS",
                 "Native preview bridge installed | PASS",
                 "Preview reached current runtime LoadCustomLevel call | PASS",
                 "Preview fail-closed marker | ABSENT",
