@@ -80,6 +80,7 @@ ALIGNED="${TMP}/aligned.apk"
 
 "${APKTOOL_BIN}" d -f "${BASE}" -o "${DECODED}"
 python3 "${ROOT}/tools/patch_android_manifest.py" "${DECODED}/AndroidManifest.xml"
+python3 "${ROOT}/tools/patch_unity_activity.py" "${DECODED}"
 "${APKTOOL_BIN}" b "${DECODED}" -o "${REB}"
 
 python3 "${ROOT}/tools/inject_apk_payload.py" \
