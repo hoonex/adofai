@@ -1,0 +1,71 @@
+name: Build ADOFAI Editor Harness
+
+on:
+  push:
+    branches:
+      - feat/modern-mobile-editor
+    paths:
+      - 'android/editor-harness/**'
+      - 'android/mobile-editor-shell/**'
+      - 'scripts/prepare-editor-harness.sh'
+      - 'scripts/prepare-upstream.sh'
+      - 'tools/apply_mobile_editor_document_safety.py'
+      - 'tools/apply_mobile_editor_json_strictness.py'
+      - 'tools/apply_mobile_editor_picker_serialization.py'
+      - 'tools/apply_hitmargin_storage_guard.py'
+      - 'tools/apply_hitmargin_picker_cancel_guard.py'
+      - '.github/workflows/editor-harness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: editor-harness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Prepare canonical editor sources
+        run: bash scripts/prepare-editor-harness.sh
+
+      - name: Build editor harness APK
+        run: gradle --no-daemon -p android/editor-harness :app:assembleDebug
+
+      - name: Stage artifact
+        run: |
+          mkdir -p dist/editor-harness
+          cp android/editor-harness/app/build/outputs/apk/debug/app-debug.apk \
+            dist/editor-harness/ADOFAI-Editor-Harness.apk
+          sha256sum dist/editor-harness/ADOFAI-Editor-Harness.apk \
+            | tee dist/editor-harness/SHA256SUMS.txt
+
+      - name: Upload editor harness APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: adofai-editor-harness-apk
+          path: dist/editor-harness/
+          if-no-files-found: error
+          retention-days: 14
