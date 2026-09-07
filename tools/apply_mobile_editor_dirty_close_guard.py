@@ -149,6 +149,49 @@ def transform(text: str) -> str:
         "dirty open helper",
     )
 
+    text = replace_exact(
+        text,
+        '''        if (dirty && !saveCurrent(false)) return;
+''',
+        '''        if (dirty) {
+            confirmSaveAndPreview();
+            return;
+        }
+''',
+        "Preview autosave ownership",
+    )
+
+    text = replace_exact(
+        text,
+        '''    private static void previewCurrent() {
+''',
+        '''    private static void confirmSaveAndPreview() {
+        final Activity owner = activity;
+        if (owner == null || owner.isFinishing()) {
+            setStatus("Unsaved changes: cannot confirm preview save without a foreground Activity", true);
+            return;
+        }
+
+        new android.app.AlertDialog.Builder(owner)
+                .setTitle("Save changes before preview?")
+                .setMessage("Preview uses the chart file on disk. Save the current edits first, or keep editing without changing the file.")
+                .setPositiveButton("Save & preview", new android.content.DialogInterface.OnClickListener() {
+                    @Override public void onClick(android.content.DialogInterface ignored, int which) {
+                        // saveCurrent clears dirty only after the atomic file replace
+                        // succeeds. Recursing into previewCurrent is therefore safe and
+                        // cannot loop on a failed save.
+                        if (saveCurrent(false)) previewCurrent();
+                    }
+                })
+                .setNegativeButton("Keep editing", null)
+                .show();
+    }
+
+    private static void previewCurrent() {
+''',
+        "dirty preview helper",
+    )
+
     return text
 
 
@@ -162,7 +205,7 @@ def main() -> int:
     try:
         rendered = transform(source.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, RuntimeError) as error:
-        print(f"dirty-close transform failed: {error}", file=sys.stderr)
+        print(f"dirty-session transform failed: {error}", file=sys.stderr)
         return 3
 
     output.parent.mkdir(parents=True, exist_ok=True)
