@@ -29,6 +29,7 @@ python3 "${ROOT}/tools/apply_hitmargin_file_dialogs.py" "${DEST}"
 python3 "${ROOT}/tools/apply_hitmargin_unity_file_dialogs.py" "${DEST}"
 python3 "${ROOT}/tools/apply_hitmargin_storage_guard.py" "${DEST}"
 python3 "${ROOT}/tools/apply_hitmargin_modern_safe_profile.py" "${DEST}"
+python3 "${ROOT}/tools/apply_mobile_editor_shell.py" "${DEST}" --repo-root "${ROOT}"
 git -C "${DEST}" diff --check
 
 printf 'Prepared pinned mobile hook baseline at %s\n' "${DEST}"
