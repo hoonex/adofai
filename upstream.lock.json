@@ -6,7 +6,7 @@
       "ref": "OpenLevel",
       "commit": "74bcc7a0d8c8be1267504e21e28a35e199b5d4eb",
       "license": "MIT",
-      "purpose": "Modern Android IL2CPP editor/custom-level hook baseline"
+      "purpose": "Legacy Android IL2CPP hook/file-picker baseline; 2.8.3-2.10.1 hooks are isolated behind a 3.3 ABI-safe runtime profile"
     },
     "adofai_format_reference": {
       "repository": "https://github.com/adofaiex/ADOFAI-JS.git",
@@ -14,6 +14,13 @@
       "commit": "1f66bfa8c4146853d239c80c47ed2168d9208d02",
       "license": "BSD-3-Clause",
       "purpose": "Modern .adofai syntax, pathData mapping and event inventory reference"
+    },
+    "adofai_331_runtime_shell": {
+      "repository": "https://github.com/Harrot114514/ADOFAI-MobileLevelLoder.git",
+      "ref": "main",
+      "commit": "401b69f26b2f607181d00b07273bac6bb0524638",
+      "license": "MIT",
+      "purpose": "Exact ADOFAI Android 3.3.1 / Unity 6000.3.10f1 runtime integration, input capture, GLES3 overlay and current custom-level load path; only MIT loader source is consumed"
     }
   }
 }
