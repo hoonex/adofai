@@ -2,7 +2,7 @@ name: verify
 
 on:
   push:
-    branches: [feat/modern-mobile-editor]
+    branches: [main]
   pull_request:
 
 permissions:
