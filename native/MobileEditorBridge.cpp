@@ -47,14 +47,6 @@ bool SetRequiredPreviewState(const std::string& path) {
         return false;
     }
 
-    customLevelIndex.cast<int>().Set(0);
-    internalLevelName.cast<String*>().Set(nullptr);
-    customLevelId.cast<String*>().Set(nullptr);
-    sceneToLoad.cast<String*>().Set(CreateMonoString("scnGame"));
-
-    auto fromBundle = gcs.GetField("loadCustomFromBundle");
-    if (fromBundle.IsValid()) fromBundle.cast<bool>().Set(false);
-
     auto controllerClass = Class("", "scrController");
     if (!controllerClass) {
         LOGE("Mobile editor preview: scrController not found");
@@ -75,6 +67,23 @@ bool SetRequiredPreviewState(const std::string& path) {
     }
 
     String* levelPath = CreateMonoString(path);
+    String* gameScene = CreateMonoString("scnGame");
+    if (!levelPath || !gameScene) {
+        LOGE("Mobile editor preview: required managed strings could not be created");
+        return false;
+    }
+
+    // Mutate global game state only after every required class, field, method,
+    // instance and managed string has been resolved. Validation failures above
+    // therefore leave GCS untouched instead of partially entering custom-level mode.
+    customLevelIndex.cast<int>().Set(0);
+    internalLevelName.cast<String*>().Set(nullptr);
+    customLevelId.cast<String*>().Set(nullptr);
+    sceneToLoad.cast<String*>().Set(gameScene);
+
+    auto fromBundle = gcs.GetField("loadCustomFromBundle");
+    if (fromBundle.IsValid()) fromBundle.cast<bool>().Set(false);
+
     loadCustomLevel.cast<void>()[controller].Call(levelPath, static_cast<String*>(nullptr), false);
     LOGD("Mobile editor preview queued into current runtime: %s", path.c_str());
     return true;
