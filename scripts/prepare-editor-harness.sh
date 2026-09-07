@@ -33,7 +33,7 @@ cp "${UPSTREAM_JAVA}/CustomFileChooser.java" "${GEN}/CustomFileChooser.java"
 # proven for the real payload.
 grep -q 'pickerInFlight' "${GEN}/MobileEditorShell.java"
 grep -q 'Unexpected trailing content after JSON value' "${GEN}/MobileEditorShell.java"
-grep -q 'Existing settings value is not an object' "${GEN}/MobileEditorShell.java"
+grep -q "This chart's settings field is not an object" "${GEN}/MobileEditorShell.java"
 grep -q 'setOnCancelListener' "${GEN}/CustomFileChooser.java"
 grep -q 'Environment.isExternalStorageManager' "${GEN}/FileSelector.java"
 
