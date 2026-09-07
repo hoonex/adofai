@@ -12,6 +12,7 @@ on:
       - 'tools/apply_mobile_editor_document_safety.py'
       - 'tools/apply_mobile_editor_json_strictness.py'
       - 'tools/apply_mobile_editor_picker_serialization.py'
+      - 'tools/apply_mobile_editor_dirty_close_guard.py'
       - 'tools/apply_hitmargin_storage_guard.py'
       - 'tools/apply_hitmargin_picker_cancel_guard.py'
       - '.github/workflows/editor-harness.yml'
