@@ -1,0 +1,33 @@
+name: verify
+
+on:
+  push:
+    branches: [feat/modern-mobile-editor]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run ADOFAI compatibility tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Prepare pinned mobile hook source and apply patches
+        run: bash scripts/prepare-upstream.sh
+
+      - name: Check patched source for whitespace errors
+        run: git -C .work/hitmargin-mobile-mod diff --check
+
+      - name: Verify editor-critical hooks are present
+        run: |
+          set -euo pipefail
+          SRC=.work/hitmargin-mobile-mod/app/src/main/jni
+          grep -q 'enableEditorDesktopMode' "$SRC/Main.cpp"
+          grep -q 'SaveFilePanel hook installed' "$SRC/FilePicker.cpp"
+          grep -q 'OpenFolderPanel hook installed' "$SRC/FilePicker.cpp"
+          grep -q 'PathToStringArray' "$SRC/FilePicker.cpp"
