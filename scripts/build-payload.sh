@@ -33,14 +33,17 @@ bash "${ROOT}/scripts/prepare-upstream.sh"
 SRC="${ROOT}/.work/hitmargin-mobile-mod"
 JAVA_SRC="${SRC}/app/src/main/java/com/unity3d/player"
 EDITOR_SHELL_TEMPLATE="${ROOT}/android/mobile-editor-shell/src/com/unity3d/player/MobileEditorShell.java"
+EDITOR_BOOTSTRAP="${ROOT}/android/mobile-editor-shell/src/com/unity3d/player/MobileEditorBootstrap.java"
 GENERATED_JAVA_DIR="${OUT}/generated/com/unity3d/player"
 EDITOR_SHELL="${GENERATED_JAVA_DIR}/MobileEditorShell.java"
 JNI="${SRC}/app/src/main/jni"
 
-if [[ ! -f "${EDITOR_SHELL_TEMPLATE}" ]]; then
-  echo "mobile editor shell source missing: ${EDITOR_SHELL_TEMPLATE}" >&2
-  exit 2
-fi
+for required in "${EDITOR_SHELL_TEMPLATE}" "${EDITOR_BOOTSTRAP}"; do
+  if [[ ! -f "${required}" ]]; then
+    echo "mobile editor Java source missing: ${required}" >&2
+    exit 2
+  fi
+done
 
 rm -rf "${OUT}"
 mkdir -p "${OUT}/classes" "${OUT}/dex" "${GENERATED_JAVA_DIR}"
@@ -61,6 +64,7 @@ javac \
   -d "${OUT}/classes" \
   "${JAVA_SRC}/CustomFileChooser.java" \
   "${JAVA_SRC}/FileSelector.java" \
+  "${EDITOR_BOOTSTRAP}" \
   "${EDITOR_SHELL}"
 
 jar cf "${OUT}/filepicker.jar" -C "${OUT}/classes" .
