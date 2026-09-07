@@ -26,7 +26,12 @@ final class SplitSigner {
             .setInputApk(input)
             .setOutputApk(output)
             .setOtherSignersSignaturesPreserved(false)
-            .setV1SigningEnabled(false)
+            // Keep v1/JAR signing in addition to v2/v3. ApkVerifier validates the
+            // package against the APK's declared platform range, and the current
+            // Play build still requires META-INF/MANIFEST.MF for that range.
+            // Omitting v1 produced a real-device failure:
+            //   apksig verification failed: [Missing META-INF/MANIFEST.MF]
+            .setV1SigningEnabled(true)
             .setV2SigningEnabled(true)
             .setV3SigningEnabled(true)
             .setV4SigningEnabled(false)
