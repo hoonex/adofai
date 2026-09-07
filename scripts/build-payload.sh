@@ -31,7 +31,13 @@ command -v sha256sum >/dev/null
 bash "${ROOT}/scripts/prepare-upstream.sh"
 SRC="${ROOT}/.work/hitmargin-mobile-mod"
 JAVA_SRC="${SRC}/app/src/main/java/com/unity3d/player"
+EDITOR_SHELL="${ROOT}/android/mobile-editor-shell/src/com/unity3d/player/MobileEditorShell.java"
 JNI="${SRC}/app/src/main/jni"
+
+if [[ ! -f "${EDITOR_SHELL}" ]]; then
+  echo "mobile editor shell source missing: ${EDITOR_SHELL}" >&2
+  exit 2
+fi
 
 rm -rf "${OUT}"
 mkdir -p "${OUT}/classes" "${OUT}/dex"
@@ -41,7 +47,8 @@ javac \
   -bootclasspath "${ANDROID_JAR}" \
   -d "${OUT}/classes" \
   "${JAVA_SRC}/CustomFileChooser.java" \
-  "${JAVA_SRC}/FileSelector.java"
+  "${JAVA_SRC}/FileSelector.java" \
+  "${EDITOR_SHELL}"
 
 jar cf "${OUT}/filepicker.jar" -C "${OUT}/classes" .
 "${D8}" \
