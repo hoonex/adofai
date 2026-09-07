@@ -35,6 +35,7 @@ grep -q 'ADOFAI / 공유' "${GEN}/MobileEditorShell.java"
 grep -q 'pickerInFlight' "${GEN}/MobileEditorShell.java"
 grep -q 'Unexpected trailing content after JSON value' "${GEN}/MobileEditorShell.java"
 grep -q 'requestClose' "${GEN}/MobileEditorShell.java"
+grep -q 'confirmOpenPath' "${GEN}/MobileEditorShell.java"
 grep -q 'Discard & open' "${GEN}/MobileEditorShell.java"
 
 test -s "${SAF_SELECTOR}"
