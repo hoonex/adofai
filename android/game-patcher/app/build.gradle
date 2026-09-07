@@ -34,6 +34,7 @@ android {
 
 dependencies {
     implementation 'org.smali:dexlib2:2.5.2'
+    implementation 'com.google.guava:guava:31.1-android'
     implementation 'com.android.tools.build:apksig:8.7.3'
     implementation 'com.android:zipflinger:8.7.3'
     testImplementation 'junit:junit:4.13.2'
