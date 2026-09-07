@@ -5,7 +5,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="${ROOT}/.work/hitmargin-mobile-mod"
 REPO="https://github.com/HitMargin/A-Dance-of-Fire-and-Ice-Mobile---Load-Custom-Level.git"
 SHA="74bcc7a0d8c8be1267504e21e28a35e199b5d4eb"
-PATCH_DIR="${ROOT}/patches/hitmargin"
 
 mkdir -p "${ROOT}/.work"
 
@@ -25,14 +24,10 @@ if [[ "${ACTUAL}" != "${SHA}" ]]; then
   exit 2
 fi
 
-if compgen -G "${PATCH_DIR}/*.patch" >/dev/null; then
-  for patch in "${PATCH_DIR}"/*.patch; do
-    git -C "${DEST}" apply --check "${patch}"
-    git -C "${DEST}" apply "${patch}"
-    printf 'Applied patch: %s\n' "$(basename "${patch}")"
-  done
-fi
+python3 "${ROOT}/tools/apply_hitmargin_editor_mode.py" "${DEST}"
+python3 "${ROOT}/tools/apply_hitmargin_file_dialogs.py" "${DEST}"
+git -C "${DEST}" diff --check
 
 printf 'Prepared pinned mobile hook baseline at %s\n' "${DEST}"
 printf 'Base commit: %s\n' "${ACTUAL}"
-printf 'Working tree now contains only reviewed local patches on top of that identity.\n'
+printf 'Working tree contains only identity-checked local transforms on top of that source.\n'
