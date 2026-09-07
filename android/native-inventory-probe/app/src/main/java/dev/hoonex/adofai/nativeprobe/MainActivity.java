@@ -40,9 +40,9 @@ import java.util.zip.ZipFile;
 /**
  * Tiny, read-only probe for the exact ADOFAI 3.3.1 split install.
  *
- * It does not copy game binaries. It records only APK/split metadata and the
- * names/sizes/compression modes of lib/arm64-v8a/*.so entries so the phone-only
- * bootstrap strategy can be chosen from exact evidence instead of assumptions.
+ * It does not copy game binaries. It records APK/split metadata, arm64 native
+ * library inventory, and PackageManager routing evidence for possible external
+ * .adofai handoff so the phone-only strategy can be chosen from exact evidence.
  */
 public final class MainActivity extends Activity {
     private static final String TARGET_PACKAGE = "com.fizzd.connectedworlds";
@@ -73,8 +73,9 @@ public final class MainActivity extends Activity {
 
         TextView description = new TextView(this);
         description.setText(
-                "설치된 ADOFAI의 split별 arm64 네이티브 라이브러리 이름/크기만 확인합니다. " +
-                "게임 바이너리나 에셋은 복사하지 않습니다.");
+                "설치된 ADOFAI의 split별 arm64 네이티브 라이브러리 이름/크기와 " +
+                "외부 .adofai 파일 인텐트 처리 가능성만 확인합니다. " +
+                "게임 바이너리나 에셋은 복사하지 않고 게임을 실행하지도 않습니다.");
         description.setTextSize(15f);
         LinearLayout.LayoutParams descriptionParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -83,7 +84,7 @@ public final class MainActivity extends Activity {
         root.addView(description, descriptionParams);
 
         inspectButton = new Button(this);
-        inspectButton.setText("3.3.1 native inventory 만들기");
+        inspectButton.setText("3.3.1 진단 보고서 만들기");
         inspectButton.setAllCaps(false);
         LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -126,7 +127,7 @@ public final class MainActivity extends Activity {
     private void beginInspection() {
         inspectButton.setEnabled(false);
         progressBar.setVisibility(View.VISIBLE);
-        statusView.setText("설치된 3.3.1 split 구조 확인 중…");
+        statusView.setText("설치된 3.3.1 split/인텐트 구조 확인 중…");
 
         executor.execute(new Runnable() {
             @Override public void run() {
@@ -238,7 +239,7 @@ public final class MainActivity extends Activity {
                 : new File(appInfo.nativeLibraryDir).getName());
 
         JSONObject report = new JSONObject();
-        report.put("format", "adofai-native-inventory-v1");
+        report.put("format", "adofai-native-inventory-v2");
         report.put("package", TARGET_PACKAGE);
         report.put("version_name", versionName);
         report.put("version_code", versionCode);
@@ -250,11 +251,13 @@ public final class MainActivity extends Activity {
         report.put("installed_apks", installedApks);
         report.put("arm64_native_entries", nativeArray);
         report.put("signals", signals);
+        report.put("external_file_intents", IntentCapabilityProbe.build(pm, TARGET_PACKAGE));
 
         JSONArray notes = new JSONArray();
         notes.put("This report records ZIP entry metadata only; no game native library bytes are exported.");
         notes.put("Library presence alone does not prove Android/Unity automatically loads that library.");
-        notes.put("The report is evidence for choosing the next phone-only bootstrap experiment, not device-runtime proof.");
+        notes.put("ACTION_VIEW resolution proves only Android routing capability, not that ADOFAI consumes the URI as a custom level.");
+        notes.put("The probe does not launch ADOFAI or grant a real chart file; a separate launch test is required before using official-game handoff as Preview proof.");
         report.put("evidence_notes", notes);
 
         String suggestedName = "adofai-native-inventory-3.3.1-300382.json";
