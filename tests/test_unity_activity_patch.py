@@ -9,7 +9,7 @@ import patch_unity_activity
 
 
 class UnityActivityPatchTests(unittest.TestCase):
-    def test_injects_load_library_and_bumps_locals(self):
+    def test_injects_zero_register_secondary_dex_bootstrap(self):
         source = '''.class public Lcom/unity3d/player/UnityPlayerActivity;
 .super Landroid/app/Activity;
 
@@ -23,30 +23,18 @@ class UnityActivityPatchTests(unittest.TestCase):
 '''
         patched, changed = patch_unity_activity.patch_smali_text(source)
         self.assertTrue(changed)
-        self.assertIn('.locals 1', patched)
-        self.assertIn('const-string v0, "October"', patched)
-        self.assertIn('System;->loadLibrary(Ljava/lang/String;)V', patched)
+        self.assertIn('.locals 0', patched)
+        self.assertIn(
+            'invoke-static {}, Lcom/unity3d/player/MobileEditorBootstrap;->init()V',
+            patched,
+        )
+        self.assertNotIn('const-string v0, "October"', patched)
 
         patched_again, changed_again = patch_unity_activity.patch_smali_text(patched)
         self.assertFalse(changed_again)
         self.assertEqual(patched_again, patched)
 
-    def test_registers_form_with_existing_local_is_safe(self):
-        source = '''.class public Lcom/unity3d/player/UnityPlayerActivity;
-.super Landroid/app/Activity;
-
-.method public onCreate(Landroid/os/Bundle;)V
-    .registers 3
-    invoke-super {p0, p1}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
-    return-void
-.end method
-'''
-        patched, changed = patch_unity_activity.patch_smali_text(source)
-        self.assertTrue(changed)
-        self.assertIn('.registers 3', patched)
-        self.assertIn('const-string v0, "October"', patched)
-
-    def test_registers_form_without_local_fails_closed(self):
+    def test_registers_form_without_scratch_local_is_now_safe(self):
         source = '''.class public Lcom/unity3d/player/UnityPlayerActivity;
 .super Landroid/app/Activity;
 
@@ -56,7 +44,39 @@ class UnityActivityPatchTests(unittest.TestCase):
     return-void
 .end method
 '''
-        with self.assertRaisesRegex(ValueError, "no scratch local"):
+        patched, changed = patch_unity_activity.patch_smali_text(source)
+        self.assertTrue(changed)
+        self.assertIn('.registers 2', patched)
+        self.assertIn(
+            'invoke-static {}, Lcom/unity3d/player/MobileEditorBootstrap;->init()V',
+            patched,
+        )
+
+    def test_existing_direct_october_bootstrap_is_preserved(self):
+        source = '''.class public Lcom/unity3d/player/UnityPlayerActivity;
+.super Landroid/app/Activity;
+
+.method public onCreate(Landroid/os/Bundle;)V
+    .locals 1
+    const-string v0, "October"
+    invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
+    return-void
+.end method
+'''
+        patched, changed = patch_unity_activity.patch_smali_text(source)
+        self.assertFalse(changed)
+        self.assertEqual(patched, source)
+
+    def test_missing_register_directive_fails_closed(self):
+        source = '''.class public Lcom/unity3d/player/UnityPlayerActivity;
+.super Landroid/app/Activity;
+
+.method public onCreate(Landroid/os/Bundle;)V
+    invoke-super {p0, p1}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
+    return-void
+.end method
+'''
+        with self.assertRaisesRegex(ValueError, "neither .locals nor .registers"):
             patch_unity_activity.patch_smali_text(source)
 
     def test_missing_oncreate_fails_closed(self):
@@ -65,6 +85,23 @@ class UnityActivityPatchTests(unittest.TestCase):
                 '.class public Lcom/unity3d/player/UnityPlayerActivity;\n'
                 '.super Landroid/app/Activity;\n'
             )
+
+    def test_canonical_payload_contains_bootstrap_class(self):
+        build = (ROOT / "scripts" / "build-payload.sh").read_text(encoding="utf-8")
+        bootstrap = (
+            ROOT
+            / "android"
+            / "mobile-editor-shell"
+            / "src"
+            / "com"
+            / "unity3d"
+            / "player"
+            / "MobileEditorBootstrap.java"
+        ).read_text(encoding="utf-8")
+        self.assertIn('EDITOR_BOOTSTRAP="${ROOT}/android/mobile-editor-shell/src/com/unity3d/player/MobileEditorBootstrap.java"', build)
+        self.assertIn('"${EDITOR_BOOTSTRAP}" \\', build)
+        self.assertIn('System.loadLibrary("October")', bootstrap)
+        self.assertIn('public static synchronized void init()', bootstrap)
 
 
 if __name__ == "__main__":
