@@ -51,6 +51,9 @@ python3 "${ROOT}/tools/apply_mobile_editor_document_safety.py" \
 python3 "${ROOT}/tools/apply_mobile_editor_json_strictness.py" \
   "${EDITOR_SHELL}" \
   "${EDITOR_SHELL}"
+python3 "${ROOT}/tools/apply_mobile_editor_picker_serialization.py" \
+  "${EDITOR_SHELL}" \
+  "${EDITOR_SHELL}"
 
 javac \
   -source 8 -target 8 \
