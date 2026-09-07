@@ -81,7 +81,7 @@ class MobileEditorJsonStrictnessTests(unittest.TestCase):
         text = BUILD.read_text(encoding="utf-8")
         lossless = text.index("apply_mobile_editor_document_safety.py")
         strict = text.index("apply_mobile_editor_json_strictness.py")
-        javac = text.index("javac")
+        javac = text.index("\njavac ")
         self.assertLess(lossless, strict)
         self.assertLess(strict, javac)
         strict_call = text[strict:javac]
