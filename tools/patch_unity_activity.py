@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Ensure decoded UnityPlayerActivity loads libOctober.so from onCreate.
+"""Ensure decoded UnityPlayerActivity starts the injected editor runtime.
 
-The HitMargin native hook exports JNI_OnLoad, but replacing/injecting the ELF alone
-is insufficient unless the game process loads the October library. Release 1.0.3
-explicitly required a System.loadLibrary("October") call in UnityPlayerActivity.
-This tool performs that bootstrap patch idempotently on apktool-decoded smali.
+The native hook exports JNI_OnLoad, but replacing/injecting libOctober.so alone is
+insufficient unless the game process loads it. The injected secondary DEX now owns
+that load in MobileEditorBootstrap.init(). UnityPlayerActivity only needs a
+zero-argument invoke-static, so this patch consumes no v-registers and never has to
+renumber an existing .locals/.registers frame.
 """
 
 from __future__ import annotations
@@ -18,54 +19,34 @@ ONCREATE_RE = re.compile(
     r"(?ms)^\.method(?P<header>[^\n]*\bonCreate\(Landroid/os/Bundle;\)V)\n"
     r"(?P<body>.*?)^\.end method\s*$"
 )
-LOAD_SNIPPET = (
-    '    const-string v0, "October"\n'
-    '    invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V\n'
+BOOTSTRAP_CALL = (
+    "    invoke-static {}, "
+    "Lcom/unity3d/player/MobileEditorBootstrap;->init()V\n"
+)
+DIRECT_OCTOBER_MARKERS = (
+    '"October"',
+    "System;->loadLibrary(Ljava/lang/String;)V",
 )
 
 
-def _ensure_one_local(method_body: str) -> str:
-    locals_match = re.search(r"(?m)^(\s*)\.locals\s+(\d+)\s*$", method_body)
-    if locals_match:
-        current = int(locals_match.group(2))
-        if current >= 1:
-            return method_body
-        start, end = locals_match.span()
-        replacement = f"{locals_match.group(1)}.locals 1"
-        return method_body[:start] + replacement + method_body[end:]
-
-    registers_match = re.search(r"(?m)^(\s*)\.registers\s+(\d+)\s*$", method_body)
-    if registers_match:
-        # onCreate is an instance method with p0 + p1. With .registers, v-register
-        # numbers include parameter registers. Increasing the total register count can
-        # silently change the meaning of existing raw vN parameter references, so only
-        # use v0 when the original method already reserved at least one local register.
-        current = int(registers_match.group(2))
-        if current >= 3:
-            return method_body
-        raise ValueError(
-            "UnityPlayerActivity.onCreate uses .registers with no scratch local; "
-            "refusing to renumber existing registers automatically"
-        )
-
-    raise ValueError("onCreate has neither .locals nor .registers directive")
-
-
 def patch_smali_text(text: str) -> tuple[str, bool]:
-    if 'System;->loadLibrary(Ljava/lang/String;)V' in text and '"October"' in text:
+    if "Lcom/unity3d/player/MobileEditorBootstrap;->init()V" in text:
+        return text, False
+    if all(marker in text for marker in DIRECT_OCTOBER_MARKERS):
+        # Preserve an already-working legacy bootstrap instead of loading twice.
         return text, False
 
     match = ONCREATE_RE.search(text)
     if not match:
         raise ValueError("UnityPlayerActivity.onCreate(Bundle) not found")
 
-    body = _ensure_one_local(match.group("body"))
+    body = match.group("body")
     directive = re.search(r"(?m)^\s*\.(?:locals|registers)\s+\d+\s*$", body)
     if not directive:
-        raise ValueError("unable to locate register directive after normalization")
+        raise ValueError("onCreate has neither .locals nor .registers directive")
 
     insert_at = directive.end()
-    new_body = body[:insert_at] + "\n\n" + LOAD_SNIPPET + body[insert_at:]
+    new_body = body[:insert_at] + "\n\n" + BOOTSTRAP_CALL + body[insert_at:]
     replacement = ".method" + match.group("header") + "\n" + new_body + ".end method"
     return text[: match.start()] + replacement + text[match.end() :], True
 
@@ -90,14 +71,16 @@ def patch_decoded_apk(decoded_root: Path) -> tuple[Path, bool]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Patch UnityPlayerActivity to load libOctober.so")
+    parser = argparse.ArgumentParser(
+        description="Patch UnityPlayerActivity to invoke the secondary-DEX editor bootstrap"
+    )
     parser.add_argument("decoded_apk", type=Path, help="apktool-decoded APK directory")
     args = parser.parse_args()
 
     root = args.decoded_apk.resolve()
     activity, changed = patch_decoded_apk(root)
     action = "patched" if changed else "already configured"
-    print(f"October bootstrap {action}: {activity}")
+    print(f"Editor bootstrap {action}: {activity}")
     return 0
 
 
