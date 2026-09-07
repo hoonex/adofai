@@ -1,0 +1,95 @@
+diff --git a/ADOFAI-Mod-Info.json.example b/ADOFAI-Mod-Info.json.example
+index cbf673d..0fa74a1 100644
+--- a/ADOFAI-Mod-Info.json.example
++++ b/ADOFAI-Mod-Info.json.example
+@@ -10,6 +10,7 @@
+   "enableHidePauseButton": true,           // 隐藏暂停按钮（scrUIController.Update）
+   "enableHidePerfectHitText": true,        // 隐藏 Perfect 判定文字（ShowHitText 跳过 Perfect 显示）
+   "enableCustomUIHitTest": true,           // 使用自定义 UI 点击检测逻辑（IsScreenPointInsideUIElements 使用 EventSystem Raycast）
++  "enableEditorDesktopMode": true,         // 编辑器场景使用桌面编辑器布局/输入分支
+ 
+   // 路径与难度配置
+   "enableCustomBundlesPath": true,         // 启用自定义 DLC 包路径
+diff --git a/app/src/main/jni/Config.h b/app/src/main/jni/Config.h
+index 45546af..9aac2ec 100644
+--- a/app/src/main/jni/Config.h
++++ b/app/src/main/jni/Config.h
+@@ -15,6 +15,7 @@ struct ModConfig {
+     bool enableHidePauseButton = true;
+     bool enableHidePerfectHitText = true;
+     bool enableCustomUIHitTest = true;
++    bool enableEditorDesktopMode = true;
+ 
+     // 路径与难度
+     bool enableCustomBundlesPath = true;
+diff --git a/app/src/main/jni/Config.cpp b/app/src/main/jni/Config.cpp
+index a26b5d7..d2433e7 100644
+--- a/app/src/main/jni/Config.cpp
++++ b/app/src/main/jni/Config.cpp
+@@ -49,6 +49,7 @@ static bool parseConfig(const std::string& content) {
+             else SET_BOOL("enableHidePauseButton", enableHidePauseButton);
+             else SET_BOOL("enableHidePerfectHitText", enableHidePerfectHitText);
+             else SET_BOOL("enableCustomUIHitTest", enableCustomUIHitTest);
++            else SET_BOOL("enableEditorDesktopMode", enableEditorDesktopMode);
+             else SET_BOOL("enableCustomBundlesPath", enableCustomBundlesPath);
+             else if (key == "bundlesLoadPath") g_modConfig.bundlesLoadPath = trim(valueStr, " \t\n\r\"");
+             else SET_BOOL("enableDifficultyUIMode", enableDifficultyUIMode);
+@@ -93,6 +94,7 @@ bool loadConfigFromFile() {
+             outFile << "  \"enableHidePauseButton\": true,\n";
+             outFile << "  \"enableHidePerfectHitText\": true,\n";
+             outFile << "  \"enableCustomUIHitTest\": true,\n";
++            outFile << "  \"enableEditorDesktopMode\": true,\n";
+             outFile << "  \"enableCustomBundlesPath\": true,\n";
+             outFile << "  \"bundlesLoadPath\": \"/sdcard/DLC/Bundles\",\n";
+diff --git a/app/src/main/jni/Hooks.cpp b/app/src/main/jni/Hooks.cpp
+index bbfb752..f18c13c 100644
+--- a/app/src/main/jni/Hooks.cpp
++++ b/app/src/main/jni/Hooks.cpp
+@@ -55,13 +55,23 @@ DifficultyUIMode DetermineDifficultyUIModeMet() {
+     return DifficultyUIMode::ShowAll;
+ }
+ 
++static bool NeedsDesktopEditorMode(const std::string& sceneName) {
++    if (sceneName == "scnEditor" || sceneName.rfind("scnEditor", 0) == 0) {
++        return true;
++    }
++    return sceneName == "scnTaroMenu0" || sceneName == "scnTaroMenu1" ||
++           sceneName == "scnTaroMenu2" || sceneName == "scnTaroMenu3";
++}
++
+ bool (*old_isMobile)() = nullptr;
+ bool IsMobile() {
+     auto scene = g_get_sceneName.Call();
+-    if (scene && (scene->str() == "scnTaroMenu0" || scene->str() == "scnTaroMenu1" ||
+-                  scene->str() == "scnTaroMenu2" || scene->str() == "scnTaroMenu3")) {
++    if (scene && NeedsDesktopEditorMode(scene->str())) {
+         return false;
+     }
+-    return old_isMobile();
++    // Fallback must remain safe even if a future target changes the original hook binding.
++    return old_isMobile ? old_isMobile() : true;
+ }
+ 
+ void (*old_QuitToMainMenu)(UnityEngine::Object*) = nullptr;
+diff --git a/app/src/main/jni/Main.cpp b/app/src/main/jni/Main.cpp
+index eb0a4e2..4cf3ef6 100644
+--- a/app/src/main/jni/Main.cpp
++++ b/app/src/main/jni/Main.cpp
+@@ -68,6 +68,18 @@ void start() {
+         LOGD("Hook: enableDifficultyUIMode enabled");
+     }
+ 
++    if (g_modConfig.enableEditorDesktopMode) {
++        auto mobileMode = Class("", "ADOBase").GetMethod("get_isMobile");
++        if (mobileMode.IsValid()) {
++            BasicHook(mobileMode, IsMobile, old_isMobile);
++            LOGD("Hook: enableEditorDesktopMode enabled");
++        } else {
++            // Do not silently claim the editor-layout fix when the target build moved the method.
++            LOGE("Hook: enableEditorDesktopMode unavailable (ADOBase.get_isMobile not found)");
++        }
++    }
++
+     if (g_modConfig.enableLoadLevel) {
+         auto isEditor = Class("","ADOBase").GetMethod("get_isUnityEditor");
+         BasicHook(isEditor, IsUnityEditorMet, (void*)nullptr);
