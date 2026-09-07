@@ -23,6 +23,9 @@ for command in git javac jar python3 sha256sum zip; do command -v "${command}" >
 
 rm -rf "${OUT}"
 mkdir -p "${OUT}"
+# Canonicalize before later subshells change cwd. Otherwise a caller-supplied
+# relative OUT would make zip resolve its destination underneath module-stage.
+OUT="$(cd "${OUT}" && pwd)"
 
 # Build the identity-pinned current-runtime native preview bridge, but remove the
 # APK-injection Java bootstrap. Zygisk owns Java/Dex loading in this distribution.
