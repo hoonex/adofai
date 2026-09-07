@@ -18,6 +18,32 @@ DEX="${PAYLOAD}/classes2.dex"
 LIB="${PAYLOAD}/libOctober.so"
 OUTPUT_APKS="${OUTPUT_DIR}/apks"
 
+is_same_or_parent() {
+  local parent="$1"
+  local child="$2"
+  [[ "$child" == "$parent" || "$child" == "$parent/"* ]]
+}
+
+# OUTPUT_DIR is deleted before each rebuild. Refuse layouts where that deletion
+# could remove source APKs, the payload, or the repository itself. A normal output
+# directory *inside* the repository (for example dist/modded-splits) remains valid.
+if [[ -z "$OUTPUT_DIR" || "$OUTPUT_DIR" == "/" ]]; then
+  echo "refusing dangerous output directory: ${OUTPUT_DIR:-<empty>}" >&2
+  exit 2
+fi
+if is_same_or_parent "$OUTPUT_DIR" "$INPUT_DIR" || is_same_or_parent "$INPUT_DIR" "$OUTPUT_DIR"; then
+  echo "output directory must not overlap installed-splits input: $OUTPUT_DIR vs $INPUT_DIR" >&2
+  exit 2
+fi
+if is_same_or_parent "$OUTPUT_DIR" "$PAYLOAD" || is_same_or_parent "$PAYLOAD" "$OUTPUT_DIR"; then
+  echo "output directory must not overlap payload input: $OUTPUT_DIR vs $PAYLOAD" >&2
+  exit 2
+fi
+if is_same_or_parent "$OUTPUT_DIR" "$ROOT"; then
+  echo "refusing output directory that is the repository root or its parent: $OUTPUT_DIR" >&2
+  exit 2
+fi
+
 for path in "$BASE" "$ARM64" "$DEX" "$LIB"; do
   if [[ ! -s "$path" ]]; then
     echo "required input missing or empty: $path" >&2
