@@ -31,7 +31,22 @@ class UnityActivityPatchTests(unittest.TestCase):
         self.assertFalse(changed_again)
         self.assertEqual(patched_again, patched)
 
-    def test_registers_form_reserves_v0(self):
+    def test_registers_form_with_existing_local_is_safe(self):
+        source = '''.class public Lcom/unity3d/player/UnityPlayerActivity;
+.super Landroid/app/Activity;
+
+.method public onCreate(Landroid/os/Bundle;)V
+    .registers 3
+    invoke-super {p0, p1}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
+    return-void
+.end method
+'''
+        patched, changed = patch_unity_activity.patch_smali_text(source)
+        self.assertTrue(changed)
+        self.assertIn('.registers 3', patched)
+        self.assertIn('const-string v0, "October"', patched)
+
+    def test_registers_form_without_local_fails_closed(self):
         source = '''.class public Lcom/unity3d/player/UnityPlayerActivity;
 .super Landroid/app/Activity;
 
@@ -41,10 +56,8 @@ class UnityActivityPatchTests(unittest.TestCase):
     return-void
 .end method
 '''
-        patched, changed = patch_unity_activity.patch_smali_text(source)
-        self.assertTrue(changed)
-        self.assertIn('.registers 3', patched)
-        self.assertIn('const-string v0, "October"', patched)
+        with self.assertRaisesRegex(ValueError, "no scratch local"):
+            patch_unity_activity.patch_smali_text(source)
 
     def test_missing_oncreate_fails_closed(self):
         with self.assertRaises(ValueError):
