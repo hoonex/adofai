@@ -26,6 +26,7 @@ fi
 
 python3 "${ROOT}/tools/apply_hitmargin_editor_mode.py" "${DEST}"
 python3 "${ROOT}/tools/apply_hitmargin_file_dialogs.py" "${DEST}"
+python3 "${ROOT}/tools/apply_hitmargin_unity_file_dialogs.py" "${DEST}"
 python3 "${ROOT}/tools/apply_hitmargin_storage_guard.py" "${DEST}"
 git -C "${DEST}" diff --check
 
