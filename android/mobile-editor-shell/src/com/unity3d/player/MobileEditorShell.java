@@ -354,9 +354,7 @@ public final class MobileEditorShell {
     private static JSONArray parseAngleData(String text) throws JSONException {
         JSONArray result = new JSONArray();
         String normalized = text.trim();
-        if (normalized.startsWith("[")) {
-            return new JSONArray(normalized);
-        }
+        if (normalized.startsWith("[")) return new JSONArray(normalized);
         if (normalized.length() == 0) return result;
         String[] parts = normalized.split("[,\\s]+");
         for (String part : parts) {
@@ -509,7 +507,7 @@ public final class MobileEditorShell {
                 JSONArray array = getOrCreateArray(name);
                 JSONObject event = array.optJSONObject(position);
                 selected[0] = position;
-                raw.setText(event == null ? String.valueOf(array.opt(position)) : event.toString(2));
+                raw.setText(prettyJson(event == null ? array.opt(position) : event));
             }
         });
         refresh.run();
@@ -575,7 +573,7 @@ public final class MobileEditorShell {
         body.addView(text("Raw document", 18, Color.WHITE));
         body.addView(text("Fallback for current/future fields not covered by the structured tabs. Applying replaces the in-memory root only after the entire object parses successfully.", 12, Color.rgb(170, 170, 180)));
         final EditText raw = editor(22);
-        raw.setText(document.toString(2));
+        raw.setText(prettyJson(document));
         body.addView(raw);
         Button apply = actionButton("Apply raw JSON");
         apply.setOnClickListener(new View.OnClickListener() {
@@ -619,9 +617,19 @@ public final class MobileEditorShell {
 
     private static String jsonValueText(Object value) {
         if (value == null || value == JSONObject.NULL) return "null";
-        if (value instanceof JSONObject) return ((JSONObject) value).toString(2);
-        if (value instanceof JSONArray) return ((JSONArray) value).toString(2);
+        if (value instanceof JSONObject || value instanceof JSONArray) return prettyJson(value);
         if (value instanceof String) return JSONObject.quote((String) value);
+        return String.valueOf(value);
+    }
+
+    private static String prettyJson(Object value) {
+        if (value == null || value == JSONObject.NULL) return "null";
+        try {
+            if (value instanceof JSONObject) return ((JSONObject) value).toString(2);
+            if (value instanceof JSONArray) return ((JSONArray) value).toString(2);
+        } catch (JSONException error) {
+            Log.w(TAG, "Pretty JSON formatting failed; using compact JSON", error);
+        }
         return String.valueOf(value);
     }
 
@@ -787,7 +795,7 @@ public final class MobileEditorShell {
 
             FileOutputStream stream = new FileOutputStream(temp, false);
             OutputStreamWriter writer = new OutputStreamWriter(stream, "UTF-8");
-            writer.write(document.toString(2));
+            writer.write(prettyJson(document));
             writer.write("\n");
             writer.flush();
             stream.getFD().sync();
