@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE="${ADOFAI_PACKAGE:-com.fizzd.connectedworlds}"
 
 if [[ $# -ne 1 ]]; then
@@ -14,6 +15,28 @@ if [[ -z "$ADB_BIN" ]]; then
   echo "adb is required (or set ADB_BIN)" >&2
   exit 2
 fi
+
+is_same_or_parent() {
+  local parent="$1"
+  local child="$2"
+  [[ "$child" == "$parent" || "$child" == "$parent/"* ]]
+}
+
+# OUTPUT is removed before collection. Never allow a filesystem root, shallow
+# top-level directory, repository/current-work directory, or home directory to be
+# selected as that destructive boundary. Normal nested outputs remain valid.
+PWD_REAL="$(pwd -P)"
+HOME_REAL="$(realpath -m "${HOME:-/__adofai_no_home__}")"
+if [[ -z "$OUTPUT" || "$OUTPUT" == "/" || "$OUTPUT" =~ ^/[^/]+$ ]]; then
+  echo "refusing dangerous collection output directory: ${OUTPUT:-<empty>}" >&2
+  exit 2
+fi
+for protected in "$ROOT" "$PWD_REAL" "$HOME_REAL"; do
+  if is_same_or_parent "$OUTPUT" "$protected"; then
+    echo "refusing collection output directory that contains protected path $protected: $OUTPUT" >&2
+    exit 2
+  fi
+done
 
 state="$($ADB_BIN get-state 2>/dev/null || true)"
 if [[ "$state" != "device" ]]; then
