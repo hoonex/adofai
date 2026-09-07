@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE="${ADOFAI_PACKAGE:-com.fizzd.connectedworlds}"
 ADB_BIN="${ADB_BIN:-$(command -v adb || true)}"
 
@@ -9,6 +10,7 @@ if [[ $# -ne 1 ]]; then
   echo "" >&2
   echo "Runs a guided, non-destructive real-device smoke test against an already-installed" >&2
   echo "ADOFAI mobile-editor build. It never installs, uninstalls, clears app data, or changes signing state." >&2
+  echo "The guided edit is performed only after Save As creates a separate smoke-test chart copy." >&2
   exit 2
 fi
 
@@ -30,6 +32,27 @@ if ! grep -q '^package:' <<<"$PM_PATHS"; then
 fi
 
 OUT="$(realpath -m "$1")"
+is_same_or_parent() {
+  local parent="$1"
+  local child="$2"
+  [[ "$child" == "$parent" || "$child" == "$parent/"* ]]
+}
+
+# OUT is deliberately recreated for each run. Refuse any path whose recursive
+# deletion could consume a filesystem root, repository/work directory, or home.
+PWD_REAL="$(pwd -P)"
+HOME_REAL="$(realpath -m "${HOME:-/__adofai_no_home__}")"
+if [[ -z "$OUT" || "$OUT" == "/" || "$OUT" =~ ^/[^/]+$ ]]; then
+  echo "refusing dangerous smoke evidence directory: ${OUT:-<empty>}" >&2
+  exit 2
+fi
+for protected in "$ROOT" "$PWD_REAL" "$HOME_REAL"; do
+  if is_same_or_parent "$OUT" "$protected"; then
+    echo "refusing smoke evidence directory that contains protected path $protected: $OUT" >&2
+    exit 2
+  fi
+done
+
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
@@ -139,18 +162,20 @@ read -r -p 'When the full-screen ADOFAI Mobile Editor is visible, press Enter he
 capture_ui "02-editor-open"
 
 printf '\n[3/6] In the editor, tap Open and choose a representative modern .adofai chart.\n'
+printf 'Do not edit the source chart yet; step 4 creates a separate smoke-test copy first.\n'
 read -r -p 'When the chart has loaded and the status says Loaded successfully, press Enter... ' _
 capture_ui "03-chart-loaded"
 
-printf '\n[4/6] Change one harmless field (for example a test setting or geometry), then tap Save.\n'
-read -r -p 'When the status says Saved, press Enter... ' _
+printf '\n[4/6] First tap Save As and choose a DIFFERENT disposable .adofai filename/path.\n'
+printf 'After Save As reports Saved, change one harmless field on that copy and tap Save.\n'
+read -r -p 'When the copied chart has been edited and the status says Saved again, press Enter... ' _
 capture_ui "04-chart-saved"
 
-printf '\n[5/6] Close the editor, reopen it, use Open, and select the saved chart again.\n'
-read -r -p 'When the saved chart has reopened successfully, press Enter... ' _
+printf '\n[5/6] Close the editor, reopen it, use Open, and select the saved SMOKE COPY again.\n'
+read -r -p 'When the saved smoke copy has reopened successfully, press Enter... ' _
 capture_ui "05-chart-reopened"
 
-printf '\n[6/6] Tap Preview. The editor dialog should close and the current runtime should load the chart.\n'
+printf '\n[6/6] Tap Preview on the smoke copy. The editor dialog should close and the current runtime should load it.\n'
 read -r -p 'After the preview attempt has completed or visibly failed, press Enter... ' _
 sleep 1
 capture_ui "06-after-preview"
@@ -187,8 +212,8 @@ PID at final capture: \`${CURRENT_PID:-not-running}\`
 | Floating Editor launcher visible | $LAUNCHER_STATE | \`01-launcher.xml/png\` |
 | Android-native editor shell visible | $EDITOR_STATE | \`02-editor-open.xml/png\` |
 | Modern chart open reports success | $LOAD_STATE | \`03-chart-loaded.xml/png\` |
-| Save reports success | $SAVE_STATE | \`04-chart-saved.xml/png\` |
-| Saved chart reopens | $REOPEN_STATE | \`05-chart-reopened.xml/png\` |
+| Save-As smoke copy + edit/save reports success | $SAVE_STATE | \`04-chart-saved.xml/png\` |
+| Saved smoke copy reopens | $REOPEN_STATE | \`05-chart-reopened.xml/png\` |
 | Native preview bridge installed | $BRIDGE_STATE | \`runtime.log\` |
 | Preview reached current runtime LoadCustomLevel call | $PREVIEW_STATE | \`runtime.log\` |
 | Preview fail-closed marker | $PREVIEW_FAILURE_MARKER | \`runtime.log\` |
@@ -199,6 +224,8 @@ Interpretation rules:
 - \`FAIL\` means evidence was captured but the success marker was absent.
 - \`UNPROVEN\` means the relevant Android evidence could not be captured.
 - The fail-closed row uses \`PRESENT\` / \`ABSENT\`; \`PRESENT\` is a runtime failure signal, not a pass.
+- The harness requires Save As to a different disposable path before any edit; preserve the original chart unchanged.
+- The UI evidence proves the Save status marker, but the operator must still verify the Save As destination is different from the source path.
 - A successful \`LoadCustomLevel\` call is not by itself proof that every chart event rendered correctly.
 - Screenshots and raw PID-scoped logs remain in this directory for manual reconciliation.
 - This harness does not prove performance, thermal, battery, every event type, every storage provider, or every device shape.
