@@ -36,6 +36,7 @@ grep -q 'pickerInFlight' "${GEN}/MobileEditorShell.java"
 grep -q 'Unexpected trailing content after JSON value' "${GEN}/MobileEditorShell.java"
 grep -q 'requestClose' "${GEN}/MobileEditorShell.java"
 grep -q 'confirmOpenPath' "${GEN}/MobileEditorShell.java"
+grep -q 'confirmSaveAndPreview' "${GEN}/MobileEditorShell.java"
 grep -q 'Discard & open' "${GEN}/MobileEditorShell.java"
 
 test -s "${SAF_SELECTOR}"
