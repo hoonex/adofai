@@ -25,6 +25,9 @@ python3 "${ROOT}/tools/apply_mobile_editor_json_strictness.py" \
 python3 "${ROOT}/tools/apply_mobile_editor_picker_serialization.py" \
   "${GEN}/MobileEditorShell.java" \
   "${GEN}/MobileEditorShell.java"
+python3 "${ROOT}/tools/apply_mobile_editor_dirty_close_guard.py" \
+  "${GEN}/MobileEditorShell.java" \
+  "${GEN}/MobileEditorShell.java"
 
 cp "${UPSTREAM_JAVA}/FileSelector.java" "${GEN}/FileSelector.java"
 cp "${UPSTREAM_JAVA}/CustomFileChooser.java" "${GEN}/CustomFileChooser.java"
@@ -34,6 +37,9 @@ cp "${UPSTREAM_JAVA}/CustomFileChooser.java" "${GEN}/CustomFileChooser.java"
 grep -q 'pickerInFlight' "${GEN}/MobileEditorShell.java"
 grep -q 'Unexpected trailing content after JSON value' "${GEN}/MobileEditorShell.java"
 grep -q "This chart's settings field is not an object" "${GEN}/MobileEditorShell.java"
+grep -q 'Unsaved changes' "${GEN}/MobileEditorShell.java"
+grep -q 'Discard & close' "${GEN}/MobileEditorShell.java"
+grep -q 'KEYCODE_BACK' "${GEN}/MobileEditorShell.java"
 grep -q 'setOnCancelListener' "${GEN}/CustomFileChooser.java"
 grep -q 'Environment.isExternalStorageManager' "${GEN}/FileSelector.java"
 
