@@ -120,6 +120,32 @@ esac
             self.assertIn("status=blocked", report.read_text(encoding="utf-8"))
             self.assertIn("version drift must be inspected", result.stderr)
 
+    def test_expected_version_environment_cannot_bypass_source_target(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake, log = self.make_fake_adb(root)
+            report = root / "runtime.txt"
+            result = subprocess.run(
+                ["bash", str(VERIFY), str(report)],
+                cwd=ROOT,
+                env=self.make_env(
+                    fake,
+                    log,
+                    FAKE_VERSION_NAME="3.3.2",
+                    FAKE_VERSION_CODE="300400",
+                    ADOFAI_EXPECTED_VERSION_NAME="3.3.2",
+                    ADOFAI_EXPECTED_VERSION_CODE="300400",
+                ),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+            text = report.read_text(encoding="utf-8")
+            self.assertIn("expectedVersionName=3.3.1", text)
+            self.assertIn("expectedVersionCode=300382", text)
+            self.assertIn("status=blocked", text)
+
     def test_missing_arm64_split_fails_closed(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
