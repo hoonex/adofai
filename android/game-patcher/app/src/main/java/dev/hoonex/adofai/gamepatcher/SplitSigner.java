@@ -1,5 +1,7 @@
 package dev.hoonex.adofai.gamepatcher;
 
+import android.os.Build;
+
 import com.android.apksig.ApkSigner;
 import com.android.apksig.ApkVerifier;
 
@@ -26,22 +28,29 @@ final class SplitSigner {
             .setInputApk(input)
             .setOutputApk(output)
             .setOtherSignersSignaturesPreserved(false)
-            // Keep v1/JAR signing in addition to v2/v3. ApkVerifier validates the
-            // package against the APK's declared platform range, and the current
-            // Play build still requires META-INF/MANIFEST.MF for that range.
-            // Omitting v1 produced a real-device failure:
-            //   apksig verification failed: [Missing META-INF/MANIFEST.MF]
+            // Keep v1/JAR signing in addition to v2/v3 for broad compatibility, but
+            // verify against the platform that will actually install this on-device
+            // patched split set. ApkVerifier otherwise checks from the APK's own
+            // minSdk upward, which can reject an APK for legacy-platform semantics
+            // that are irrelevant to this current-device patch flow.
             .setV1SigningEnabled(true)
             .setV2SigningEnabled(true)
             .setV3SigningEnabled(true)
             .setV4SigningEnabled(false)
-            .setMinSdkVersion(26)
+            .setMinSdkVersion(Math.max(26, Build.VERSION.SDK_INT))
             .build();
         signer.sign();
 
-        ApkVerifier.Result result = new ApkVerifier.Builder(output).build().verify();
+        int deviceSdk = Build.VERSION.SDK_INT;
+        ApkVerifier.Result result = new ApkVerifier.Builder(output)
+            .setMinCheckedPlatformVersion(deviceSdk)
+            .setMaxCheckedPlatformVersion(deviceSdk)
+            .build()
+            .verify();
         if (!result.isVerified()) {
-            throw new IllegalStateException("apksig verification failed: " + result.getErrors());
+            throw new IllegalStateException(
+                "apksig verification failed on SDK " + deviceSdk + ": " + describeErrors(result)
+            );
         }
         List<X509Certificate> certs = result.getSignerCertificates();
         if (certs.size() != 1) {
@@ -52,6 +61,39 @@ final class SplitSigner {
             throw new IllegalStateException("split signer mismatch: " + digest + " != " + identity.sha256);
         }
         return digest;
+    }
+
+    private static String describeErrors(ApkVerifier.Result result) {
+        StringBuilder out = new StringBuilder();
+        appendIssues(out, "apk", result.getErrors());
+        for (ApkVerifier.Result.V1SchemeSignerInfo signer : result.getV1SchemeSigners()) {
+            appendIssues(out, "v1:" + signer.getName(), signer.getErrors());
+        }
+        for (ApkVerifier.Result.V2SchemeSignerInfo signer : result.getV2SchemeSigners()) {
+            appendIssues(out, "v2:#" + (signer.getIndex() + 1), signer.getErrors());
+        }
+        for (ApkVerifier.Result.V3SchemeSignerInfo signer : result.getV3SchemeSigners()) {
+            appendIssues(out, "v3:#" + (signer.getIndex() + 1), signer.getErrors());
+        }
+        if (out.length() == 0) {
+            out.append("no surfaced errors; schemes[v1=")
+                .append(result.isVerifiedUsingV1Scheme())
+                .append(",v2=").append(result.isVerifiedUsingV2Scheme())
+                .append(",v3=").append(result.isVerifiedUsingV3Scheme())
+                .append(']');
+        }
+        return out.toString();
+    }
+
+    private static void appendIssues(
+        StringBuilder out,
+        String scope,
+        List<ApkVerifier.IssueWithParams> issues
+    ) {
+        for (ApkVerifier.IssueWithParams issue : issues) {
+            if (out.length() > 0) out.append(" | ");
+            out.append(scope).append(':').append(issue);
+        }
     }
 
     private static String hex(byte[] value) {
