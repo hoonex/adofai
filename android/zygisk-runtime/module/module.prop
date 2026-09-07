@@ -1,0 +1,7 @@
+id=adofai_editor_runtime
+name=ADOFAI 3.3.1 Mobile Editor Runtime
+version=0.1.0
+versionCode=1
+author=hoonex
+minMagisk=26000
+description=Injects the repository-owned mobile editor into the official Play-signed ADOFAI 3.3.1 process through Zygisk without modifying or resigning the game APK.

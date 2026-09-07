@@ -1,0 +1,66 @@
+name: Build ADOFAI Zygisk Runtime Editor
+
+on:
+  push:
+    branches:
+      - feat/modern-mobile-editor
+    paths:
+      - 'android/zygisk-runtime/**'
+      - 'android/mobile-editor-shell/**'
+      - 'native/MobileEditorBridge.*'
+      - 'scripts/build-zygisk-runtime-module.sh'
+      - 'scripts/prepare-upstream.sh'
+      - 'tools/apply_mobile_editor_*.py'
+      - 'tools/apply_hitmargin_*.py'
+      - 'tools/apply_zygisk_*.py'
+      - 'tests/test_zygisk_runtime_module.py'
+      - '.github/workflows/zygisk-runtime-module.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zygisk-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install reproducible Android toolchain
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager \
+            'platforms;android-35' \
+            'build-tools;36.0.0' \
+            'ndk;29.0.14206865'
+
+      - name: Run Zygisk runtime contract tests
+        run: python -m unittest tests.test_zygisk_runtime_module -v
+
+      - name: Build Magisk/Zygisk runtime module
+        run: bash scripts/build-zygisk-runtime-module.sh .work/zygisk-runtime-dist
+
+      - name: Stage artifact
+        run: |
+          set -euo pipefail
+          mkdir -p dist/zygisk-runtime
+          cp .work/zygisk-runtime-dist/ADOFAI-3.3.1-Zygisk-Editor.zip dist/zygisk-runtime/
+          cp .work/zygisk-runtime-dist/SHA256SUMS.txt dist/zygisk-runtime/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adofai-zygisk-runtime-module
+          path: dist/zygisk-runtime/
+          if-no-files-found: error
+          retention-days: 14
