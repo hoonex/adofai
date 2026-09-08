@@ -1,0 +1,52 @@
+name: Build ADOFAI 2.4 Fixed Native Runtime
+
+on:
+  push:
+    branches:
+      - fix/v240-custom-bugfix
+    paths:
+      - 'android/v240-fixed-runtime/native/**'
+      - 'scripts/build-v240-fixed-native.sh'
+      - '.github/workflows/v240-fixed-native.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: adofai-v240-fixed-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install pinned NDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager 'ndk;29.0.14206865'
+
+      - name: Build arm64 native runtime
+        run: bash scripts/build-v240-fixed-native.sh dist/v240-fixed-native
+
+      - name: Verify runtime contract
+        run: |
+          set -euo pipefail
+          test -s dist/v240-fixed-native/libv240fix.so
+          readelf -h dist/v240-fixed-native/libv240fix.so | grep -q 'AArch64'
+          readelf -Ws dist/v240-fixed-native/libv240fix.so | grep -q 'JNI_OnLoad'
+          readelf -Ws dist/v240-fixed-native/libv240fix.so | grep -q 'V240SettingsOverlay_nativeApply'
+          strings dist/v240-fixed-native/libv240fix.so | grep -q 'StandaloneFileBrowser'
+          strings dist/v240-fixed-native/libv240fix.so | grep -q 'SaveFilePanelAsync'
+          strings dist/v240-fixed-native/libv240fix.so | grep -q 'OpenFilePanelAsync'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adofai-v240-fixed-native-runtime
+          path: dist/v240-fixed-native/
+          if-no-files-found: error
+          retention-days: 14
