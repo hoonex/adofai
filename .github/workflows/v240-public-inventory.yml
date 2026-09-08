@@ -1,0 +1,72 @@
+name: Inspect public ADOFAI 2.4.0 build
+
+on:
+  push:
+    branches:
+      - fix/v240-custom-bugfix
+    paths:
+      - '.github/workflows/v240-public-inventory.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: adofai-v240-public-inventory-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download historical public 2.4.0 build
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p .work/v240-public dist/v240-public-inventory
+          URL='http://m.fxxz.com/f/678135'
+          curl -A 'Mozilla/5.0' -L --fail --retry 3 --retry-delay 2 \
+            --connect-timeout 20 --max-time 300 \
+            -D .work/v240-public/headers.txt \
+            -o .work/v240-public/download.bin "$URL" || true
+          cp .work/v240-public/headers.txt dist/v240-public-inventory/headers.txt || true
+          if [[ -f .work/v240-public/download.bin ]]; then
+            stat -c '%s' .work/v240-public/download.bin | tee dist/v240-public-inventory/size.txt
+            file .work/v240-public/download.bin | tee dist/v240-public-inventory/file.txt
+            sha256sum .work/v240-public/download.bin | tee dist/v240-public-inventory/SHA256.txt
+          fi
+
+      - name: Inspect archive if it is an APK/ZIP
+        shell: python
+        run: |
+          import json, os, re, zipfile, hashlib
+          src = '.work/v240-public/download.bin'
+          out = 'dist/v240-public-inventory/inventory.json'
+          data = {'exists': os.path.exists(src)}
+          if os.path.exists(src):
+              data['bytes'] = os.path.getsize(src)
+              data['zip'] = zipfile.is_zipfile(src)
+              if data['zip']:
+                  with zipfile.ZipFile(src) as z:
+                      names = z.namelist()
+                      data['entry_count'] = len(names)
+                      data['dex'] = [n for n in names if re.fullmatch(r'classes\d*\.dex', n)]
+                      data['native_libs'] = [n for n in names if n.startswith('lib/') and n.endswith('.so')]
+                      data['has_manifest'] = 'AndroidManifest.xml' in names
+                      data['has_libil2cpp'] = any(n.endswith('/libil2cpp.so') for n in names)
+                      data['has_libunity'] = any(n.endswith('/libunity.so') for n in names)
+                      data['has_liboctober'] = any(n.endswith('/libOctober.so') for n in names)
+                      data['metadata'] = [n for n in names if n.endswith('global-metadata.dat')]
+                      data['assets_sample'] = names[:200]
+          with open(out,'w',encoding='utf-8') as f:
+              json.dump(data,f,ensure_ascii=False,indent=2)
+          print(json.dumps(data,ensure_ascii=False,indent=2))
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adofai-v240-public-inventory
+          path: dist/v240-public-inventory/
+          if-no-files-found: error
+          retention-days: 7
