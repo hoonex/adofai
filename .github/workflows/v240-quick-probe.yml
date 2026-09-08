@@ -1,0 +1,56 @@
+name: Probe ADOFAI 2.4 CDN
+
+on:
+  push:
+    branches: [fix/v240-custom-bugfix]
+    paths: ['.github/workflows/v240-quick-probe.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve and probe only
+        shell: python
+        run: |
+          import html, os, re, subprocess, urllib.parse, urllib.request, json
+          ua='Mozilla/5.0'
+          req=urllib.request.Request('http://m.fxxz.com/f/678135',headers={'User-Agent':ua})
+          with urllib.request.urlopen(req,timeout=30) as r:
+              raw=r.read(); final=r.geturl()
+          text=''
+          for enc in ('utf-8','gb18030','latin1'):
+              try: text=raw.decode(enc); break
+              except UnicodeDecodeError: pass
+          attrs=re.findall(r'''(?:href|src|data-url|data-href|data-down|data-download)\s*=\s*["']([^"']+)["']''',text,re.I)
+          absolutes=re.findall(r'''https?://[^\s"'<>]+''',text,re.I)
+          urls=[]
+          for value in attrs+absolutes:
+              value=html.unescape(value).replace('\\/','/').strip()
+              if not value or value.startswith(('javascript:','#')): continue
+              u=urllib.parse.urljoin(final,value)
+              if u not in urls: urls.append(u)
+          ranked=sorted(urls,key=lambda u:(0 if '.apk' in u.lower() else 1,0 if any(k in u.lower() for k in ('download','down','file','soft','apk')) else 1,len(u)))
+          os.makedirs('dist/v240-quick-probe',exist_ok=True)
+          result={'page':final,'candidates':[]}
+          for u in ranked[:80]:
+              if not ('.apk' in u.lower() or any(k in u.lower() for k in ('download','down','file','soft'))): continue
+              cmd=['curl','-A',ua,'-L','-sS','--connect-timeout','10','--max-time','20','-r','0-31','-D','-','-o','.probe.bin',u]
+              p=subprocess.run(cmd,capture_output=True,text=True)
+              magic=open('.probe.bin','rb').read(32).hex() if os.path.exists('.probe.bin') else ''
+              item={'url':u,'rc':p.returncode,'magic':magic,'headers':p.stdout[-8000:]}
+              result['candidates'].append(item)
+              if magic.startswith('504b0304'):
+                  result['resolved']=u
+                  break
+          open('dist/v240-quick-probe/probe.json','w',encoding='utf-8').write(json.dumps(result,ensure_ascii=False,indent=2))
+          print(json.dumps(result,ensure_ascii=False,indent=2))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adofai-v240-quick-probe
+          path: dist/v240-quick-probe/
+          retention-days: 2
