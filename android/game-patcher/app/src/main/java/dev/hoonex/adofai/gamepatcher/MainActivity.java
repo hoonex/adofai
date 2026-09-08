@@ -44,18 +44,19 @@ public final class MainActivity extends Activity {
         root.addView(title);
 
         TextView desc = text(
-            "기존 V2.4.0 Custom.apk 자체를 수정합니다. 3.3.1 Companion/URL probe 기능은 포함하지 않습니다.\n\n" +
-            "수정 범위: editor desktop-mode hook, Open/Save/Folder, Android 저장소/Activity, Back/취소 완료 처리.",
+            "2023년 V2.4.0 Custom APK의 기존 에디터/ZIP URL 로더/native runtime을 그대로 보존합니다.\n\n" +
+            "적용: Android 저장소 권한 호환성. 기존 FileSelector가 들어있는 변형이면 그 파일선택기의 Activity/저장소/취소 처리도 교체합니다. " +
+            "libOctober.so나 classes2.dex는 원본 필수 항목이 아닙니다.",
             14, Color.rgb(190, 190, 200)
         );
         desc.setPadding(0, dp(10), 0, dp(18));
         root.addView(desc);
 
-        chooseButton = button("V2.4.0 Custom.apk 선택 → 수정본 만들기");
+        chooseButton = button("V2.4.0 CUSTOM APK 선택 → 수정본 만들기");
         chooseButton.setOnClickListener(v -> chooseSource());
         root.addView(chooseButton);
 
-        Button permission = button("All files access 설정 열기 (필요 시)");
+        Button permission = button("ALL FILES ACCESS 설정 열기 (필요 시)");
         permission.setOnClickListener(v -> {
             try {
                 Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
@@ -102,7 +103,7 @@ public final class MainActivity extends Activity {
         if (busy) return;
         busy = true;
         chooseButton.setEnabled(false);
-        setStatus("2.4.0 Custom APK 검사 시작…", false);
+        setStatus("2.4.0 APK 검사 시작…", false);
         worker.execute(() -> {
             try {
                 V240PatchPipeline.Result result = V240PatchPipeline.patch(
@@ -118,7 +119,8 @@ public final class MainActivity extends Activity {
                         "파일: " + V240PatchPipeline.OUTPUT_NAME + "\n" +
                         "저장 위치: Downloads/ADOFAI\n" +
                         "Package: " + result.packageName + "\n" +
-                        "기존 libOctober SHA-256: " + result.sourceOctoberSha256 + "\n" +
+                        "파일선택기 처리: " + result.pickerPatchMode + "\n" +
+                        "기존 native/URL loader: 보존\n" +
                         "새 signer SHA-256: " + result.signerSha256 + "\n" +
                         "크기: " + formatBytes(result.outputBytes),
                         false
