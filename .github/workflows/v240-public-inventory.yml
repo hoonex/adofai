@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download historical public 2.4.0 build
+      - name: Resolve historical public 2.4.0 build
         shell: bash
         run: |
           set -euxo pipefail
@@ -30,19 +30,86 @@ jobs:
           curl -A 'Mozilla/5.0' -L --fail --retry 3 --retry-delay 2 \
             --connect-timeout 20 --max-time 300 \
             -D .work/v240-public/headers.txt \
-            -o .work/v240-public/download.bin "$URL" || true
+            -w '%{url_effective}\n' \
+            -o .work/v240-public/page.bin "$URL" \
+            | tee .work/v240-public/final-url.txt || true
           cp .work/v240-public/headers.txt dist/v240-public-inventory/headers.txt || true
-          if [[ -f .work/v240-public/download.bin ]]; then
-            stat -c '%s' .work/v240-public/download.bin | tee dist/v240-public-inventory/size.txt
-            file .work/v240-public/download.bin | tee dist/v240-public-inventory/file.txt
-            sha256sum .work/v240-public/download.bin | tee dist/v240-public-inventory/SHA256.txt
-          fi
+          cp .work/v240-public/final-url.txt dist/v240-public-inventory/final-url.txt || true
 
-      - name: Inspect archive if it is an APK/ZIP
+      - name: Extract and probe download candidates
         shell: python
         run: |
-          import json, os, re, zipfile, hashlib
-          src = '.work/v240-public/download.bin'
+          import html, os, re, subprocess, urllib.parse, json
+          page = '.work/v240-public/page.bin'
+          final = open('.work/v240-public/final-url.txt', encoding='utf-8').read().strip() if os.path.exists('.work/v240-public/final-url.txt') else 'https://m.fxxz.com/'
+          raw = open(page,'rb').read() if os.path.exists(page) else b''
+          text = ''
+          for enc in ('utf-8','gb18030','latin1'):
+              try:
+                  text = raw.decode(enc)
+                  break
+              except UnicodeDecodeError:
+                  pass
+          attrs = re.findall(r'''(?:href|src|data-url|data-href|data-down|data-download)\s*=\s*["']([^"']+)["']''', text, re.I)
+          absolutes = re.findall(r'''https?://[^\s"'<>]+''', text, re.I)
+          urls=[]
+          for value in attrs + absolutes:
+              value = html.unescape(value).replace('\\/','/').strip()
+              if not value or value.startswith(('javascript:','#')): continue
+              url=urllib.parse.urljoin(final, value)
+              if url not in urls: urls.append(url)
+          ranked=sorted(urls, key=lambda u: (
+              0 if '.apk' in u.lower() else 1,
+              0 if any(k in u.lower() for k in ('download','down','file','soft','apk')) else 1,
+              len(u)
+          ))
+          os.makedirs('dist/v240-public-inventory',exist_ok=True)
+          open('dist/v240-public-inventory/candidates.txt','w',encoding='utf-8').write('\n'.join(ranked))
+          print('FINAL PAGE:', final)
+          print('CANDIDATES:', len(ranked))
+          for i,u in enumerate(ranked[:80]): print(i,u)
+
+          # Probe likely candidates without downloading the whole payload first.
+          probes=[]
+          for u in ranked[:60]:
+              if not ('.apk' in u.lower() or any(k in u.lower() for k in ('download','down','file','soft'))):
+                  continue
+              cmd=['curl','-A','Mozilla/5.0','-L','-sS','--connect-timeout','10','--max-time','20','-r','0-15','-D','-','-o','.work/v240-public/probe.bin',u]
+              try:
+                  p=subprocess.run(cmd,capture_output=True,text=True,timeout=25)
+                  magic=open('.work/v240-public/probe.bin','rb').read(16).hex() if os.path.exists('.work/v240-public/probe.bin') else ''
+                  header=p.stdout[-4000:]
+                  probes.append({'url':u,'rc':p.returncode,'magic':magic,'headers':header})
+                  if magic.startswith('504b0304'):
+                      print('ZIP/APK CANDIDATE:',u)
+                      open('.work/v240-public/resolved-url.txt','w',encoding='utf-8').write(u)
+                      break
+              except Exception as e:
+                  probes.append({'url':u,'error':repr(e)})
+          with open('dist/v240-public-inventory/probes.json','w',encoding='utf-8') as f: json.dump(probes,f,ensure_ascii=False,indent=2)
+          if os.path.exists('.work/v240-public/resolved-url.txt'):
+              resolved=open('.work/v240-public/resolved-url.txt',encoding='utf-8').read().strip()
+              open('dist/v240-public-inventory/resolved-url.txt','w',encoding='utf-8').write(resolved+'\n')
+
+      - name: Download resolved APK candidate
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [[ -s .work/v240-public/resolved-url.txt ]]; then
+            URL="$(cat .work/v240-public/resolved-url.txt)"
+            curl -A 'Mozilla/5.0' -L --fail --retry 3 --retry-delay 2 \
+              --connect-timeout 20 --max-time 600 \
+              -o .work/v240-public/download.apk "$URL"
+            stat -c '%s' .work/v240-public/download.apk | tee dist/v240-public-inventory/size.txt
+            file .work/v240-public/download.apk | tee dist/v240-public-inventory/file.txt
+            sha256sum .work/v240-public/download.apk | tee dist/v240-public-inventory/SHA256.txt
+          fi
+
+      - name: Inspect archive if found
+        shell: python
+        run: |
+          import json, os, re, zipfile
+          src = '.work/v240-public/download.apk'
           out = 'dist/v240-public-inventory/inventory.json'
           data = {'exists': os.path.exists(src)}
           if os.path.exists(src):
@@ -59,7 +126,7 @@ jobs:
                       data['has_libunity'] = any(n.endswith('/libunity.so') for n in names)
                       data['has_liboctober'] = any(n.endswith('/libOctober.so') for n in names)
                       data['metadata'] = [n for n in names if n.endswith('global-metadata.dat')]
-                      data['assets_sample'] = names[:200]
+                      data['interesting'] = [n for n in names if 'Managed' in n or 'metadata' in n.lower() or 'unity' in n.lower()][:300]
           with open(out,'w',encoding='utf-8') as f:
               json.dump(data,f,ensure_ascii=False,indent=2)
           print(json.dumps(data,ensure_ascii=False,indent=2))
