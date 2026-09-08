@@ -1,11 +1,9 @@
 package dev.hoonex.adofai.gamepatcher;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.View;
@@ -18,23 +16,16 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
+    private static final int PICK_APK = 240;
+
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private TextView status;
-    private Button buildButton;
-    private Button uninstallButton;
-    private Button installButton;
-    private volatile PatchPipeline.PreparedSet prepared;
+    private Button chooseButton;
     private volatile boolean busy;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         setContentView(buildUi());
-        refreshState();
-    }
-
-    @Override protected void onResume() {
-        super.onResume();
-        refreshPrepared();
     }
 
     @Override protected void onDestroy() {
@@ -49,140 +40,98 @@ public final class MainActivity extends Activity {
         root.setPadding(dp(20), dp(22), dp(20), dp(30));
         scroll.addView(root);
 
-        TextView title = text("ADOFAI 3.3.1 Game Patcher", 26, Color.WHITE);
+        TextView title = text("ADOFAI 2.4.0 Custom Bugfix", 25, Color.WHITE);
         root.addView(title);
+
         TextView desc = text(
-            "폰에서 설치된 Play판 split을 읽어 Editor DEX/native payload를 주입하고, 모든 split을 동일한 로컬 키로 재서명합니다. 원본 게임은 자동으로 삭제하지 않습니다.",
+            "기존 V2.4.0 Custom.apk 자체를 수정합니다. 3.3.1 Companion/URL probe 기능은 포함하지 않습니다.\n\n" +
+            "수정 범위: editor desktop-mode hook, Open/Save/Folder, Android 저장소/Activity, Back/취소 완료 처리.",
             14, Color.rgb(190, 190, 200)
         );
-        desc.setPadding(0, dp(8), 0, dp(16));
+        desc.setPadding(0, dp(10), 0, dp(18));
         root.addView(desc);
 
-        Button inspect = button("1. 설치본 확인");
-        inspect.setOnClickListener(v -> refreshState());
-        root.addView(inspect);
+        chooseButton = button("V2.4.0 Custom.apk 선택 → 수정본 만들기");
+        chooseButton.setOnClickListener(v -> chooseSource());
+        root.addView(chooseButton);
 
-        buildButton = button("2. 패치 게임 만들기");
-        buildButton.setOnClickListener(v -> startBuild());
-        root.addView(buildButton);
+        Button permission = button("All files access 설정 열기 (필요 시)");
+        permission.setOnClickListener(v -> {
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:" + getPackageName()));
+                startActivity(intent);
+            } catch (Throwable ignored) {
+                startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
+            }
+        });
+        root.addView(permission);
 
-        uninstallButton = button("3. 원본 Play판 제거");
-        uninstallButton.setOnClickListener(v -> confirmUninstall());
-        root.addView(uninstallButton);
-
-        installButton = button("4. 패치 게임 설치");
-        installButton.setOnClickListener(v -> installPrepared());
-        root.addView(installButton);
-
-        status = text("상태 확인 중…", 14, Color.rgb(170, 195, 235));
+        status = text(
+            "원본 APK를 선택하세요. 수정본은 Downloads/ADOFAI/ADOFAI-2.4.0-Custom-Bugfix.apk 로 저장됩니다.",
+            14, Color.rgb(165, 195, 240)
+        );
         status.setPadding(0, dp(18), 0, 0);
         root.addView(status);
         return scroll;
     }
 
-    private void refreshState() {
+    private void chooseSource() {
         if (busy) return;
-        try {
-            InstalledGame game = InstalledGame.inspect(this);
-            setStatus("검증된 설치본\n" + game.describe(), false);
-            buildButton.setEnabled(true);
-        } catch (Throwable error) {
-            if (InstalledGame.isInstalled(this)) {
-                setStatus(error.getMessage(), true);
-            } else {
-                setStatus("원본 ADOFAI가 설치되어 있지 않습니다. 이미 패치 세트를 만든 뒤 삭제한 상태라면 4번 설치를 진행하세요.", false);
-            }
-            buildButton.setEnabled(false);
-        }
-        refreshPrepared();
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/vnd.android.package-archive");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {
+            "application/vnd.android.package-archive", "application/octet-stream", "application/zip"
+        });
+        startActivityForResult(intent, PICK_APK);
     }
 
-    private void refreshPrepared() {
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != PICK_APK || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
         try {
-            prepared = PatchPipeline.loadPrepared(this);
+            getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
         } catch (Throwable ignored) {
-            prepared = null;
         }
-        boolean ready = prepared != null;
-        uninstallButton.setEnabled(ready && InstalledGame.isInstalled(this) && !busy);
-        installButton.setEnabled(ready && !busy);
+        startPatch(uri);
     }
 
-    private void startBuild() {
+    private void startPatch(Uri uri) {
         if (busy) return;
         busy = true;
-        setControls(false);
-        setStatus("패치 준비 시작… 큰 asset split 재서명은 시간이 걸릴 수 있습니다.", false);
+        chooseButton.setEnabled(false);
+        setStatus("2.4.0 Custom APK 검사 시작…", false);
         worker.execute(() -> {
             try {
-                PatchPipeline.PreparedSet result = PatchPipeline.prepare(this,
-                    message -> runOnUiThread(() -> setStatus(message, false)));
-                prepared = result;
+                V240PatchPipeline.Result result = V240PatchPipeline.patch(
+                    this,
+                    uri,
+                    message -> runOnUiThread(() -> setStatus(message, false))
+                );
                 runOnUiThread(() -> {
                     busy = false;
+                    chooseButton.setEnabled(true);
                     setStatus(
-                        "패치 세트 준비 완료\n" + result.apks.size() + "개 split\nSigner SHA-256: " + result.signerSha256 +
-                        "\n\n다음은 원본 게임의 로컬 데이터 백업 여부를 확인한 뒤 3번을 누르세요.",
+                        "수정 완료\n\n" +
+                        "파일: " + V240PatchPipeline.OUTPUT_NAME + "\n" +
+                        "저장 위치: Downloads/ADOFAI\n" +
+                        "Package: " + result.packageName + "\n" +
+                        "기존 libOctober SHA-256: " + result.sourceOctoberSha256 + "\n" +
+                        "새 signer SHA-256: " + result.signerSha256 + "\n" +
+                        "크기: " + formatBytes(result.outputBytes),
                         false
                     );
-                    setControls(true);
                 });
             } catch (Throwable error) {
                 runOnUiThread(() -> {
                     busy = false;
-                    setStatus("패치 생성 실패: " + error.getMessage(), true);
-                    setControls(true);
+                    chooseButton.setEnabled(true);
+                    setStatus("수정 실패: " + error.getMessage(), true);
                 });
             }
         });
-    }
-
-    private void confirmUninstall() {
-        if (prepared == null) {
-            setStatus("먼저 패치 세트를 만드세요.", true);
-            return;
-        }
-        new AlertDialog.Builder(this)
-            .setTitle("원본 Play판 제거")
-            .setMessage(
-                "패치판은 로컬 서명이라 Play판 위에 덮어쓸 수 없습니다.\n\n" +
-                "게임의 앱 내부 데이터가 필요하면 먼저 백업하세요. 다음 버튼은 Android 시스템 삭제 확인 화면만 엽니다. 이 앱이 자동 삭제하지 않습니다."
-            )
-            .setPositiveButton("시스템 삭제 화면 열기", (dialog, which) -> {
-                Intent intent = new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + InstalledGame.PACKAGE_NAME));
-                startActivity(intent);
-            })
-            .setNegativeButton("취소", null)
-            .show();
-    }
-
-    private void installPrepared() {
-        if (prepared == null) {
-            setStatus("준비된 패치 세트가 없습니다.", true);
-            return;
-        }
-        if (InstalledGame.isInstalled(this)) {
-            setStatus("서명 충돌 방지를 위해 3번에서 원본 Play판을 먼저 제거해야 합니다.", true);
-            return;
-        }
-        if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
-            setStatus("이 패처의 '알 수 없는 앱 설치' 권한을 허용한 뒤 4번을 다시 누르세요.", false);
-            Intent settings = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                Uri.parse("package:" + getPackageName()));
-            startActivity(settings);
-            return;
-        }
-        try {
-            int session = PreparedInstaller.install(this, prepared);
-            setStatus("PackageInstaller 세션 " + session + " 생성 완료. Android 설치 확인 화면을 진행하세요.", false);
-        } catch (Throwable error) {
-            setStatus("설치 시작 실패: " + error.getMessage(), true);
-        }
-    }
-
-    private void setControls(boolean enabled) {
-        buildButton.setEnabled(enabled && InstalledGame.isInstalled(this));
-        refreshPrepared();
     }
 
     private void setStatus(String message, boolean error) {
@@ -193,13 +142,13 @@ public final class MainActivity extends Activity {
     private Button button(String label) {
         Button button = new Button(this);
         button.setText(label);
-        button.setTextSize(17);
+        button.setTextSize(16);
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         );
         p.setMargins(0, dp(5), 0, dp(5));
         button.setLayoutParams(p);
-        button.setMinHeight(dp(52));
+        button.setMinHeight(dp(54));
         return button;
     }
 
@@ -209,6 +158,11 @@ public final class MainActivity extends Activity {
         view.setTextSize(size);
         view.setTextColor(color);
         return view;
+    }
+
+    private String formatBytes(long bytes) {
+        double mib = bytes / (1024.0 * 1024.0);
+        return String.format(java.util.Locale.US, "%.1f MiB", mib);
     }
 
     private int dp(int value) {
