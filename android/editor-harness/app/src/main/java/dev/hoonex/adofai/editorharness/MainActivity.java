@@ -13,9 +13,12 @@ import android.widget.Toast;
 
 import com.unity3d.player.FileSelector;
 import com.unity3d.player.MobileEditorShell;
+import com.unity3d.player.OfficialGameBridge;
 
 /** Standalone non-root companion editor for user-authored ADOFAI charts and ZIP bundles. */
 public final class MainActivity extends Activity {
+    private static final long RETURN_PROBE_DELAY_MS = 700L;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -38,7 +41,8 @@ public final class MainActivity extends Activity {
                 "공식 Google Play ADOFAI는 그대로 유지합니다. .adofai 단일 파일뿐 아니라 " +
                 "main.adofai + 음악/이미지가 함께 들어 있는 ZIP bundle과 예전 Open From URL 방식의 ZIP 링크도 엽니다. " +
                 "'공식 ADOFAI'를 누르면 현재 bundle을 다시 ZIP으로 묶어 기기 내부 127.0.0.1 URL로 제공하고 " +
-                "설치된 공식 3.3.1에 URL handoff를 시도합니다. 루트, Zygisk, APK 재서명은 사용하지 않습니다.");
+                "설치된 공식 3.3.1에 URL handoff를 시도합니다. 돌아오면 GET/HEAD 요청 여부도 표시합니다. " +
+                "루트, Zygisk, APK 재서명은 사용하지 않습니다.");
         description.setTextColor(Color.rgb(190, 190, 200));
         description.setTextSize(15f);
         description.setPadding(0, dp(14), 0, dp(18));
@@ -56,7 +60,7 @@ public final class MainActivity extends Activity {
         root.addView(openEditor);
 
         TextView hint = new TextView(this);
-        hint.setText("에디터에서 Open으로 .adofai/.zip을 열거나 ZIP URL에 직접 링크를 붙여넣은 뒤 편집 → 공식 ADOFAI를 누르세요.");
+        hint.setText("에디터에서 Open으로 .adofai/.zip을 열거나 ZIP URL에 직접 링크를 붙여넣은 뒤 편집 → 공식 ADOFAI를 누르세요. 공식 앱에서 돌아오면 ZIP URL 요청 진단이 뜹니다.");
         hint.setTextColor(Color.rgb(160, 185, 230));
         hint.setTextSize(13f);
         hint.setPadding(0, dp(14), 0, 0);
@@ -76,6 +80,15 @@ public final class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         FileSelector.context = this;
+        View decor = getWindow().getDecorView();
+        decor.postDelayed(new Runnable() {
+            @Override public void run() {
+                String diagnostic = OfficialGameBridge.consumeReturnDiagnostic();
+                if (diagnostic != null && diagnostic.length() > 0) {
+                    MobileEditorShell.showOfficialHandoffDiagnostic(diagnostic);
+                }
+            }
+        }, RETURN_PROBE_DELAY_MS);
     }
 
     @Override protected void onNewIntent(Intent intent) {
