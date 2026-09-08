@@ -40,8 +40,8 @@ public final class MainActivity extends Activity {
         description.setText(
                 "공식 Google Play ADOFAI는 그대로 유지합니다. .adofai 단일 파일뿐 아니라 " +
                 "main.adofai + 음악/이미지가 함께 들어 있는 ZIP bundle과 예전 Open From URL 방식의 ZIP 링크도 엽니다. " +
-                "'공식 ADOFAI'를 누르면 현재 bundle을 다시 ZIP으로 묶어 기기 내부 127.0.0.1 URL로 제공하고 " +
-                "설치된 공식 3.3.1에 URL handoff를 시도합니다. 돌아오면 GET/HEAD 요청 여부도 표시합니다. " +
+                "'공식 ADOFAI'는 현재 bundle을 127.0.0.1 ZIP URL로 전달하고 복귀 시 GET/HEAD를 진단합니다. " +
+                "HTTPS ZIP URL로 가져온 맵은 '원본 HTTPS'로 원격 URL만 따로 전달해 localhost cleartext 문제와 URL 미소비를 분리할 수 있습니다. " +
                 "루트, Zygisk, APK 재서명은 사용하지 않습니다.");
         description.setTextColor(Color.rgb(190, 190, 200));
         description.setTextSize(15f);
@@ -60,7 +60,7 @@ public final class MainActivity extends Activity {
         root.addView(openEditor);
 
         TextView hint = new TextView(this);
-        hint.setText("에디터에서 Open으로 .adofai/.zip을 열거나 ZIP URL에 직접 링크를 붙여넣은 뒤 편집 → 공식 ADOFAI를 누르세요. 공식 앱에서 돌아오면 ZIP URL 요청 진단이 뜹니다.");
+        hint.setText("권장 진단: ZIP URL로 HTTPS 링크 열기 → 공식 ADOFAI → 돌아와 GET/HEAD 확인 → 필요하면 원본 HTTPS 테스트. 원본 HTTPS는 로컬 편집 내용을 보내지 않는 진단용입니다.");
         hint.setTextColor(Color.rgb(160, 185, 230));
         hint.setTextSize(13f);
         hint.setPadding(0, dp(14), 0, 0);
