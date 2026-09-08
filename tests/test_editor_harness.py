@@ -58,7 +58,7 @@ class CompanionEditorTests(unittest.TestCase):
         self.assertNotIn("MANAGE_EXTERNAL_STORAGE", text)
         self.assertNotIn("CustomFileChooser", text)
 
-    def test_bundle_workspace_preserves_sibling_assets_and_rejects_zip_slip(self):
+    def test_bundle_workspace_preserves_sibling_assets_and_source_https_url(self):
         text = BUNDLE.read_text(encoding="utf-8")
         self.assertIn("ZipInputStream", text)
         self.assertIn("ZipOutputStream", text)
@@ -69,6 +69,9 @@ class CompanionEditorTests(unittest.TestCase):
         self.assertIn("getCanonicalFile", text)
         self.assertIn("ZIP path traversal rejected", text)
         self.assertIn("zipDirectory(root, output)", text)
+        self.assertIn("SOURCE_URL_BY_CHART", text)
+        self.assertIn("sourceHttpsUrlForChart", text)
+        self.assertIn('value.startsWith("https://")', text)
 
     def test_loopback_zip_server_is_local_only_serves_zip_and_records_consumption(self):
         text = SERVER.read_text(encoding="utf-8")
@@ -94,9 +97,9 @@ class CompanionEditorTests(unittest.TestCase):
         self.assertIn('EXPECTED_VERSION_CODE = 300382L', bridge)
         self.assertIn('BundleWorkspace.packageBundle', bridge)
         self.assertIn('LoopbackZipServer.publish', bridge)
-        self.assertIn('setDataAndType(bundleUri, "application/zip")', bridge)
-        self.assertIn('intent.putExtra("url", bundleUrl)', bridge)
-        self.assertIn('intent.putExtra("levelUrl", bundleUrl)', bridge)
+        self.assertIn('setDataAndType(uri, "application/zip")', bridge)
+        self.assertIn('intent.putExtra("url", url)', bridge)
+        self.assertIn('intent.putExtra("levelUrl", url)', bridge)
         self.assertIn('Intent.EXTRA_TEXT', bridge)
         self.assertIn('OfficialChartProvider.publish', bridge)
         self.assertIn('Intent.EXTRA_STREAM', bridge)
@@ -115,6 +118,20 @@ class CompanionEditorTests(unittest.TestCase):
         self.assertIn("MobileEditorShell.showOfficialHandoffDiagnostic", main)
         self.assertIn("showOfficialHandoffDiagnostic", companion)
         self.assertIn("Toast.makeText", companion)
+
+    def test_original_https_probe_is_isolated_from_local_fallback(self):
+        bridge = BRIDGE.read_text(encoding="utf-8")
+        companion = COMPANION.read_text(encoding="utf-8")
+        self.assertIn("openOriginalHttps", bridge)
+        self.assertIn("BundleWorkspace.sourceHttpsUrlForChart", bridge)
+        self.assertIn("buildUrlIntent(Uri.parse(sourceUrl), sourceUrl)", bridge)
+        self.assertIn("pendingReturnDiagnostic = false", bridge)
+        original_method = bridge.split("public static boolean openOriginalHttps", 1)[1].split("private static Intent buildUrlIntent", 1)[0]
+        self.assertNotIn("OfficialChartProvider.publish", original_method)
+        self.assertNotIn("Intent.EXTRA_STREAM", original_method)
+        self.assertNotIn("FLAG_GRANT_READ_URI_PERMISSION", original_method)
+        self.assertIn('makeAction("원본 HTTPS"', companion)
+        self.assertIn("OfficialGameBridge.openOriginalHttps(currentPath)", companion)
 
     def test_gradle_uses_durable_companion_identity(self):
         text = BUILD.read_text(encoding="utf-8")
@@ -139,9 +156,12 @@ class CompanionEditorTests(unittest.TestCase):
         self.assertNotIn("CustomFileChooser", text)
         self.assertIn("Intent.ACTION_OPEN_DOCUMENT", text)
         self.assertIn('makeAction("ZIP URL"', text)
+        self.assertIn('makeAction("원본 HTTPS"', text)
         self.assertIn("BundleWorkspace.importZip", text)
+        self.assertIn("sourceHttpsUrlForChart", text)
         self.assertIn("LoopbackZipServer.publish", text)
         self.assertIn("OfficialGameBridge.open", text)
+        self.assertIn("openOriginalHttps", text)
         self.assertIn("diagnosticFor", text)
         self.assertIn("showOfficialHandoffDiagnostic", text)
 
@@ -151,11 +171,13 @@ class CompanionEditorTests(unittest.TestCase):
         self.assertIn('makeAction("ZIP URL"', companion)
         self.assertIn('FileSelector.selectUrlBundle()', companion)
         self.assertIn('makeAction("공식 ADOFAI"', companion)
+        self.assertIn('makeAction("원본 HTTPS"', companion)
         self.assertIn("FileSelector.syncSavedPath", companion)
         self.assertIn("FileSelector.displayNameForPath", companion)
         self.assertIn("openStandalonePath", companion)
         self.assertIn("showOfficialHandoffDiagnostic", companion)
         self.assertIn("OfficialGameBridge.open(currentPath)", companion)
+        self.assertIn("OfficialGameBridge.openOriginalHttps(currentPath)", companion)
         self.assertNotIn("CustomPlayerBridge", companion)
 
 
