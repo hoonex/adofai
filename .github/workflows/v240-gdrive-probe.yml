@@ -29,35 +29,51 @@ jobs:
               body=r.read(); first_url=r.geturl(); first_headers=dict(r.headers.items())
           open('dist/v240-gdrive-probe/first.html','wb').write(body)
           text=body.decode('utf-8','replace')
+          print('===== DRIVE WARNING HTML BEGIN =====')
+          print(text)
+          print('===== DRIVE WARNING HTML END =====')
+          for needle in ('download','confirm','uuid','id=','drive.usercontent','googleusercontent','virus','infected'):
+              print('MATCH',needle,':',re.findall(r'.{0,160}'+re.escape(needle)+r'.{0,240}',text,re.I|re.S)[:20])
           forms=[]
           for fm in re.finditer(r'<form\b[^>]*action=["\']([^"\']+)["\'][^>]*>(.*?)</form>', text, re.I|re.S):
-              action=html.unescape(fm.group(1))
-              inner=fm.group(2)
-              fields={}
+              action=html.unescape(fm.group(1)); inner=fm.group(2); fields={}
               for im in re.finditer(r'<input\b[^>]*>', inner, re.I):
                   tag=im.group(0)
                   nm=re.search(r'name=["\']([^"\']+)["\']',tag,re.I)
                   vm=re.search(r'value=["\']([^"\']*)["\']',tag,re.I)
                   if nm: fields[html.unescape(nm.group(1))]=html.unescape(vm.group(1) if vm else '')
               forms.append({'action':action,'fields':fields})
-          links=[]
-          for m in re.finditer(r'href=["\']([^"\']+)["\']', text, re.I):
-              links.append(html.unescape(m.group(1)))
-          result={'first_url':first_url,'first_headers':first_headers,'forms':forms,'links':links[:50]}
+          urls=[]
+          patterns=[
+              r'https?://[^\s"\'<>]+',
+              r'(?:href|action|src)=["\']([^"\']+)["\']',
+              r'window\.location(?:\.href)?\s*=\s*["\']([^"\']+)["\']',
+          ]
+          for pat in patterns:
+              for m in re.finditer(pat,text,re.I):
+                  value=m.group(1) if m.lastindex else m.group(0)
+                  value=html.unescape(value).replace('\\u003d','=').replace('\\u0026','&').replace('\\/','/')
+                  u=urllib.parse.urljoin(first_url,value)
+                  if u not in urls: urls.append(u)
+          result={'first_url':first_url,'first_headers':first_headers,'forms':forms,'urls':urls[:100]}
           resolved=None
+          candidates=[]
           for form in forms:
               action=urllib.parse.urljoin(first_url,form['action'])
               qs=urllib.parse.urlencode(form['fields'])
-              candidate=action+('&' if '?' in action else '?')+qs
+              candidates.append(action+('&' if '?' in action else '?')+qs)
+          candidates.extend(urls)
+          for candidate in candidates:
+              if not any(k in candidate.lower() for k in ('download','usercontent','google')): continue
               try:
-                  cmd=['curl','-L','-A',ua,'--connect-timeout','15','--max-time','45','-r','0-63','-D','dist/v240-gdrive-probe/probe-headers.txt','-o','dist/v240-gdrive-probe/head.bin',candidate]
+                  cmd=['curl','-L','-A',ua,'--connect-timeout','15','--max-time','30','-r','0-63','-D','dist/v240-gdrive-probe/probe-headers.txt','-o','dist/v240-gdrive-probe/head.bin',candidate]
                   p=subprocess.run(cmd,capture_output=True,text=True)
                   magic=open('dist/v240-gdrive-probe/head.bin','rb').read(64).hex() if os.path.exists('dist/v240-gdrive-probe/head.bin') else ''
-                  result['form_probe']={'candidate':candidate,'rc':p.returncode,'magic':magic}
+                  result.setdefault('probes',[]).append({'candidate':candidate,'rc':p.returncode,'magic':magic,'headers':open('dist/v240-gdrive-probe/probe-headers.txt',encoding='utf-8',errors='replace').read()[-4000:] if os.path.exists('dist/v240-gdrive-probe/probe-headers.txt') else ''})
                   if magic.startswith('504b0304'):
                       resolved=candidate; break
               except Exception as e:
-                  result['form_probe_error']=repr(e)
+                  result.setdefault('probe_errors',[]).append({'candidate':candidate,'error':repr(e)})
           result['resolved']=resolved
           open('dist/v240-gdrive-probe/result.json','w',encoding='utf-8').write(json.dumps(result,ensure_ascii=False,indent=2))
           print(json.dumps(result,ensure_ascii=False,indent=2))
