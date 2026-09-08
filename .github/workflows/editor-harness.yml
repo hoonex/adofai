@@ -1,4 +1,4 @@
-name: Build ADOFAI Custom
+name: Build ADOFAI Companion Editor
 
 on:
   push:
@@ -13,7 +13,6 @@ on:
       - 'tools/apply_mobile_editor_picker_serialization.py'
       - 'tools/apply_mobile_editor_dirty_close_guard.py'
       - 'tools/apply_companion_editor_mode.py'
-      - 'tools/apply_custom_game_mode.py'
       - '.github/workflows/editor-harness.yml'
   workflow_dispatch:
 
@@ -21,7 +20,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: adofai-custom-${{ github.ref }}
+  group: adofai-companion-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -48,24 +47,24 @@ jobs:
       - name: Install Android platform
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
 
-      - name: Prepare canonical custom-game sources
+      - name: Prepare canonical companion sources
         run: bash scripts/prepare-editor-harness.sh
 
-      - name: Build ADOFAI Custom APK
+      - name: Build ADOFAI Companion Editor APK
         run: gradle --no-daemon -p android/editor-harness :app:assembleDebug
 
       - name: Stage artifact
         run: |
-          mkdir -p dist/adofai-custom
+          mkdir -p dist/adofai-companion
           cp android/editor-harness/app/build/outputs/apk/debug/app-debug.apk \
-            dist/adofai-custom/ADOFAI-Custom.apk
-          sha256sum dist/adofai-custom/ADOFAI-Custom.apk \
-            | tee dist/adofai-custom/SHA256SUMS.txt
+            dist/adofai-companion/ADOFAI-Companion-Editor.apk
+          sha256sum dist/adofai-companion/ADOFAI-Companion-Editor.apk \
+            | tee dist/adofai-companion/SHA256SUMS.txt
 
-      - name: Upload ADOFAI Custom APK
+      - name: Upload ADOFAI Companion Editor APK
         uses: actions/upload-artifact@v4
         with:
-          name: adofai-custom-apk
-          path: dist/adofai-custom/
+          name: adofai-companion-editor-apk
+          path: dist/adofai-companion/
           if-no-files-found: error
           retention-days: 14

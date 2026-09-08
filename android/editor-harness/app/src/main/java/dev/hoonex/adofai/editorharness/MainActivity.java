@@ -14,7 +14,7 @@ import android.widget.Toast;
 import com.unity3d.player.FileSelector;
 import com.unity3d.player.MobileEditorShell;
 
-/** Standalone editor + clean-room playable runtime for user-authored ADOFAI charts. */
+/** Standalone non-root companion editor for user-authored ADOFAI charts. */
 public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -28,16 +28,16 @@ public final class MainActivity extends Activity {
         root.setBackgroundColor(Color.rgb(18, 18, 22));
 
         TextView title = new TextView(this);
-        title.setText("ADOFAI Custom");
+        title.setText("ADOFAI Companion Editor");
         title.setTextColor(Color.WHITE);
         title.setTextSize(26f);
         root.addView(title);
 
         TextView description = new TextView(this);
         description.setText(
-                "비루트 독립 실행형 ADOFAI 커스텀 에디터 + 플레이어입니다. " +
-                "상용 게임 APK나 에셋을 포함하거나 수정하지 않고, 사용자가 연 .adofai 맵을 직접 편집하고 플레이합니다. " +
-                "에디터에서 Play를 누르면 현재 맵이 즉시 플레이 화면으로 전환됩니다.");
+                "공식 Google Play ADOFAI는 그대로 유지하고, 이 앱에서 .adofai 파일만 편집합니다. " +
+                "저장 후 '공식 ADOFAI'를 누르면 현재 차트를 읽기 전용 content URI로 공유하고 " +
+                "설치된 공식 3.3.1을 직접 실행해 handoff를 시도합니다. 루트, Zygisk, APK 재서명은 사용하지 않습니다.");
         description.setTextColor(Color.rgb(190, 190, 200));
         description.setTextSize(15f);
         description.setPadding(0, dp(14), 0, dp(18));
@@ -55,7 +55,7 @@ public final class MainActivity extends Activity {
         root.addView(openEditor);
 
         TextView hint = new TextView(this);
-        hint.setText(".adofai 파일을 이 앱으로 열거나, New → Save As로 새 맵을 만든 뒤 Play를 누르세요.");
+        hint.setText(".adofai 파일을 이 앱으로 열거나 New → Save As로 저장한 뒤 '공식 ADOFAI'를 누르세요.");
         hint.setTextColor(Color.rgb(160, 185, 230));
         hint.setTextSize(13f);
         hint.setPadding(0, dp(14), 0, 0);

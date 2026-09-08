@@ -1,20 +1,6 @@
-name: Build ADOFAI Zygisk Runtime Editor
+name: Legacy ADOFAI Zygisk Runtime Editor (manual only)
 
 on:
-  push:
-    branches:
-      - feat/modern-mobile-editor
-    paths:
-      - 'android/zygisk-runtime/**'
-      - 'android/mobile-editor-shell/**'
-      - 'native/MobileEditorBridge.*'
-      - 'scripts/build-zygisk-runtime-module.sh'
-      - 'scripts/prepare-upstream.sh'
-      - 'tools/apply_mobile_editor_*.py'
-      - 'tools/apply_hitmargin_*.py'
-      - 'tools/apply_zygisk_*.py'
-      - 'tests/test_zygisk_runtime_module.py'
-      - '.github/workflows/zygisk-runtime-module.yml'
   workflow_dispatch:
 
 permissions:

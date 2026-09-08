@@ -2,49 +2,46 @@ from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-PLAYER = ROOT / "android/editor-harness/app/src/main/java/dev/hoonex/adofai/companion/PlayerActivity.java"
-BRIDGE = ROOT / "android/editor-harness/app/src/main/java/com/unity3d/player/CustomPlayerBridge.java"
-MANIFEST = ROOT / "android/editor-harness/app/src/main/AndroidManifest.xml"
-PREPARE = ROOT / "scripts/prepare-editor-harness.sh"
-TRANSFORM = ROOT / "tools/apply_custom_game_mode.py"
+APP = ROOT / "android" / "editor-harness" / "app"
+BRIDGE = APP / "src" / "main" / "java" / "com" / "unity3d" / "player" / "OfficialGameBridge.java"
+PROVIDER = APP / "src" / "main" / "java" / "dev" / "hoonex" / "adofai" / "companion" / "OfficialChartProvider.java"
+MANIFEST = APP / "src" / "main" / "AndroidManifest.xml"
+PREPARE = ROOT / "scripts" / "prepare-editor-harness.sh"
 
 
-class CustomPlayerTests(unittest.TestCase):
-    def test_player_is_standalone_and_contains_no_official_runtime_hooking(self):
-        text = PLAYER.read_text(encoding="utf-8")
-        self.assertIn("class PlayerActivity", text)
-        self.assertIn("MediaPlayer", text)
-        self.assertIn("parsePathData", text)
-        self.assertIn('"SetSpeed"', text)
-        self.assertIn('"Twirl"', text)
-        self.assertIn('"Pause"', text)
-        self.assertIn('"Hold"', text)
-        self.assertNotIn("System.loadLibrary", text)
-        self.assertNotIn("com.fizzd.connectedworlds", text)
-        self.assertNotIn("libil2cpp", text)
+class CanonicalCompanionProductTests(unittest.TestCase):
+    def test_official_bridge_targets_exact_unmodified_play_build(self):
+        text = BRIDGE.read_text(encoding="utf-8")
+        self.assertIn('TARGET_PACKAGE = "com.fizzd.connectedworlds"', text)
+        self.assertIn('TARGET_ACTIVITY = "com.unity3d.player.UnityPlayerActivity"', text)
+        self.assertIn('EXPECTED_VERSION_NAME = "3.3.1"', text)
+        self.assertIn('EXPECTED_VERSION_CODE = 300382L', text)
+        self.assertIn('Intent.FLAG_GRANT_READ_URI_PERMISSION', text)
+        self.assertIn('OfficialChartProvider.publish', text)
+        self.assertNotIn('PlayerActivity.class', text)
+        self.assertNotIn('System.loadLibrary', text)
 
-    def test_editor_play_action_targets_bundled_player(self):
-        bridge = BRIDGE.read_text(encoding="utf-8")
-        transform = TRANSFORM.read_text(encoding="utf-8")
-        self.assertIn("PlayerActivity.class", bridge)
-        self.assertIn("EXTRA_CHART_PATH", bridge)
-        self.assertIn('makeAction("Play"', transform)
-        self.assertIn("CustomPlayerBridge.open(currentPath)", transform)
+    def test_chart_provider_is_read_only_and_app_scoped(self):
+        text = PROVIDER.read_text(encoding="utf-8")
+        self.assertIn('MODE_READ_ONLY', text)
+        self.assertIn('Read-only provider', text)
+        self.assertIn('getFilesDir()', text)
+        self.assertNotIn('MANAGE_EXTERNAL_STORAGE', text)
 
-    def test_manifest_exposes_nonexported_landscape_player(self):
+    def test_manifest_has_no_bundled_custom_player(self):
         text = MANIFEST.read_text(encoding="utf-8")
-        self.assertIn('android:name=".PlayerActivity"', text)
-        self.assertIn('android:exported="false"', text)
-        self.assertIn('android:screenOrientation="landscape"', text)
-        self.assertIn('android:label="ADOFAI Custom"', text)
+        self.assertIn('android:label="ADOFAI Companion Editor"', text)
+        self.assertIn('OfficialChartProvider', text)
+        self.assertIn('android:grantUriPermissions="true"', text)
+        self.assertNotIn('android:name=".PlayerActivity"', text)
+        self.assertNotIn('ADOFAI Custom', text)
 
-    def test_prepare_pipeline_compiles_custom_mode_after_lossless_safety(self):
+    def test_prepare_pipeline_does_not_apply_custom_game_mode(self):
         text = PREPARE.read_text(encoding="utf-8")
-        safety = text.index("apply_mobile_editor_document_safety.py")
-        custom = text.index("apply_custom_game_mode.py")
-        self.assertLess(safety, custom)
-        self.assertIn("CustomPlayerBridge.open", text)
-        self.assertIn("Unexpected trailing content after JSON value", text)
+        self.assertIn('apply_companion_editor_mode.py', text)
+        self.assertIn('OfficialGameBridge.open', text)
+        self.assertNotIn('apply_custom_game_mode.py', text)
+        self.assertNotIn('CustomPlayerBridge.open', text)
 
 
 if __name__ == "__main__":

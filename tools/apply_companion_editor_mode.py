@@ -52,11 +52,11 @@ def transform(text: str) -> str:
             @Override public void onClick(View v) { previewCurrent(); }
         }));
 ''',
-        '''        actions.addView(makeAction("ADOFAI / 공유", new View.OnClickListener() {
+        '''        actions.addView(makeAction("공식 ADOFAI", new View.OnClickListener() {
             @Override public void onClick(View v) { shareCurrent(); }
         }));
 ''',
-        "share action replacement",
+        "official handoff action replacement",
     )
 
     text = replace_exact(
@@ -153,12 +153,12 @@ def transform(text: str) -> str:
     private static void confirmSaveAndShare() {
         final Activity owner = activity;
         if (owner == null || owner.isFinishing()) {
-            setStatus("Unsaved changes: cannot confirm share without a foreground Activity", true);
+            setStatus("Unsaved changes: cannot confirm official handoff without a foreground Activity", true);
             return;
         }
         new android.app.AlertDialog.Builder(owner)
-                .setTitle("저장 후 열기/공유")
-                .setMessage("현재 수정사항을 먼저 저장한 뒤 ADOFAI 열기 또는 Android 공유를 시도합니다.")
+                .setTitle("저장 후 공식 ADOFAI 열기")
+                .setMessage("현재 수정사항을 먼저 저장한 뒤 설치된 공식 Play판 ADOFAI 3.3.1에 차트를 전달합니다.")
                 .setPositiveButton("저장 후 계속", new android.content.DialogInterface.OnClickListener() {
                     @Override public void onClick(android.content.DialogInterface ignored, int which) {
                         if (saveCurrent(false)) shareCurrent();
@@ -174,18 +174,15 @@ def transform(text: str) -> str:
             return;
         }
         if (currentPath == null) {
-            setStatus("공유하기 전에 Save As로 파일을 저장하세요", true);
+            setStatus("공식 ADOFAI로 넘기기 전에 Save As로 파일을 저장하세요", true);
             return;
         }
         if (dirty) {
             confirmSaveAndShare();
             return;
         }
-        if (FileSelector.openInAdofaiOrShare(currentPath)) {
-            setStatus("ADOFAI 열기 또는 Android 공유를 요청했습니다", false);
-        } else {
-            setStatus("이 파일을 다른 앱으로 열 수 없습니다", true);
-        }
+        boolean opened = OfficialGameBridge.open(currentPath);
+        setStatus(OfficialGameBridge.getLastStatus(), !opened);
     }
 
     private static void markDirty(String message) {
