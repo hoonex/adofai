@@ -22,6 +22,11 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Enumeration;
+import java.util.List;
 import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -34,8 +39,8 @@ final class V240PatchPipeline {
     static final String EXPECTED_VERSION = "2.4.0";
     static final String OUTPUT_NAME = "ADOFAI-2.4.0-Custom-Bugfix.apk";
     private static final String OCTOBER = "lib/arm64-v8a/libOctober.so";
-    private static final String SECONDARY_DEX = "classes2.dex";
-    private static final String FILE_SELECTOR = "Lcom/unity3d/player/FileSelector;";
+    private static final String FILE_SELECTOR = DexOverlayPatcher.FILE_SELECTOR;
+    private static final String CUSTOM_FILE_CHOOSER = DexOverlayPatcher.CUSTOM_FILE_CHOOSER;
 
     static final class Result {
         final Uri outputUri;
@@ -86,21 +91,25 @@ final class V240PatchPipeline {
             try (ZipFile zip = new ZipFile(source)) {
                 requireEntry(zip, "AndroidManifest.xml");
                 requireEntry(zip, "classes.dex");
-                requireEntry(zip, SECONDARY_DEX);
                 ZipEntry october = requireEntry(zip, OCTOBER);
                 sourceOctoberSha = sha256(zip.getInputStream(october));
             }
-            assertLegacyFileSelector(source, work);
+
+            progress(listener, "기존 FileSelector 위치 탐색 중…");
+            String selectorDexEntry = findLegacyFileSelectorDex(source, work);
 
             progress(listener, "2.4 버그픽스 payload 준비 중…");
             PayloadAssets.Payload payload = PayloadAssets.stage(context, work);
 
-            progress(listener, "classes2.dex / libOctober.so / manifest 수정 중…");
+            progress(listener, selectorDexEntry + " / libOctober.so / manifest 수정 중…");
             ApkMutator.mutateV240Single(
-                source, unsigned, payload.classes2Dex, payload.libOctober, work, packageName
+                source, unsigned, payload.classes2Dex, payload.libOctober, work, packageName,
+                selectorDexEntry
             );
-            ApkMutator.assertEntry(unsigned, SECONDARY_DEX);
+            ApkMutator.assertEntry(unsigned, selectorDexEntry);
             ApkMutator.assertEntry(unsigned, OCTOBER);
+            ApkMutator.assertEntry(unsigned, "AndroidManifest.xml");
+            assertPatchedFilePicker(unsigned, selectorDexEntry, work);
 
             progress(listener, "수정 APK 재서명 및 검증 중…");
             SigningIdentity identity = SigningIdentity.loadOrCreate();
@@ -118,27 +127,95 @@ final class V240PatchPipeline {
         }
     }
 
-    private static void assertLegacyFileSelector(File apk, File work) throws Exception {
-        File dexFile = new File(work, "source-classes2.dex");
+    /**
+     * Old 2.4 Custom builds are not guaranteed to be multidex. In particular, the user's
+     * working build has no classes2.dex. Search every classes*.dex and patch the dex that
+     * actually owns FileSelector instead of assuming a fixed secondary-dex layout.
+     */
+    private static String findLegacyFileSelectorDex(File apk, File work) throws Exception {
+        List<String> dexEntries = new ArrayList<String>();
         try (ZipFile zip = new ZipFile(apk)) {
-            ZipEntry entry = requireEntry(zip, SECONDARY_DEX);
+            Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (!entry.isDirectory() && isDexEntryName(entry.getName()) && entry.getSize() > 0L) {
+                    dexEntries.add(entry.getName());
+                }
+            }
+        }
+        if (dexEntries.isEmpty()) throw new IllegalStateException("APK에 classes.dex가 없습니다.");
+
+        Collections.sort(dexEntries, new Comparator<String>() {
+            @Override
+            public int compare(String left, String right) {
+                return Integer.compare(dexIndex(left), dexIndex(right));
+            }
+        });
+
+        for (String entryName : dexEntries) {
+            File dexFile = new File(work, "scan-" + dexIndex(entryName) + ".dex");
+            extractEntry(apk, entryName, dexFile);
+            if (dexContainsClass(dexFile, FILE_SELECTOR)) return entryName;
+        }
+        throw new IllegalStateException(
+            "이 APK에는 기존 2.4 Custom FileSelector가 없습니다. 다른 2.4.0 APK는 수정하지 않습니다."
+        );
+    }
+
+    private static void assertPatchedFilePicker(File apk, String dexEntry, File work) throws Exception {
+        File dexFile = new File(work, "verify-file-picker.dex");
+        extractEntry(apk, dexEntry, dexFile);
+        DexFile dex = DexFileFactory.loadDexFile(dexFile, Opcodes.forApi(35));
+        boolean selector = false;
+        boolean chooser = false;
+        for (ClassDef cls : dex.getClasses()) {
+            if (FILE_SELECTOR.equals(cls.getType())) selector = true;
+            if (CUSTOM_FILE_CHOOSER.equals(cls.getType())) chooser = true;
+        }
+        if (!selector || !chooser) {
+            throw new IllegalStateException("수정된 dex에서 FileSelector/CustomFileChooser 검증 실패");
+        }
+    }
+
+    private static boolean dexContainsClass(File dexFile, String type) throws Exception {
+        DexFile dex = DexFileFactory.loadDexFile(dexFile, Opcodes.forApi(35));
+        for (ClassDef cls : dex.getClasses()) {
+            if (type.equals(cls.getType())) return true;
+        }
+        return false;
+    }
+
+    private static boolean isDexEntryName(String name) {
+        if ("classes.dex".equals(name)) return true;
+        if (!name.startsWith("classes") || !name.endsWith(".dex")) return false;
+        String middle = name.substring("classes".length(), name.length() - ".dex".length());
+        if (middle.isEmpty()) return false;
+        for (int i = 0; i < middle.length(); i++) {
+            if (!Character.isDigit(middle.charAt(i))) return false;
+        }
+        return true;
+    }
+
+    private static int dexIndex(String name) {
+        if ("classes.dex".equals(name)) return 1;
+        String middle = name.substring("classes".length(), name.length() - ".dex".length());
+        try {
+            return Integer.parseInt(middle);
+        } catch (NumberFormatException ignored) {
+            return Integer.MAX_VALUE;
+        }
+    }
+
+    private static void extractEntry(File apk, String name, File output) throws Exception {
+        try (ZipFile zip = new ZipFile(apk)) {
+            ZipEntry entry = zip.getEntry(name);
+            if (entry == null || entry.getSize() <= 0L) {
+                throw new IllegalStateException("APK entry not found: " + name);
+            }
             try (InputStream in = new BufferedInputStream(zip.getInputStream(entry));
-                 OutputStream out = new BufferedOutputStream(new FileOutputStream(dexFile))) {
+                 OutputStream out = new BufferedOutputStream(new FileOutputStream(output))) {
                 copy(in, out);
             }
-        }
-        DexFile dex = DexFileFactory.loadDexFile(dexFile, Opcodes.forApi(35));
-        boolean found = false;
-        for (ClassDef cls : dex.getClasses()) {
-            if (FILE_SELECTOR.equals(cls.getType())) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            throw new IllegalStateException(
-                "이 APK에는 기존 2.4 Custom FileSelector가 없습니다. 다른 2.4.0 APK는 수정하지 않습니다."
-            );
         }
     }
 
