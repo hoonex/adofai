@@ -6,11 +6,9 @@ on:
       - fix/v240-custom-bugfix
     paths:
       - 'android/game-patcher/**'
-      - 'scripts/prepare-v240-bugfix-upstream.sh'
-      - 'scripts/build-v240-picker-payload.sh'
-      - 'tools/apply_hitmargin_file_dialogs.py'
-      - 'tools/apply_hitmargin_storage_guard.py'
-      - 'tools/apply_hitmargin_picker_cancel_guard.py'
+      - 'android/v240-fixed-runtime/**'
+      - 'scripts/build-v240-fixed-java.sh'
+      - 'scripts/build-v240-fixed-native.sh'
       - '.github/workflows/v240-custom-patcher.yml'
   workflow_dispatch:
 
@@ -38,41 +36,63 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      - name: Install Android toolchain
+      - name: Install pinned Android toolchain
         run: |
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager 'platforms;android-35' 'build-tools;36.0.0'
+          sdkmanager \
+            'platforms;android-35' \
+            'build-tools;36.0.0' \
+            'ndk;29.0.14206865'
 
-      - name: Build optional 2.4 Java picker payload
-        run: bash scripts/build-v240-picker-payload.sh .work/v240-picker-payload
+      - name: Build exact 2.4 Java runtime
+        run: bash scripts/build-v240-fixed-java.sh .work/v240-fixed-java
 
-      - name: Stage Java-only payload
+      - name: Build exact 2.4 arm64 native runtime
+        run: bash scripts/build-v240-fixed-native.sh .work/v240-fixed-native
+
+      - name: Stage exact runtime assets
         run: |
           set -euo pipefail
           ASSETS=android/game-patcher/app/src/main/assets/payload
           rm -rf "$ASSETS"
           mkdir -p "$ASSETS"
-          cp .work/v240-picker-payload/classes2.dex "$ASSETS/classes2.dex"
-          test -s "$ASSETS/classes2.dex"
+          cp .work/v240-fixed-java/v240-fixed-runtime.dex "$ASSETS/v240-fixed-runtime.dex"
+          cp .work/v240-fixed-native/libv240fix.so "$ASSETS/libv240fix.so"
+          test -s "$ASSETS/v240-fixed-runtime.dex"
+          test -s "$ASSETS/libv240fix.so"
           test ! -e "$ASSETS/libOctober.so"
 
-      - name: Compile 2.4 one-click patcher
+      - name: Compile and test 2.4 one-click patcher
         run: gradle --no-daemon -p android/game-patcher :app:testDebugUnitTest :app:assembleDebug
 
-      - name: Verify legacy-preservation contract
+      - name: Verify exact-source patch contract
         run: |
           set -euo pipefail
           PIPE=android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/V240PatchPipeline.java
           MUT=android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/ApkMutator.java
-          MAIN=android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/MainActivity.java
+          BOOT=android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/V240DexBootstrapPatcher.java
+          MANIFEST=android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/ManifestStoragePatcher.java
+          APK=android/game-patcher/app/build/outputs/apk/debug/app-debug.apk
+
+          grep -q 'EXPECTED_SOURCE_BYTES = 370_092_054L' "$PIPE"
+          grep -q '630f519ae1ab3391aad95da90ebc296f4f0f8ae4ea41024ace7349d93926ef30' "$PIPE"
           grep -q 'EXPECTED_VERSION = "2.4.0"' "$PIPE"
-          grep -q 'Never require, replace or inject libOctober' "$PIPE"
-          grep -q 'return null;' "$PIPE"
-          grep -q 'preserves every native library' "$MUT"
-          grep -q 'selectorDexEntry != null' "$MUT"
-          grep -q '기존 native/URL loader: 보존' "$MAIN"
-          ! grep -q 'sourceOctoberSha256' "$PIPE"
-          test -s android/game-patcher/app/build/outputs/apk/debug/app-debug.apk
+          grep -q 'V240DexBootstrapPatcher.containsBootstrapInvoke' "$PIPE"
+          grep -q 'snapshotNativeLibraries' "$PIPE"
+          grep -q 'assertOriginalNativeLibrariesPreserved' "$PIPE"
+          grep -q 'stageV240FixedRuntime' "$PIPE"
+          grep -q 'ManifestStoragePatcher.patchV240' "$MUT"
+          grep -q 'lib/arm64-v8a/libv240fix.so' "$MUT"
+          grep -q 'classes2.dex' "$MUT"
+          grep -q 'UnityPlayerActivity' "$BOOT"
+          grep -q 'V240Bootstrap' "$BOOT"
+          grep -q 'V240PickerActivity' "$MANIFEST"
+          ! grep -q 'MANAGE_EXTERNAL_STORAGE.*patchV240' "$MANIFEST"
+
+          test -s "$APK"
+          unzip -l "$APK" | grep -q 'assets/payload/v240-fixed-runtime.dex'
+          unzip -l "$APK" | grep -q 'assets/payload/libv240fix.so'
+          ! unzip -l "$APK" | grep -q 'assets/payload/libOctober.so'
 
       - name: Stage artifact
         run: |
