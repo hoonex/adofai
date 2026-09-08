@@ -21,13 +21,11 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.List;
-import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -38,22 +36,21 @@ final class V240PatchPipeline {
 
     static final String EXPECTED_VERSION = "2.4.0";
     static final String OUTPUT_NAME = "ADOFAI-2.4.0-Custom-Bugfix.apk";
-    private static final String OCTOBER = "lib/arm64-v8a/libOctober.so";
     private static final String FILE_SELECTOR = DexOverlayPatcher.FILE_SELECTOR;
     private static final String CUSTOM_FILE_CHOOSER = DexOverlayPatcher.CUSTOM_FILE_CHOOSER;
 
     static final class Result {
         final Uri outputUri;
         final String packageName;
-        final String sourceOctoberSha256;
+        final String pickerPatchMode;
         final String signerSha256;
         final long outputBytes;
 
-        Result(Uri outputUri, String packageName, String sourceOctoberSha256,
+        Result(Uri outputUri, String packageName, String pickerPatchMode,
                String signerSha256, long outputBytes) {
             this.outputUri = outputUri;
             this.packageName = packageName;
-            this.sourceOctoberSha256 = sourceOctoberSha256;
+            this.pickerPatchMode = pickerPatchMode;
             this.signerSha256 = signerSha256;
             this.outputBytes = outputBytes;
         }
@@ -76,7 +73,7 @@ final class V240PatchPipeline {
                 throw new IllegalStateException("선택한 파일이 정상적인 ADOFAI APK보다 너무 작습니다.");
             }
 
-            progress(listener, "2.4.0 Custom 구조 검증 중…");
+            progress(listener, "2.4.0 APK 구조 확인 중…");
             PackageInfo info = context.getPackageManager().getPackageArchiveInfo(source.getAbsolutePath(), 0);
             if (info == null) throw new IllegalStateException("Android APK 메타데이터를 읽을 수 없습니다.");
             if (!EXPECTED_VERSION.equals(info.versionName)) {
@@ -87,29 +84,38 @@ final class V240PatchPipeline {
                 throw new IllegalStateException("APK package name을 읽을 수 없습니다.");
             }
 
-            String sourceOctoberSha;
             try (ZipFile zip = new ZipFile(source)) {
                 requireEntry(zip, "AndroidManifest.xml");
                 requireEntry(zip, "classes.dex");
-                ZipEntry october = requireEntry(zip, OCTOBER);
-                sourceOctoberSha = sha256(zip.getInputStream(october));
             }
 
-            progress(listener, "기존 FileSelector 위치 탐색 중…");
+            // The user's historical 2023 Custom build is not the later libOctober runtime.
+            // Never require, replace or inject libOctober here. Preserve native libraries byte-for-byte.
+            progress(listener, "기존 2.4 파일선택기 구조 확인 중…");
             String selectorDexEntry = findLegacyFileSelectorDex(source, work);
 
-            progress(listener, "2.4 버그픽스 payload 준비 중…");
-            PayloadAssets.Payload payload = PayloadAssets.stage(context, work);
+            File pickerPayload = null;
+            String pickerMode;
+            if (selectorDexEntry != null) {
+                progress(listener, "기존 FileSelector 발견: " + selectorDexEntry);
+                PayloadAssets.Payload payload = PayloadAssets.stage(context, work);
+                pickerPayload = payload.classes2Dex;
+                pickerMode = selectorDexEntry + "의 기존 FileSelector/CustomFileChooser 교체";
+            } else {
+                pickerMode = "기존 FileSelector 없음 — 원본 dex/native/URL loader 보존";
+                progress(listener, "별도 FileSelector 없음 — 원본 에디터/URL loader 그대로 보존");
+            }
 
-            progress(listener, selectorDexEntry + " / libOctober.so / manifest 수정 중…");
+            progress(listener, "Android 저장소 호환성 패치 적용 중…");
             ApkMutator.mutateV240Single(
-                source, unsigned, payload.classes2Dex, payload.libOctober, work, packageName,
-                selectorDexEntry
+                source, unsigned, pickerPayload, work, packageName, selectorDexEntry
             );
-            ApkMutator.assertEntry(unsigned, selectorDexEntry);
-            ApkMutator.assertEntry(unsigned, OCTOBER);
             ApkMutator.assertEntry(unsigned, "AndroidManifest.xml");
-            assertPatchedFilePicker(unsigned, selectorDexEntry, work);
+            ApkMutator.assertEntry(unsigned, "classes.dex");
+            if (selectorDexEntry != null) {
+                ApkMutator.assertEntry(unsigned, selectorDexEntry);
+                assertPatchedFilePicker(unsigned, selectorDexEntry, work);
+            }
 
             progress(listener, "수정 APK 재서명 및 검증 중…");
             SigningIdentity identity = SigningIdentity.loadOrCreate();
@@ -121,16 +127,16 @@ final class V240PatchPipeline {
             progress(listener, "Downloads에 수정본 저장 중…");
             Uri output = publishToDownloads(context, signed);
             progress(listener, "완료: " + OUTPUT_NAME);
-            return new Result(output, packageName, sourceOctoberSha, signer, signed.length());
+            return new Result(output, packageName, pickerMode, signer, signed.length());
         } finally {
             deleteTree(work);
         }
     }
 
     /**
-     * Old 2.4 Custom builds are not guaranteed to be multidex. In particular, the user's
-     * working build has no classes2.dex. Search every classes*.dex and patch the dex that
-     * actually owns FileSelector instead of assuming a fixed secondary-dex layout.
+     * Searches every classes*.dex for the optional Java picker used by some 2.4 Custom
+     * variants. A missing picker is valid and must not reject the APK: early 2023 builds
+     * can use the game's own editor/URL-loader path without this later bridge.
      */
     private static String findLegacyFileSelectorDex(File apk, File work) throws Exception {
         List<String> dexEntries = new ArrayList<String>();
@@ -157,9 +163,7 @@ final class V240PatchPipeline {
             extractEntry(apk, entryName, dexFile);
             if (dexContainsClass(dexFile, FILE_SELECTOR)) return entryName;
         }
-        throw new IllegalStateException(
-            "이 APK에는 기존 2.4 Custom FileSelector가 없습니다. 다른 2.4.0 APK는 수정하지 않습니다."
-        );
+        return null;
     }
 
     private static void assertPatchedFilePicker(File apk, String dexEntry, File work) throws Exception {
@@ -259,7 +263,7 @@ final class V240PatchPipeline {
     private static ZipEntry requireEntry(ZipFile zip, String name) {
         ZipEntry entry = zip.getEntry(name);
         if (entry == null || entry.getSize() == 0L) {
-            throw new IllegalStateException("2.4 Custom APK 필수 항목 없음: " + name);
+            throw new IllegalStateException("2.4 APK 필수 항목 없음: " + name);
         }
         return entry;
     }
@@ -270,18 +274,6 @@ final class V240PatchPipeline {
             if (in == null) throw new IllegalStateException("선택한 APK를 열 수 없습니다.");
             copy(in, out);
         }
-    }
-
-    private static String sha256(InputStream raw) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        try (InputStream in = new BufferedInputStream(raw)) {
-            byte[] buffer = new byte[1024 * 1024];
-            int count;
-            while ((count = in.read(buffer)) != -1) digest.update(buffer, 0, count);
-        }
-        StringBuilder out = new StringBuilder(64);
-        for (byte b : digest.digest()) out.append(String.format(Locale.US, "%02x", b & 0xff));
-        return out.toString();
     }
 
     private static void copy(InputStream in, OutputStream out) throws Exception {
