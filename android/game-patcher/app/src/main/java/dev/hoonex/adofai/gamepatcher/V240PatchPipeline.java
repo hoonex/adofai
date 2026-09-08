@@ -9,6 +9,8 @@ import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
 
+import com.reandroid.arsc.chunk.xml.AndroidManifestBlock;
+
 import org.jf.dexlib2.DexFileFactory;
 import org.jf.dexlib2.Opcodes;
 import org.jf.dexlib2.iface.ClassDef;
@@ -21,11 +23,10 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Enumeration;
-import java.util.List;
+import java.security.MessageDigest;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -35,9 +36,20 @@ final class V240PatchPipeline {
     }
 
     static final String EXPECTED_VERSION = "2.4.0";
+    static final long EXPECTED_SOURCE_BYTES = 370_092_054L;
+    static final String EXPECTED_SOURCE_SHA256 =
+            "630f519ae1ab3391aad95da90ebc296f4f0f8ae4ea41024ace7349d93926ef30";
     static final String OUTPUT_NAME = "ADOFAI-2.4.0-Custom-Bugfix.apk";
-    private static final String FILE_SELECTOR = DexOverlayPatcher.FILE_SELECTOR;
-    private static final String CUSTOM_FILE_CHOOSER = DexOverlayPatcher.CUSTOM_FILE_CHOOSER;
+
+    private static final String LIBIL2CPP = "lib/arm64-v8a/libil2cpp.so";
+    private static final String FIX_LIBRARY = "lib/arm64-v8a/libv240fix.so";
+    private static final String[] REQUIRED_RUNTIME_CLASSES = {
+            "Lcom/unity3d/player/V240Bootstrap;",
+            "Lcom/unity3d/player/FileSelector;",
+            "Lcom/unity3d/player/V240AndroidBridge;",
+            "Lcom/unity3d/player/V240PickerActivity;",
+            "Lcom/unity3d/player/V240SettingsOverlay;"
+    };
 
     static final class Result {
         final Uri outputUri;
@@ -59,7 +71,7 @@ final class V240PatchPipeline {
     static Result patch(Context context, Uri sourceUri, Listener listener) throws Exception {
         if (sourceUri == null) throw new IllegalArgumentException("원본 APK가 선택되지 않았습니다.");
 
-        File work = new File(context.getCacheDir(), "v240-single-apk-patcher");
+        File work = new File(context.getCacheDir(), "v240-exact-apk-patcher");
         deleteTree(work);
         if (!work.mkdirs()) throw new IllegalStateException("작업 폴더 생성 실패");
 
@@ -67,13 +79,12 @@ final class V240PatchPipeline {
         File unsigned = new File(work, "patched-unsigned.apk");
         File signed = new File(work, OUTPUT_NAME);
         try {
-            progress(listener, "원본 APK 복사 중…");
+            progress(listener, "원본 V2.4.0 Custom.apk 복사 중…");
             copyUri(context.getContentResolver(), sourceUri, source);
-            if (source.length() < 10L * 1024L * 1024L) {
-                throw new IllegalStateException("선택한 파일이 정상적인 ADOFAI APK보다 너무 작습니다.");
-            }
 
-            progress(listener, "2.4.0 APK 구조 확인 중…");
+            progress(listener, "원본 지문 확인 중…");
+            assertExactSource(source);
+
             PackageInfo info = context.getPackageManager().getPackageArchiveInfo(source.getAbsolutePath(), 0);
             if (info == null) throw new IllegalStateException("Android APK 메타데이터를 읽을 수 없습니다.");
             if (!EXPECTED_VERSION.equals(info.versionName)) {
@@ -84,38 +95,35 @@ final class V240PatchPipeline {
                 throw new IllegalStateException("APK package name을 읽을 수 없습니다.");
             }
 
+            Map<String, EntryFingerprint> originalNative = snapshotNativeLibraries(source);
             try (ZipFile zip = new ZipFile(source)) {
                 requireEntry(zip, "AndroidManifest.xml");
                 requireEntry(zip, "classes.dex");
+                requireEntry(zip, LIBIL2CPP);
+                if (zip.getEntry("classes2.dex") != null) {
+                    throw new IllegalStateException("authoritative 2.4 source unexpectedly contains classes2.dex");
+                }
+                if (zip.getEntry("lib/arm64-v8a/libOctober.so") != null) {
+                    throw new IllegalStateException("authoritative 2.4 source unexpectedly contains libOctober.so");
+                }
             }
 
-            // The user's historical 2023 Custom build is not the later libOctober runtime.
-            // Never require, replace or inject libOctober here. Preserve native libraries byte-for-byte.
-            progress(listener, "기존 2.4 파일선택기 구조 확인 중…");
-            String selectorDexEntry = findLegacyFileSelectorDex(source, work);
+            progress(listener, "2.4 전용 Java/native 런타임 준비 중…");
+            PayloadAssets.V240Runtime runtime = PayloadAssets.stageV240FixedRuntime(context, work);
+            assertRuntimeDex(runtime.runtimeDex);
 
-            File pickerPayload = null;
-            String pickerMode;
-            if (selectorDexEntry != null) {
-                progress(listener, "기존 FileSelector 발견: " + selectorDexEntry);
-                PayloadAssets.Payload payload = PayloadAssets.stage(context, work);
-                pickerPayload = payload.classes2Dex;
-                pickerMode = selectorDexEntry + "의 기존 FileSelector/CustomFileChooser 교체";
-            } else {
-                pickerMode = "기존 FileSelector 없음 — 원본 dex/native/URL loader 보존";
-                progress(listener, "별도 FileSelector 없음 — 원본 에디터/URL loader 그대로 보존");
-            }
-
-            progress(listener, "Android 저장소 호환성 패치 적용 중…");
+            progress(listener, "SFB + Android SAF + 모바일 에디터 수정 적용 중…");
             ApkMutator.mutateV240Single(
-                source, unsigned, pickerPayload, work, packageName, selectorDexEntry
+                    source,
+                    unsigned,
+                    runtime.runtimeDex,
+                    runtime.nativeLibrary,
+                    work,
+                    packageName
             );
-            ApkMutator.assertEntry(unsigned, "AndroidManifest.xml");
-            ApkMutator.assertEntry(unsigned, "classes.dex");
-            if (selectorDexEntry != null) {
-                ApkMutator.assertEntry(unsigned, selectorDexEntry);
-                assertPatchedFilePicker(unsigned, selectorDexEntry, work);
-            }
+
+            progress(listener, "수정본 구조 검증 중…");
+            assertPatchedStructure(unsigned, work, packageName, originalNative);
 
             progress(listener, "수정 APK 재서명 및 검증 중…");
             SigningIdentity identity = SigningIdentity.loadOrCreate();
@@ -123,104 +131,154 @@ final class V240PatchPipeline {
             if (!identity.sha256.equals(signer)) {
                 throw new IllegalStateException("signer 검증 불일치");
             }
+            assertSignedStructure(signed, packageName);
 
             progress(listener, "Downloads에 수정본 저장 중…");
             Uri output = publishToDownloads(context, signed);
             progress(listener, "완료: " + OUTPUT_NAME);
-            return new Result(output, packageName, pickerMode, signer, signed.length());
+            return new Result(
+                    output,
+                    packageName,
+                    "SFB sync/async native hook + Android SAF picker + mobile editor runtime",
+                    signer,
+                    signed.length()
+            );
         } finally {
             deleteTree(work);
         }
     }
 
-    /**
-     * Searches every classes*.dex for the optional Java picker used by some 2.4 Custom
-     * variants. A missing picker is valid and must not reject the APK: early 2023 builds
-     * can use the game's own editor/URL-loader path without this later bridge.
-     */
-    private static String findLegacyFileSelectorDex(File apk, File work) throws Exception {
-        List<String> dexEntries = new ArrayList<String>();
+    private static void assertExactSource(File source) throws Exception {
+        if (source.length() != EXPECTED_SOURCE_BYTES) {
+            throw new IllegalStateException(
+                    "이 패처는 업로드된 정확한 V2.4.0 Custom.apk만 수정합니다. size=" + source.length()
+            );
+        }
+        String actual = sha256(source);
+        if (!EXPECTED_SOURCE_SHA256.equals(actual)) {
+            throw new IllegalStateException(
+                    "원본 APK SHA-256 불일치. expected=" + EXPECTED_SOURCE_SHA256 + " actual=" + actual
+            );
+        }
+    }
+
+    private static void assertPatchedStructure(
+            File apk,
+            File work,
+            String packageName,
+            Map<String, EntryFingerprint> originalNative
+    ) throws Exception {
+        ApkMutator.assertEntry(apk, "AndroidManifest.xml");
+        ApkMutator.assertEntry(apk, "classes.dex");
+        ApkMutator.assertEntry(apk, "classes2.dex");
+        ApkMutator.assertEntry(apk, FIX_LIBRARY);
+        ApkMutator.assertEntry(apk, LIBIL2CPP);
+
+        File patchedPrimaryDex = new File(work, "verify-v240-primary.dex");
+        ApkMutator.extractEntry(apk, "classes.dex", patchedPrimaryDex);
+        if (!V240DexBootstrapPatcher.containsBootstrapInvoke(patchedPrimaryDex)) {
+            throw new IllegalStateException("UnityPlayerActivity bootstrap injection verification failed");
+        }
+
+        File runtimeDex = new File(work, "verify-v240-runtime.dex");
+        ApkMutator.extractEntry(apk, "classes2.dex", runtimeDex);
+        assertRuntimeDex(runtimeDex);
+
+        File manifestFile = new File(work, "verify-v240-manifest.xml");
+        ApkMutator.extractEntry(apk, "AndroidManifest.xml", manifestFile);
+        AndroidManifestBlock manifest = AndroidManifestBlock.load(manifestFile);
+        if (!packageName.equals(manifest.getPackageName())) {
+            throw new IllegalStateException("package name changed during patch");
+        }
+        ManifestStoragePatcher.assertV240Picker(manifest);
+
+        assertOriginalNativeLibrariesPreserved(apk, originalNative);
+    }
+
+    private static void assertSignedStructure(File signed, String packageName) throws Exception {
+        try (ZipFile zip = new ZipFile(signed)) {
+            requireEntry(zip, "AndroidManifest.xml");
+            requireEntry(zip, "classes.dex");
+            requireEntry(zip, "classes2.dex");
+            requireEntry(zip, FIX_LIBRARY);
+            requireEntry(zip, LIBIL2CPP);
+        }
+        if (signed.length() < 300L * 1024L * 1024L) {
+            throw new IllegalStateException("signed output is unexpectedly small: " + signed.length());
+        }
+        if (packageName == null || packageName.trim().isEmpty()) {
+            throw new IllegalStateException("package name lost during signing");
+        }
+    }
+
+    private static void assertRuntimeDex(File dexFile) throws Exception {
+        DexFile dex = DexFileFactory.loadDexFile(dexFile, Opcodes.forApi(35));
+        Map<String, Boolean> required = new HashMap<String, Boolean>();
+        for (String name : REQUIRED_RUNTIME_CLASSES) required.put(name, Boolean.FALSE);
+        for (ClassDef cls : dex.getClasses()) {
+            if (required.containsKey(cls.getType())) required.put(cls.getType(), Boolean.TRUE);
+        }
+        for (Map.Entry<String, Boolean> entry : required.entrySet()) {
+            if (!entry.getValue()) {
+                throw new IllegalStateException("fixed runtime DEX missing class: " + entry.getKey());
+            }
+        }
+    }
+
+    private static Map<String, EntryFingerprint> snapshotNativeLibraries(File apk) throws Exception {
+        Map<String, EntryFingerprint> result = new HashMap<String, EntryFingerprint>();
         try (ZipFile zip = new ZipFile(apk)) {
-            Enumeration<? extends ZipEntry> entries = zip.entries();
+            java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
-                if (!entry.isDirectory() && isDexEntryName(entry.getName()) && entry.getSize() > 0L) {
-                    dexEntries.add(entry.getName());
+                String name = entry.getName();
+                if (!entry.isDirectory() && name.startsWith("lib/") && name.endsWith(".so")) {
+                    result.put(name, new EntryFingerprint(entry.getSize(), entry.getCrc()));
                 }
             }
         }
-        if (dexEntries.isEmpty()) throw new IllegalStateException("APK에 classes.dex가 없습니다.");
-
-        Collections.sort(dexEntries, new Comparator<String>() {
-            @Override
-            public int compare(String left, String right) {
-                return Integer.compare(dexIndex(left), dexIndex(right));
-            }
-        });
-
-        for (String entryName : dexEntries) {
-            File dexFile = new File(work, "scan-" + dexIndex(entryName) + ".dex");
-            extractEntry(apk, entryName, dexFile);
-            if (dexContainsClass(dexFile, FILE_SELECTOR)) return entryName;
-        }
-        return null;
+        if (result.isEmpty()) throw new IllegalStateException("source APK has no native libraries");
+        return result;
     }
 
-    private static void assertPatchedFilePicker(File apk, String dexEntry, File work) throws Exception {
-        File dexFile = new File(work, "verify-file-picker.dex");
-        extractEntry(apk, dexEntry, dexFile);
-        DexFile dex = DexFileFactory.loadDexFile(dexFile, Opcodes.forApi(35));
-        boolean selector = false;
-        boolean chooser = false;
-        for (ClassDef cls : dex.getClasses()) {
-            if (FILE_SELECTOR.equals(cls.getType())) selector = true;
-            if (CUSTOM_FILE_CHOOSER.equals(cls.getType())) chooser = true;
-        }
-        if (!selector || !chooser) {
-            throw new IllegalStateException("수정된 dex에서 FileSelector/CustomFileChooser 검증 실패");
-        }
-    }
-
-    private static boolean dexContainsClass(File dexFile, String type) throws Exception {
-        DexFile dex = DexFileFactory.loadDexFile(dexFile, Opcodes.forApi(35));
-        for (ClassDef cls : dex.getClasses()) {
-            if (type.equals(cls.getType())) return true;
-        }
-        return false;
-    }
-
-    private static boolean isDexEntryName(String name) {
-        if ("classes.dex".equals(name)) return true;
-        if (!name.startsWith("classes") || !name.endsWith(".dex")) return false;
-        String middle = name.substring("classes".length(), name.length() - ".dex".length());
-        if (middle.isEmpty()) return false;
-        for (int i = 0; i < middle.length(); i++) {
-            if (!Character.isDigit(middle.charAt(i))) return false;
-        }
-        return true;
-    }
-
-    private static int dexIndex(String name) {
-        if ("classes.dex".equals(name)) return 1;
-        String middle = name.substring("classes".length(), name.length() - ".dex".length());
-        try {
-            return Integer.parseInt(middle);
-        } catch (NumberFormatException ignored) {
-            return Integer.MAX_VALUE;
-        }
-    }
-
-    private static void extractEntry(File apk, String name, File output) throws Exception {
-        try (ZipFile zip = new ZipFile(apk)) {
-            ZipEntry entry = zip.getEntry(name);
-            if (entry == null || entry.getSize() <= 0L) {
-                throw new IllegalStateException("APK entry not found: " + name);
-            }
-            try (InputStream in = new BufferedInputStream(zip.getInputStream(entry));
-                 OutputStream out = new BufferedOutputStream(new FileOutputStream(output))) {
-                copy(in, out);
+    private static void assertOriginalNativeLibrariesPreserved(
+            File patched,
+            Map<String, EntryFingerprint> original
+    ) throws Exception {
+        try (ZipFile zip = new ZipFile(patched)) {
+            for (Map.Entry<String, EntryFingerprint> item : original.entrySet()) {
+                ZipEntry current = zip.getEntry(item.getKey());
+                if (current == null) {
+                    throw new IllegalStateException("original native library removed: " + item.getKey());
+                }
+                EntryFingerprint expected = item.getValue();
+                if (current.getSize() != expected.size || current.getCrc() != expected.crc) {
+                    throw new IllegalStateException("original native library changed: " + item.getKey());
+                }
             }
         }
+    }
+
+    private static final class EntryFingerprint {
+        final long size;
+        final long crc;
+
+        EntryFingerprint(long size, long crc) {
+            this.size = size;
+            this.crc = crc;
+        }
+    }
+
+    private static String sha256(File file) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (InputStream in = new BufferedInputStream(new FileInputStream(file))) {
+            byte[] buffer = new byte[1024 * 1024];
+            int count;
+            while ((count = in.read(buffer)) != -1) digest.update(buffer, 0, count);
+        }
+        StringBuilder result = new StringBuilder(64);
+        for (byte b : digest.digest()) result.append(String.format(Locale.US, "%02x", b & 0xff));
+        return result.toString();
     }
 
     private static Uri publishToDownloads(Context context, File source) throws Exception {
@@ -269,10 +327,12 @@ final class V240PatchPipeline {
     }
 
     private static void copyUri(ContentResolver resolver, Uri uri, File output) throws Exception {
-        try (InputStream in = new BufferedInputStream(resolver.openInputStream(uri));
-             OutputStream out = new BufferedOutputStream(new FileOutputStream(output))) {
-            if (in == null) throw new IllegalStateException("선택한 APK를 열 수 없습니다.");
-            copy(in, out);
+        try (InputStream raw = resolver.openInputStream(uri)) {
+            if (raw == null) throw new IllegalStateException("선택한 APK를 열 수 없습니다.");
+            try (InputStream in = new BufferedInputStream(raw);
+                 OutputStream out = new BufferedOutputStream(new FileOutputStream(output))) {
+                copy(in, out);
+            }
         }
     }
 
