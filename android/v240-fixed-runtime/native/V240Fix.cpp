@@ -1,4 +1,5 @@
 #include <jni.h>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -153,8 +154,6 @@ std::string RunPicker(PickerMode mode, String* suggestedName = nullptr) {
         return "";
     }
 
-    // The Android picker owns the screen while this Unity call is suspended. Polling here
-    // keeps the managed callback on the original Unity thread when the picker returns.
     bool done = false;
     for (int i = 0; i < 18000; ++i) {
         jboolean value = env->GetStaticBooleanField(g_selectorClass, g_isDone);
@@ -279,12 +278,13 @@ bool HookInsideUI(IL2CPP::Il2CppObject* self, Vector2 point) {
 }
 
 template <typename Fn>
-void InstallNamedHook(Class& klass, const char* name, std::initializer_list<const char*> parameterNames,
-                      Fn replacement, const char* label) {
-    std::vector<std::string_view> names;
-    names.reserve(parameterNames.size());
-    for (const char* value : parameterNames) names.emplace_back(value);
-    auto method = klass.GetMethod(name, names);
+void InstallNamedHook(
+        Class& klass,
+        const char* name,
+        const std::initializer_list<std::string_view>& parameterNames,
+        Fn replacement,
+        const char* label) {
+    auto method = klass.GetMethod(name, parameterNames);
     if (!method.IsValid()) {
         LOGW("V240: method missing: %s", label);
         return;
