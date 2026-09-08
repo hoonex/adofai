@@ -20,25 +20,33 @@ final class PayloadAssets {
         }
     }
 
-    /** Legacy/general payload path retained for the unrelated patcher code. */
+    /**
+     * Loads the Java payload and, when present, the unrelated newer native payload.
+     * The historical 2.4 Custom path intentionally works with classes2.dex only.
+     */
     static Payload stage(Context context, File workDir) throws Exception {
         if (!workDir.exists() && !workDir.mkdirs()) {
             throw new IllegalStateException("could not create payload work directory: " + workDir);
         }
         File dex = new File(workDir, "payload-classes2.dex");
-        File lib = new File(workDir, "payload-libOctober.so");
         copyAsset(context, "payload/classes2.dex", dex);
-        copyAsset(context, "payload/libOctober.so", lib);
-        if (dex.length() < 1024L || lib.length() < 4096L) {
+        if (dex.length() < 1024L) {
             throw new IllegalStateException("embedded editor payload is missing or unexpectedly small");
+        }
+
+        File lib = null;
+        try {
+            File candidate = new File(workDir, "payload-libOctober.so");
+            copyAsset(context, "payload/libOctober.so", candidate);
+            if (candidate.length() >= 4096L) lib = candidate;
+        } catch (java.io.FileNotFoundException ignored) {
+            // Expected for the historical 2.4 Java-only patcher build.
+        } catch (java.io.IOException ignored) {
+            // AssetManager reports a missing asset as IOException on some Android versions.
         }
         return new Payload(dex, lib);
     }
 
-    /**
-     * 2.4 historical Custom path: only the optional Java picker payload is staged.
-     * No native hook asset is required or read.
-     */
     static File stageV240PickerDex(Context context, File workDir) throws Exception {
         if (!workDir.exists() && !workDir.mkdirs()) {
             throw new IllegalStateException("could not create payload work directory: " + workDir);
