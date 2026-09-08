@@ -6,12 +6,11 @@ import java.io.File;
 import java.io.FileOutputStream;
 
 /**
- * Patches the installed game's binary AndroidManifest.xml without apktool.
+ * Patches a binary AndroidManifest.xml without apktool.
  *
- * The injected editor's file browser intentionally uses raw shared-storage paths.
- * On Android 11+ that path requires MANAGE_EXTERNAL_STORAGE to be declared by the
- * game before FileSelector can direct the user to the system "All files access"
- * screen. READ/WRITE are retained for the legacy branch on older Android.
+ * The legacy mobile editor file browser uses raw shared-storage paths. On
+ * Android 11+ that path requires MANAGE_EXTERNAL_STORAGE to be declared;
+ * READ/WRITE are retained for older Android versions.
  */
 final class ManifestStoragePatcher {
     static final String READ_EXTERNAL_STORAGE = "android.permission.READ_EXTERNAL_STORAGE";
@@ -25,8 +24,15 @@ final class ManifestStoragePatcher {
     };
 
     static void patch(File source, File output) throws Exception {
+        patch(source, output, InstalledGame.PACKAGE_NAME);
+    }
+
+    static void patch(File source, File output, String expectedPackage) throws Exception {
+        if (expectedPackage == null || expectedPackage.trim().isEmpty()) {
+            throw new IllegalArgumentException("expected package is required");
+        }
         AndroidManifestBlock manifest = AndroidManifestBlock.load(source);
-        assertPackage(manifest);
+        assertPackage(manifest, expectedPackage);
 
         for (String permission : REQUIRED) {
             manifest.addUsesPermission(permission);
@@ -47,7 +53,7 @@ final class ManifestStoragePatcher {
         }
 
         AndroidManifestBlock verify = AndroidManifestBlock.load(output);
-        assertPackage(verify);
+        assertPackage(verify, expectedPackage);
         assertPermissions(verify);
     }
 
@@ -59,9 +65,9 @@ final class ManifestStoragePatcher {
         }
     }
 
-    private static void assertPackage(AndroidManifestBlock manifest) {
+    private static void assertPackage(AndroidManifestBlock manifest, String expectedPackage) {
         String packageName = manifest.getPackageName();
-        if (!InstalledGame.PACKAGE_NAME.equals(packageName)) {
+        if (!expectedPackage.equals(packageName)) {
             throw new IllegalStateException(
                 "refusing manifest for unexpected package: " + String.valueOf(packageName)
             );
