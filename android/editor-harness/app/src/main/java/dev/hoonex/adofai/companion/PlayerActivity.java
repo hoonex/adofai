@@ -178,16 +178,16 @@ public final class PlayerActivity extends Activity {
             Path path = new Path();
             for (int i = 0; i < level.tiles.size(); i++) {
                 Point p = level.tiles.get(i);
-                float sx = cx + (p.x - anchor.x) * tileSize;
-                float sy = cy - (p.y - anchor.y) * tileSize;
+                float sx = cx + (float) (p.x - anchor.x) * tileSize;
+                float sy = cy - (float) (p.y - anchor.y) * tileSize;
                 if (i == 0) path.moveTo(sx, sy); else path.lineTo(sx, sy);
             }
             canvas.drawPath(path, line);
 
             for (int i = 0; i < level.tiles.size(); i++) {
                 Point p = level.tiles.get(i);
-                float sx = cx + (p.x - anchor.x) * tileSize;
-                float sy = cy - (p.y - anchor.y) * tileSize;
+                float sx = cx + (float) (p.x - anchor.x) * tileSize;
+                float sy = cy - (float) (p.y - anchor.y) * tileSize;
                 if (sx < -tileSize || sx > getWidth() + tileSize || sy < -tileSize || sy > getHeight() + tileSize) continue;
                 if (i < nextHit) paint.setColor(Color.rgb(98, 86, 132));
                 else if (i == nextHit) paint.setColor(Color.rgb(235, 235, 245));
