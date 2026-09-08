@@ -1,0 +1,67 @@
+name: Build ADOFAI 2.4 Custom Bugfix Payload
+
+on:
+  push:
+    branches:
+      - fix/v240-custom-bugfix
+    paths:
+      - 'scripts/prepare-v240-bugfix-upstream.sh'
+      - 'scripts/build-v240-bugfix-payload.sh'
+      - 'tools/apply_hitmargin_editor_mode.py'
+      - 'tools/apply_hitmargin_file_dialogs.py'
+      - 'tools/apply_hitmargin_storage_guard.py'
+      - 'tools/apply_hitmargin_picker_cancel_guard.py'
+      - '.github/workflows/v240-bugfix-payload.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: adofai-v240-bugfix-payload-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install pinned Android toolchain
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager \
+            'platforms;android-35' \
+            'build-tools;36.0.0' \
+            'ndk;29.0.14206865'
+
+      - name: Build isolated v2.4 bugfix payload
+        run: bash scripts/build-v240-bugfix-payload.sh dist/v240-bugfix-payload
+
+      - name: Verify artifact contract
+        run: |
+          set -euo pipefail
+          test -s dist/v240-bugfix-payload/classes2.dex
+          test -s dist/v240-bugfix-payload/libOctober.so
+          test -s dist/v240-bugfix-payload/SHA256SUMS.txt
+          test -s dist/v240-bugfix-payload/PATCHSET.txt
+          grep -q 'editor desktop-mode hook' dist/v240-bugfix-payload/PATCHSET.txt
+          grep -q 'Open/Save/Folder' dist/v240-bugfix-payload/PATCHSET.txt
+          grep -q 'Android storage' dist/v240-bugfix-payload/PATCHSET.txt
+          grep -q 'Back/cancel' dist/v240-bugfix-payload/PATCHSET.txt
+          ! grep -q 'Companion Editor / official handoff / Custom Player$' \
+            <(sed -n '/Applied fixes only:/,/Explicitly excluded:/p' dist/v240-bugfix-payload/PATCHSET.txt)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adofai-v240-custom-bugfix-payload
+          path: dist/v240-bugfix-payload/
+          if-no-files-found: error
+          retention-days: 14
