@@ -1,10 +1,12 @@
 from pathlib import Path
+import json
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
 PROBE = ROOT / "android" / "native-inventory-probe" / "app" / "src" / "main" / "java" / "dev" / "hoonex" / "adofai" / "nativeprobe" / "IntentCapabilityProbe.java"
 MAIN = ROOT / "android" / "native-inventory-probe" / "app" / "src" / "main" / "java" / "dev" / "hoonex" / "adofai" / "nativeprobe" / "MainActivity.java"
+HANDOFF_FIXTURE = ROOT / "tests" / "fixtures" / "explicit-handoff-probe.adofai"
 
 
 class NativeInventoryProbeTests(unittest.TestCase):
@@ -32,8 +34,29 @@ class NativeInventoryProbeTests(unittest.TestCase):
         text = MAIN.read_text(encoding="utf-8")
         self.assertIn('"adofai-native-inventory-v2"', text)
         self.assertIn('report.put("external_file_intents", IntentCapabilityProbe.build(pm, TARGET_PACKAGE));', text)
-        self.assertIn('ACTION_VIEW resolution proves only Android routing capability', text)
-        self.assertIn('does not launch ADOFAI', text)
+        self.assertIn('ACTION_VIEW/SEND resolution proves only Android routing capability', text)
+        self.assertIn('Generating this inventory report does not launch ADOFAI', text)
+
+    def test_explicit_handoff_is_opt_in_exact_target_and_non_mutating(self):
+        text = MAIN.read_text(encoding="utf-8")
+        self.assertIn('REQUEST_HANDOFF_FILE', text)
+        self.assertIn('assertExactTarget();', text)
+        self.assertIn('new ComponentName(TARGET_PACKAGE, TARGET_ACTIVITY)', text)
+        self.assertIn('TARGET_ACTIVITY = "com.unity3d.player.UnityPlayerActivity"', text)
+        self.assertIn('Intent.FLAG_GRANT_READ_URI_PERMISSION', text)
+        self.assertIn('ClipData.newRawUri("ADOFAI chart", uri)', text)
+        self.assertIn('Intent.EXTRA_STREAM', text)
+        self.assertIn('REMOTE_PROBE_URL', text)
+        self.assertIn('explicit-handoff-probe.adofai', text)
+        self.assertNotIn('deletePackage', text)
+        self.assertNotIn('installPackage', text)
+        self.assertNotIn('pm clear', text)
+
+    def test_remote_handoff_fixture_is_strict_json(self):
+        parsed = json.loads(HANDOFF_FIXTURE.read_text(encoding="utf-8"))
+        self.assertEqual(parsed["settings"]["version"], 15)
+        self.assertEqual(parsed["settings"]["songFilename"], "")
+        self.assertGreaterEqual(len(parsed["angleData"]), 2)
 
 
 if __name__ == "__main__":
