@@ -28,7 +28,7 @@ class CustomPlayerTests(unittest.TestCase):
         transform = TRANSFORM.read_text(encoding="utf-8")
         self.assertIn("PlayerActivity.class", bridge)
         self.assertIn("EXTRA_CHART_PATH", bridge)
-        self.assertIn('makeAction(\\"Play\\"', transform)
+        self.assertIn('makeAction("Play"', transform)
         self.assertIn("CustomPlayerBridge.open(currentPath)", transform)
 
     def test_manifest_exposes_nonexported_landscape_player(self):
