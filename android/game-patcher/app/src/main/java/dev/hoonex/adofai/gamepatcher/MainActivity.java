@@ -5,7 +5,6 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
-import android.provider.Settings;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -44,9 +43,11 @@ public final class MainActivity extends Activity {
         root.addView(title);
 
         TextView desc = text(
-            "2023년 V2.4.0 Custom APK의 기존 에디터/ZIP URL 로더/native runtime을 그대로 보존합니다.\n\n" +
-            "적용: Android 저장소 권한 호환성. 기존 FileSelector가 들어있는 변형이면 그 파일선택기의 Activity/저장소/취소 처리도 교체합니다. " +
-            "libOctober.so나 classes2.dex는 원본 필수 항목이 아닙니다.",
+            "업로드된 정확한 V2.4.0 Custom APK만 SHA-256으로 확인한 뒤 수정합니다.\n\n" +
+            "수정: 에디터 Open / Save / Save As / Folder의 동기·비동기 SFB 호출, Android SAF 파일 선택, " +
+            "취소 처리, 모바일 터치 판정·드래그 감도·UI 크기·설정창.\n\n" +
+            "원본 IL2CPP/native 게임 파일은 그대로 보존하고 별도 libv240fix.so만 추가합니다. " +
+            "ALL FILES ACCESS 권한은 필요하지 않습니다.",
             14, Color.rgb(190, 190, 200)
         );
         desc.setPadding(0, dp(10), 0, dp(18));
@@ -55,18 +56,6 @@ public final class MainActivity extends Activity {
         chooseButton = button("V2.4.0 CUSTOM APK 선택 → 수정본 만들기");
         chooseButton.setOnClickListener(v -> chooseSource());
         root.addView(chooseButton);
-
-        Button permission = button("ALL FILES ACCESS 설정 열기 (필요 시)");
-        permission.setOnClickListener(v -> {
-            try {
-                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                    Uri.parse("package:" + getPackageName()));
-                startActivity(intent);
-            } catch (Throwable ignored) {
-                startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
-            }
-        });
-        root.addView(permission);
 
         status = text(
             "원본 APK를 선택하세요. 수정본은 Downloads/ADOFAI/ADOFAI-2.4.0-Custom-Bugfix.apk 로 저장됩니다.",
@@ -103,7 +92,7 @@ public final class MainActivity extends Activity {
         if (busy) return;
         busy = true;
         chooseButton.setEnabled(false);
-        setStatus("2.4.0 APK 검사 시작…", false);
+        setStatus("정확한 2.4.0 원본 지문 검사 시작…", false);
         worker.execute(() -> {
             try {
                 V240PatchPipeline.Result result = V240PatchPipeline.patch(
@@ -119,8 +108,8 @@ public final class MainActivity extends Activity {
                         "파일: " + V240PatchPipeline.OUTPUT_NAME + "\n" +
                         "저장 위치: Downloads/ADOFAI\n" +
                         "Package: " + result.packageName + "\n" +
-                        "파일선택기 처리: " + result.pickerPatchMode + "\n" +
-                        "기존 native/URL loader: 보존\n" +
+                        "런타임 수정: " + result.pickerPatchMode + "\n" +
+                        "원본 native 라이브러리: CRC/크기 보존 검증 완료\n" +
                         "새 signer SHA-256: " + result.signerSha256 + "\n" +
                         "크기: " + formatBytes(result.outputBytes),
                         false
