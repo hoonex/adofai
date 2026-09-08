@@ -70,7 +70,7 @@ class CompanionEditorTests(unittest.TestCase):
         self.assertIn("ZIP path traversal rejected", text)
         self.assertIn("zipDirectory(root, output)", text)
 
-    def test_loopback_zip_server_is_local_only_and_serves_zip(self):
+    def test_loopback_zip_server_is_local_only_serves_zip_and_records_consumption(self):
         text = SERVER.read_text(encoding="utf-8")
         self.assertIn('InetAddress.getByName("127.0.0.1")', text)
         self.assertIn("new ServerSocket(0", text)
@@ -78,6 +78,13 @@ class CompanionEditorTests(unittest.TestCase):
         self.assertIn('"GET".equals(method)', text)
         self.assertIn('"HEAD".equals(method)', text)
         self.assertIn("Cache-Control: no-store", text)
+        self.assertIn("ProbeState", text)
+        self.assertIn("diagnosticFor", text)
+        self.assertIn("noteRequest", text)
+        self.assertIn("noteBytes", text)
+        self.assertIn("user-agent", text.lower())
+        self.assertIn("GET 0회", text)
+        self.assertIn("cleartext HTTP", text)
 
     def test_official_bridge_prefers_historical_zip_url_shape_and_keeps_chart_uri_fallback(self):
         bridge = BRIDGE.read_text(encoding="utf-8")
@@ -94,6 +101,20 @@ class CompanionEditorTests(unittest.TestCase):
         self.assertIn('OfficialChartProvider.publish', bridge)
         self.assertIn('Intent.EXTRA_STREAM', bridge)
         self.assertIn('MODE_READ_ONLY', provider)
+
+    def test_official_bridge_reports_probe_once_after_return(self):
+        bridge = BRIDGE.read_text(encoding="utf-8")
+        main = MAIN.read_text(encoding="utf-8")
+        companion = COMPANION.read_text(encoding="utf-8")
+        self.assertIn("pendingReturnDiagnostic", bridge)
+        self.assertIn("consumeReturnDiagnostic", bridge)
+        self.assertIn("LoopbackZipServer.diagnosticFor", bridge)
+        self.assertIn("MIN_RETURN_DIAGNOSTIC_DELAY_MS", bridge)
+        self.assertIn("RETURN_PROBE_DELAY_MS", main)
+        self.assertIn("OfficialGameBridge.consumeReturnDiagnostic", main)
+        self.assertIn("MobileEditorShell.showOfficialHandoffDiagnostic", main)
+        self.assertIn("showOfficialHandoffDiagnostic", companion)
+        self.assertIn("Toast.makeText", companion)
 
     def test_gradle_uses_durable_companion_identity(self):
         text = BUILD.read_text(encoding="utf-8")
@@ -121,6 +142,8 @@ class CompanionEditorTests(unittest.TestCase):
         self.assertIn("BundleWorkspace.importZip", text)
         self.assertIn("LoopbackZipServer.publish", text)
         self.assertIn("OfficialGameBridge.open", text)
+        self.assertIn("diagnosticFor", text)
+        self.assertIn("showOfficialHandoffDiagnostic", text)
 
     def test_companion_layer_has_zip_url_new_save_sync_and_official_handoff(self):
         companion = COMPANION.read_text(encoding="utf-8")
@@ -131,6 +154,7 @@ class CompanionEditorTests(unittest.TestCase):
         self.assertIn("FileSelector.syncSavedPath", companion)
         self.assertIn("FileSelector.displayNameForPath", companion)
         self.assertIn("openStandalonePath", companion)
+        self.assertIn("showOfficialHandoffDiagnostic", companion)
         self.assertIn("OfficialGameBridge.open(currentPath)", companion)
         self.assertNotIn("CustomPlayerBridge", companion)
 
