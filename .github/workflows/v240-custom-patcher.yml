@@ -7,8 +7,7 @@ on:
     paths:
       - 'android/game-patcher/**'
       - 'scripts/prepare-v240-bugfix-upstream.sh'
-      - 'scripts/build-v240-bugfix-payload.sh'
-      - 'tools/apply_hitmargin_editor_mode.py'
+      - 'scripts/build-v240-picker-payload.sh'
       - 'tools/apply_hitmargin_file_dialogs.py'
       - 'tools/apply_hitmargin_storage_guard.py'
       - 'tools/apply_hitmargin_picker_cancel_guard.py'
@@ -39,41 +38,40 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      - name: Install pinned Android toolchain
+      - name: Install Android toolchain
         run: |
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager \
-            'platforms;android-35' \
-            'build-tools;36.0.0' \
-            'ndk;29.0.14206865'
+          sdkmanager 'platforms;android-35' 'build-tools;36.0.0'
 
-      - name: Build isolated 2.4 bugfix payload
-        run: bash scripts/build-v240-bugfix-payload.sh .work/v240-patcher-payload
+      - name: Build optional 2.4 Java picker payload
+        run: bash scripts/build-v240-picker-payload.sh .work/v240-picker-payload
 
-      - name: Stage 2.4 payload into patcher
+      - name: Stage Java-only payload
         run: |
           set -euo pipefail
           ASSETS=android/game-patcher/app/src/main/assets/payload
           rm -rf "$ASSETS"
           mkdir -p "$ASSETS"
-          cp .work/v240-patcher-payload/classes2.dex "$ASSETS/classes2.dex"
-          cp .work/v240-patcher-payload/libOctober.so "$ASSETS/libOctober.so"
-          cp .work/v240-patcher-payload/PATCHSET.txt "$ASSETS/PATCHSET.txt"
-          cp .work/v240-patcher-payload/ORIGINAL_LIBOCTOBER_SHA256.txt "$ASSETS/ORIGINAL_LIBOCTOBER_SHA256.txt"
+          cp .work/v240-picker-payload/classes2.dex "$ASSETS/classes2.dex"
           test -s "$ASSETS/classes2.dex"
-          test -s "$ASSETS/libOctober.so"
+          test ! -e "$ASSETS/libOctober.so"
 
       - name: Compile 2.4 one-click patcher
         run: gradle --no-daemon -p android/game-patcher :app:testDebugUnitTest :app:assembleDebug
 
-      - name: Verify product contract
+      - name: Verify legacy-preservation contract
         run: |
           set -euo pipefail
-          grep -q 'V240PatchPipeline' android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/MainActivity.java
-          grep -q 'EXPECTED_VERSION = "2.4.0"' android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/V240PatchPipeline.java
-          grep -q 'FileSelector' android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/V240PatchPipeline.java
-          grep -q 'mutateV240Single' android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/ApkMutator.java
-          ! grep -q 'ADOFAI 3.3.1 Game Patcher' android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/MainActivity.java
+          PIPE=android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/V240PatchPipeline.java
+          MUT=android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/ApkMutator.java
+          MAIN=android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/MainActivity.java
+          grep -q 'EXPECTED_VERSION = "2.4.0"' "$PIPE"
+          grep -q 'Never require, replace or inject libOctober' "$PIPE"
+          grep -q 'return null;' "$PIPE"
+          grep -q 'preserves every native library' "$MUT"
+          grep -q 'selectorDexEntry != null' "$MUT"
+          grep -q '기존 native/URL loader: 보존' "$MAIN"
+          ! grep -q 'sourceOctoberSha256' "$PIPE"
           test -s android/game-patcher/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Stage artifact
