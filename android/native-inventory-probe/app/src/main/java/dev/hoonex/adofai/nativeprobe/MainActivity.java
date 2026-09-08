@@ -1,6 +1,10 @@
 package dev.hoonex.adofai.nativeprobe;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ComponentName;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
@@ -12,6 +16,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import org.json.JSONArray;
@@ -38,23 +43,31 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 /**
- * Tiny, read-only probe for the exact ADOFAI 3.3.1 split install.
+ * Evidence probe for the exact Play-installed ADOFAI 3.3.1 split install.
  *
- * It does not copy game binaries. It records APK/split metadata, arm64 native
- * library inventory, and PackageManager routing evidence for possible external
- * .adofai handoff so the phone-only strategy can be chosen from exact evidence.
+ * Inventory/report generation is read-only: it records APK/split metadata,
+ * native library inventory and PackageManager routing evidence. A separate,
+ * explicit user action can launch the already-exported official
+ * UnityPlayerActivity with a selected chart URI to test whether the unmodified
+ * game consumes Android Intent data. No game APK, signature, data or binaries
+ * are modified by this app.
  */
 public final class MainActivity extends Activity {
     private static final String TARGET_PACKAGE = "com.fizzd.connectedworlds";
+    private static final String TARGET_ACTIVITY = "com.unity3d.player.UnityPlayerActivity";
     private static final String EXPECTED_VERSION_NAME = "3.3.1";
     private static final long EXPECTED_VERSION_CODE = 300382L;
     private static final String ARM64_PREFIX = "lib/arm64-v8a/";
+    private static final String REMOTE_PROBE_URL =
+            "https://raw.githubusercontent.com/hoonex/adofai/feat/modern-mobile-editor/tests/fixtures/explicit-handoff-probe.adofai";
     private static final int REQUEST_SAVE = 2301;
+    private static final int REQUEST_HANDOFF_FILE = 2302;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private TextView statusView;
     private ProgressBar progressBar;
     private Button inspectButton;
+    private Button handoffButton;
     private File pendingReport;
 
     @Override
@@ -67,15 +80,15 @@ public final class MainActivity extends Activity {
         root.setPadding(padding, padding, padding, padding);
 
         TextView title = new TextView(this);
-        title.setText("ADOFAI 3.3.1 Native Inventory");
+        title.setText("ADOFAI 3.3.1 Handoff Probe");
         title.setTextSize(23f);
         root.addView(title);
 
         TextView description = new TextView(this);
         description.setText(
-                "설치된 ADOFAI의 split별 arm64 네이티브 라이브러리 이름/크기와 " +
-                "외부 .adofai 파일 인텐트 처리 가능성만 확인합니다. " +
-                "게임 바이너리나 에셋은 복사하지 않고 게임을 실행하지도 않습니다.");
+                "첫 버튼은 설치된 공식 Play판 3.3.1의 split/네이티브 구성과 공개 Intent 처리 가능성만 읽습니다. " +
+                "두 번째 버튼은 사용자가 선택한 .adofai를 exported UnityPlayerActivity에 명시적으로 전달해 " +
+                "공식 게임이 실제로 URI를 소비하는지 확인합니다. APK, 서명, 세이브 데이터는 수정하지 않습니다.");
         description.setTextSize(15f);
         LinearLayout.LayoutParams descriptionParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -86,11 +99,20 @@ public final class MainActivity extends Activity {
         inspectButton = new Button(this);
         inspectButton.setText("3.3.1 진단 보고서 만들기");
         inspectButton.setAllCaps(false);
-        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams inspectParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        buttonParams.topMargin = dp(24);
-        root.addView(inspectButton, buttonParams);
+        inspectParams.topMargin = dp(24);
+        root.addView(inspectButton, inspectParams);
+
+        handoffButton = new Button(this);
+        handoffButton.setText("공식 3.3.1 explicit handoff 테스트");
+        handoffButton.setAllCaps(false);
+        LinearLayout.LayoutParams handoffParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        handoffParams.topMargin = dp(12);
+        root.addView(handoffButton, handoffParams);
 
         progressBar = new ProgressBar(this);
         progressBar.setIndeterminate(true);
@@ -102,7 +124,7 @@ public final class MainActivity extends Activity {
         root.addView(progressBar, progressParams);
 
         statusView = new TextView(this);
-        statusView.setText("준비됨 — 결과는 몇 KB짜리 JSON입니다.");
+        statusView.setText("준비됨 — 먼저 진단 후 explicit handoff를 시험할 수 있습니다.");
         statusView.setTextSize(14f);
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -110,10 +132,18 @@ public final class MainActivity extends Activity {
         statusParams.topMargin = dp(16);
         root.addView(statusView, statusParams);
 
-        setContentView(root);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(root);
+        setContentView(scroll);
+
         inspectButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
                 beginInspection();
+            }
+        });
+        handoffButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                launchHandoffPicker();
             }
         });
     }
@@ -153,11 +183,8 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private ReportResult buildReport() throws Exception {
-        PackageManager pm = getPackageManager();
-        PackageInfo packageInfo = pm.getPackageInfo(TARGET_PACKAGE, 0);
-        ApplicationInfo appInfo = pm.getApplicationInfo(TARGET_PACKAGE, 0);
-
+    private void assertExactTarget() throws Exception {
+        PackageInfo packageInfo = getPackageManager().getPackageInfo(TARGET_PACKAGE, 0);
         long versionCode = Build.VERSION.SDK_INT >= 28
                 ? packageInfo.getLongVersionCode()
                 : packageInfo.versionCode;
@@ -167,6 +194,18 @@ public final class MainActivity extends Activity {
                     "검증 대상 불일치: expected " + EXPECTED_VERSION_NAME + "/" + EXPECTED_VERSION_CODE +
                     ", got " + versionName + "/" + versionCode);
         }
+    }
+
+    private ReportResult buildReport() throws Exception {
+        PackageManager pm = getPackageManager();
+        assertExactTarget();
+        PackageInfo packageInfo = pm.getPackageInfo(TARGET_PACKAGE, 0);
+        ApplicationInfo appInfo = pm.getApplicationInfo(TARGET_PACKAGE, 0);
+
+        long versionCode = Build.VERSION.SDK_INT >= 28
+                ? packageInfo.getLongVersionCode()
+                : packageInfo.versionCode;
+        String versionName = packageInfo.versionName == null ? "unknown" : packageInfo.versionName;
 
         List<String> apkPaths = new ArrayList<>();
         apkPaths.add(appInfo.sourceDir);
@@ -256,8 +295,8 @@ public final class MainActivity extends Activity {
         JSONArray notes = new JSONArray();
         notes.put("This report records ZIP entry metadata only; no game native library bytes are exported.");
         notes.put("Library presence alone does not prove Android/Unity automatically loads that library.");
-        notes.put("ACTION_VIEW resolution proves only Android routing capability, not that ADOFAI consumes the URI as a custom level.");
-        notes.put("The probe does not launch ADOFAI or grant a real chart file; a separate launch test is required before using official-game handoff as Preview proof.");
+        notes.put("ACTION_VIEW/SEND resolution proves only Android routing capability, not that ADOFAI consumes a URI as a custom level.");
+        notes.put("Generating this inventory report does not launch ADOFAI. The separate explicit handoff button is an opt-in launch test.");
         report.put("evidence_notes", notes);
 
         String suggestedName = "adofai-native-inventory-3.3.1-300382.json";
@@ -266,6 +305,106 @@ public final class MainActivity extends Activity {
             out.write(report.toString(2).getBytes(StandardCharsets.UTF_8));
         }
         return new ReportResult(outFile, suggestedName, nativeEntries.size());
+    }
+
+    private void launchHandoffPicker() {
+        try {
+            assertExactTarget();
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("*/*");
+            startActivityForResult(intent, REQUEST_HANDOFF_FILE);
+        } catch (Exception error) {
+            showError("handoff 준비 실패: " + safeMessage(error));
+        }
+    }
+
+    private void showHandoffVariantDialog(final Uri chartUri) {
+        final String[] variants = new String[] {
+                "A · VIEW + content URI + application/json",
+                "B · VIEW + content URI (MIME 없음)",
+                "C · SEND + EXTRA_STREAM + application/json",
+                "D · VIEW + URI + 호환 extra 후보",
+                "E · VIEW + HTTPS .adofai URL"
+        };
+        new AlertDialog.Builder(this)
+                .setTitle("공식 게임 handoff 방식 선택")
+                .setMessage("게임이 단순히 실행되는 것과 선택한 커스텀 레벨/에디터가 실제로 열리는 것은 다릅니다. 각 방식을 시험한 뒤 결과를 확인하세요.")
+                .setItems(variants, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        launchExplicitHandoff(chartUri, which);
+                    }
+                })
+                .setNegativeButton("취소", null)
+                .show();
+    }
+
+    private void launchExplicitHandoff(Uri chartUri, int variant) {
+        try {
+            assertExactTarget();
+            ComponentName target = new ComponentName(TARGET_PACKAGE, TARGET_ACTIVITY);
+            Intent intent;
+            String label;
+
+            if (variant == 0) {
+                intent = new Intent(Intent.ACTION_VIEW);
+                intent.setDataAndType(chartUri, "application/json");
+                attachReadGrant(intent, chartUri);
+                label = "A: VIEW + content URI + application/json";
+            } else if (variant == 1) {
+                intent = new Intent(Intent.ACTION_VIEW);
+                intent.setData(chartUri);
+                attachReadGrant(intent, chartUri);
+                label = "B: VIEW + content URI";
+            } else if (variant == 2) {
+                intent = new Intent(Intent.ACTION_SEND);
+                intent.setType("application/json");
+                intent.putExtra(Intent.EXTRA_STREAM, chartUri);
+                attachReadGrant(intent, chartUri);
+                label = "C: SEND + stream";
+            } else if (variant == 3) {
+                intent = new Intent(Intent.ACTION_VIEW);
+                intent.setData(chartUri);
+                attachReadGrant(intent, chartUri);
+                String encoded = chartUri.toString();
+                intent.putExtra("url", encoded);
+                intent.putExtra("path", encoded);
+                intent.putExtra("filePath", encoded);
+                intent.putExtra("levelPath", encoded);
+                intent.putExtra("adofai", encoded);
+                intent.putExtra(Intent.EXTRA_STREAM, chartUri);
+                label = "D: VIEW + compatibility extras";
+            } else {
+                Uri remote = Uri.parse(REMOTE_PROBE_URL);
+                intent = new Intent(Intent.ACTION_VIEW);
+                intent.setData(remote);
+                intent.putExtra(Intent.EXTRA_TEXT, REMOTE_PROBE_URL);
+                label = "E: VIEW + HTTPS .adofai URL";
+            }
+
+            intent.setComponent(target);
+            startActivity(intent);
+            statusView.setText(
+                    label + " 로 공식 ADOFAI를 실행했습니다. " +
+                    "커스텀 레벨/에디터가 실제로 열렸는지 확인한 뒤 이 앱으로 돌아와 다른 방식을 시험하세요.");
+        } catch (Throwable error) {
+            showError("explicit handoff 실행 실패: " + error.getClass().getSimpleName() + ": " + safeMessage(error));
+        }
+    }
+
+    private static void attachReadGrant(Intent intent, Uri uri) {
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        intent.setClipData(ClipData.newRawUri("ADOFAI chart", uri));
+    }
+
+    private void takePersistableReadPermission(Uri uri, int resultFlags) {
+        int flags = resultFlags & Intent.FLAG_GRANT_READ_URI_PERMISSION;
+        if (flags == 0) return;
+        try {
+            getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (SecurityException ignored) {
+            // Some document providers grant only session access. That is enough for an immediate handoff test.
+        }
     }
 
     private static String zipMethodName(int method) {
@@ -290,6 +429,19 @@ public final class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == REQUEST_HANDOFF_FILE) {
+            if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+                statusView.setText("handoff 파일 선택이 취소되었습니다.");
+                return;
+            }
+            Uri chartUri = data.getData();
+            takePersistableReadPermission(chartUri, data.getFlags());
+            statusView.setText("파일 선택 완료. 공식 게임에 전달할 방식을 선택하세요.");
+            showHandoffVariantDialog(chartUri);
+            return;
+        }
+
         if (requestCode != REQUEST_SAVE) return;
 
         if (resultCode != RESULT_OK || data == null || data.getData() == null || pendingReport == null) {
@@ -335,6 +487,7 @@ public final class MainActivity extends Activity {
             @Override public void run() {
                 progressBar.setVisibility(View.GONE);
                 inspectButton.setEnabled(true);
+                handoffButton.setEnabled(true);
                 statusView.setText(message);
             }
         });
