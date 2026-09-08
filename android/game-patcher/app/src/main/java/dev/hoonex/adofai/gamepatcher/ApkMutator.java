@@ -72,21 +72,20 @@ final class ApkMutator {
     }
 
     /**
-     * Compatibility patch for the historical 2.4.0 Custom APK.
-     *
-     * Important: this path deliberately preserves every native library in the source APK.
-     * The historical 2023 Custom build is not the later libOctober-based runtime and must
-     * not be converted into one. If the APK already contains the old Java FileSelector,
-     * only that owning dex is overlaid with the storage/cancel fixes. Otherwise only the
-     * manifest storage permissions are changed.
+     * Exact compatibility patch for the user's historical V2.4.0 Custom.apk.
+     * Existing game/native assets are preserved. We only:
+     *  - add storage permissions,
+     *  - inject V240Bootstrap.init() into UnityPlayerActivity.onCreate,
+     *  - add the fixed Java runtime as classes2.dex,
+     *  - add libv240fix.so without replacing any original native library.
      */
     static void mutateV240Single(
         File sourceApk,
         File outputApk,
-        File payloadDex,
+        File runtimeDex,
+        File nativeLibrary,
         File workDir,
-        String packageName,
-        String selectorDexEntry
+        String packageName
     ) throws Exception {
         copyFile(sourceApk, outputApk);
 
@@ -95,17 +94,17 @@ final class ApkMutator {
         extractEntry(sourceApk, "AndroidManifest.xml", originalManifest);
         ManifestStoragePatcher.patch(originalManifest, patchedManifest, packageName);
 
-        File patchedSelectorDex = null;
-        if (selectorDexEntry != null) {
-            File originalSelectorDex = new File(workDir, "v240-selector-source.dex");
-            patchedSelectorDex = new File(workDir, "v240-selector-patched.dex");
-            extractEntry(sourceApk, selectorDexEntry, originalSelectorDex);
-            DexOverlayPatcher.patch(originalSelectorDex, payloadDex, patchedSelectorDex);
-        }
+        File originalDex = new File(workDir, "v240-classes.dex");
+        File patchedDex = new File(workDir, "v240-classes-patched.dex");
+        extractEntry(sourceApk, "classes.dex", originalDex);
+        V240DexBootstrapPatcher.patch(originalDex, patchedDex);
 
         try (ZipArchive zip = new ZipArchive(outputApk.toPath())) {
             deleteSignatureEntries(zip);
             zip.delete("AndroidManifest.xml");
+            zip.delete("classes.dex");
+            zip.delete("classes2.dex");
+            zip.delete("lib/arm64-v8a/libv240fix.so");
 
             FullFileSource manifest = new FullFileSource(
                 patchedManifest.toPath(), "AndroidManifest.xml", Deflater.NO_COMPRESSION
@@ -113,14 +112,23 @@ final class ApkMutator {
             manifest.align(4);
             zip.add(manifest);
 
-            if (selectorDexEntry != null && patchedSelectorDex != null) {
-                zip.delete(selectorDexEntry);
-                FullFileSource selectorDex = new FullFileSource(
-                    patchedSelectorDex.toPath(), selectorDexEntry, Deflater.NO_COMPRESSION
-                );
-                selectorDex.align(4);
-                zip.add(selectorDex);
-            }
+            FullFileSource primary = new FullFileSource(
+                patchedDex.toPath(), "classes.dex", Deflater.NO_COMPRESSION
+            );
+            primary.align(4);
+            zip.add(primary);
+
+            FullFileSource secondary = new FullFileSource(
+                runtimeDex.toPath(), "classes2.dex", Deflater.NO_COMPRESSION
+            );
+            secondary.align(4);
+            zip.add(secondary);
+
+            FullFileSource library = new FullFileSource(
+                nativeLibrary.toPath(), "lib/arm64-v8a/libv240fix.so", Deflater.NO_COMPRESSION
+            );
+            library.align(16 * 1024);
+            zip.add(library);
         }
     }
 
@@ -133,6 +141,17 @@ final class ApkMutator {
         }
     }
 
+    static void extractEntry(File apk, String name, File output) throws Exception {
+        try (ZipFile zip = new ZipFile(apk)) {
+            ZipEntry entry = zip.getEntry(name);
+            if (entry == null) throw new IllegalStateException("APK entry not found: " + name);
+            try (InputStream in = new BufferedInputStream(zip.getInputStream(entry));
+                 OutputStream out = new BufferedOutputStream(new FileOutputStream(output))) {
+                copy(in, out);
+            }
+        }
+    }
+
     private static void deleteSignatureEntries(ZipArchive zip) throws Exception {
         List<String> names = new ArrayList<String>(zip.listEntries());
         for (String name : names) {
@@ -141,17 +160,6 @@ final class ApkMutator {
                 (upper.endsWith(".RSA") || upper.endsWith(".DSA") || upper.endsWith(".EC") ||
                  upper.endsWith(".SF") || upper.endsWith("MANIFEST.MF"))) {
                 zip.delete(name);
-            }
-        }
-    }
-
-    private static void extractEntry(File apk, String name, File output) throws Exception {
-        try (ZipFile zip = new ZipFile(apk)) {
-            ZipEntry entry = zip.getEntry(name);
-            if (entry == null) throw new IllegalStateException("APK entry not found: " + name);
-            try (InputStream in = new BufferedInputStream(zip.getInputStream(entry));
-                 OutputStream out = new BufferedOutputStream(new FileOutputStream(output))) {
-                copy(in, out);
             }
         }
     }
