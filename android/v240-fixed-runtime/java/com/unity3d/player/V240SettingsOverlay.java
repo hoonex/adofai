@@ -19,39 +19,49 @@ import android.widget.TextView;
 
 import java.lang.reflect.Field;
 
-/** Small mobile-specific settings surface injected above the legacy Unity editor. */
+/** Mobile-only controls consumed directly by libv240fix.so. */
 public final class V240SettingsOverlay {
     private static final String PREFS = "adofai-v240-mobile";
     private static final String TAG = "adofai-v240-settings-button";
+    private static final float DEFAULT_UI_SCALE = 1.15f;
+    private static final float DEFAULT_TOUCH_SCALE = 1.30f;
+    private static final float DEFAULT_DRAG_SCALE = 1.05f;
     private static Activity activity;
 
     private V240SettingsOverlay() {}
+
+    private static native void nativeApply(float uiScale, float touchScale, float dragScale, boolean touchAssist);
 
     public static void install() {
         final Activity owner = currentActivity();
         if (owner == null || owner.isFinishing()) return;
         activity = owner;
+        pushNative(owner.getSharedPreferences(PREFS, Context.MODE_PRIVATE));
         owner.runOnUiThread(new Runnable() {
             @Override public void run() {
                 View decor = owner.getWindow().getDecorView();
                 if (!(decor instanceof ViewGroup)) return;
                 ViewGroup root = (ViewGroup) decor;
                 if (root.findViewWithTag(TAG) != null) return;
+
                 Button gear = new Button(owner);
                 gear.setTag(TAG);
                 gear.setText("⚙");
+                gear.setContentDescription("ADOFAI 모바일 에디터 설정");
                 gear.setTextSize(18f);
                 gear.setTextColor(Color.WHITE);
                 gear.setAllCaps(false);
                 gear.setPadding(0, 0, 0, 0);
                 GradientDrawable bg = new GradientDrawable();
-                bg.setColor(Color.argb(210, 30, 30, 36));
-                bg.setCornerRadius(dp(22));
+                bg.setColor(Color.argb(218, 28, 28, 34));
+                bg.setCornerRadius(dp(24));
                 gear.setBackground(bg);
+                gear.setElevation(dp(5));
                 gear.setOnClickListener(new View.OnClickListener() {
                     @Override public void onClick(View view) { show(owner); }
                 });
-                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(48), dp(48));
+
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(52), dp(52));
                 lp.gravity = Gravity.TOP | Gravity.END;
                 lp.topMargin = dp(10);
                 lp.rightMargin = dp(10);
@@ -66,81 +76,77 @@ public final class V240SettingsOverlay {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(8), dp(18), dp(8));
 
-        final Slider uiScale = slider(root, "에디터 UI 크기", percent(prefs.getFloat("ui_scale", 1.0f)), 70, 140);
-        final Slider touchScale = slider(root, "터치 영역 크기", percent(prefs.getFloat("touch_scale", 1.25f)), 80, 180);
-        final Slider drag = slider(root, "드래그 민감도", percent(prefs.getFloat("drag_scale", 1.0f)), 50, 160);
-        final Slider longPress = slider(root, "롱프레스 시간", prefs.getInt("long_press_ms", 380), 180, 800);
-        final CheckBox touchAssist = check(root, "모바일 터치 보정", prefs.getBoolean("touch_assist", true));
-        final CheckBox edgeGuard = check(root, "화면 가장자리 제스처 충돌 완화", prefs.getBoolean("edge_guard", true));
-        final CheckBox safeArea = check(root, "카메라 홀/내비게이션 Safe Area 적용", prefs.getBoolean("safe_area", true));
+        TextView note = new TextView(owner);
+        note.setText("2.4 에디터의 모바일 조작 보정값입니다. 적용 즉시 반영됩니다.");
+        note.setTextSize(13f);
+        note.setPadding(0, 0, 0, dp(10));
+        root.addView(note);
+
+        final Slider uiScale = slider(root, "에디터 UI 크기", percent(prefs.getFloat("ui_scale", DEFAULT_UI_SCALE)), 80, 150);
+        final Slider touchScale = slider(root, "UI 터치 판정 범위", percent(prefs.getFloat("touch_scale", DEFAULT_TOUCH_SCALE)), 100, 190);
+        final Slider dragScale = slider(root, "에디터 드래그 민감도", percent(prefs.getFloat("drag_scale", DEFAULT_DRAG_SCALE)), 60, 180);
+        final CheckBox touchAssist = check(root, "작은 UI 터치 보정", prefs.getBoolean("touch_assist", true));
 
         new AlertDialog.Builder(owner)
-                .setTitle("ADOFAI 2.4 Mobile 설정")
+                .setTitle("ADOFAI 2.4 모바일 설정")
                 .setView(root)
                 .setPositiveButton("적용", new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface dialog, int which) {
                         prefs.edit()
                                 .putFloat("ui_scale", uiScale.value() / 100f)
                                 .putFloat("touch_scale", touchScale.value() / 100f)
-                                .putFloat("drag_scale", drag.value() / 100f)
-                                .putInt("long_press_ms", longPress.value())
+                                .putFloat("drag_scale", dragScale.value() / 100f)
                                 .putBoolean("touch_assist", touchAssist.isChecked())
-                                .putBoolean("edge_guard", edgeGuard.isChecked())
-                                .putBoolean("safe_area", safeArea.isChecked())
                                 .apply();
+                        pushNative(prefs);
                     }
                 })
                 .setNeutralButton("기본값", new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface dialog, int which) {
                         prefs.edit().clear().apply();
+                        pushNative(prefs);
                     }
                 })
                 .setNegativeButton("취소", null)
                 .show();
     }
 
-    public static float uiScale() { return prefs().getFloat("ui_scale", 1.0f); }
-    public static float touchScale() { return prefs().getFloat("touch_scale", 1.25f); }
-    public static float dragScale() { return prefs().getFloat("drag_scale", 1.0f); }
-    public static int longPressMs() { return prefs().getInt("long_press_ms", 380); }
-    public static boolean touchAssist() { return prefs().getBoolean("touch_assist", true); }
-    public static boolean edgeGuard() { return prefs().getBoolean("edge_guard", true); }
-    public static boolean safeArea() { return prefs().getBoolean("safe_area", true); }
-
-    private static SharedPreferences prefs() {
-        Activity owner = activity != null ? activity : currentActivity();
-        if (owner == null) throw new IllegalStateException("no Unity Activity");
-        return owner.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    private static void pushNative(SharedPreferences prefs) {
+        try {
+            nativeApply(
+                    prefs.getFloat("ui_scale", DEFAULT_UI_SCALE),
+                    prefs.getFloat("touch_scale", DEFAULT_TOUCH_SCALE),
+                    prefs.getFloat("drag_scale", DEFAULT_DRAG_SCALE),
+                    prefs.getBoolean("touch_assist", true));
+        } catch (Throwable ignored) {
+        }
     }
 
     private static final class Slider {
         final SeekBar seek;
-        final TextView value;
         final int min;
-        Slider(SeekBar seek, TextView value, int min) { this.seek = seek; this.value = value; this.min = min; }
+        Slider(SeekBar seek, int min) { this.seek = seek; this.min = min; }
         int value() { return min + seek.getProgress(); }
     }
 
-    private static Slider slider(LinearLayout root, String label, int initial, final int min, int max) {
-        TextView title = new TextView(root.getContext());
-        title.setText(label);
+    private static Slider slider(LinearLayout root, final String label, int initial, final int min, int max) {
+        final TextView title = new TextView(root.getContext());
+        title.setText(label + "  " + initial + "%");
         title.setTextSize(14f);
         root.addView(title);
-        final TextView value = new TextView(root.getContext());
+
         SeekBar seek = new SeekBar(root.getContext());
         seek.setMax(max - min);
         seek.setProgress(Math.max(0, Math.min(max - min, initial - min)));
-        value.setText(String.valueOf(initial));
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                value.setText(String.valueOf(min + progress));
+                title.setText(label + "  " + (min + progress) + "%");
             }
             @Override public void onStartTrackingTouch(SeekBar seekBar) {}
             @Override public void onStopTrackingTouch(SeekBar seekBar) {}
         });
         root.addView(seek);
-        root.addView(value);
-        return new Slider(seek, value, min);
+        return new Slider(seek, min);
     }
 
     private static CheckBox check(LinearLayout root, String label, boolean checked) {
