@@ -1,0 +1,87 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate tooling syntax
+        run: |
+          python -m py_compile tools/*.py
+          bash -n scripts/*.sh
+
+      - name: Run compatibility and APK tooling tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Prepare pinned mobile hook source
+        run: bash scripts/prepare-upstream.sh
+
+      - name: Verify editor-critical hooks are present
+        run: |
+          set -euo pipefail
+          SRC=.work/hitmargin-mobile-mod/app/src/main/jni
+          JAVA=.work/hitmargin-mobile-mod/app/src/main/java/com/unity3d/player/FileSelector.java
+          SHELL=android/mobile-editor-shell/src/com/unity3d/player/MobileEditorShell.java
+          grep -q 'enableEditorDesktopMode' "$SRC/Main.cpp"
+          grep -q 'SaveFilePanel hook installed' "$SRC/FilePicker.cpp"
+          grep -q 'OpenFolderPanel hook installed' "$SRC/FilePicker.cpp"
+          grep -q 'PathToStringArray' "$SRC/FilePicker.cpp"
+          grep -q 'UnityFileDialog.FileBrowser.PickFile hook installed' "$SRC/FilePicker.cpp"
+          grep -q 'UnityFileDialog.FileBrowser.PickFiles hook installed' "$SRC/FilePicker.cpp"
+          grep -q 'UnityFileDialog.FileBrowser.SaveFile hook installed' "$SRC/FilePicker.cpp"
+          grep -q 'Class("UnityFileDialog", "FileBrowser")' "$SRC/FilePicker.cpp"
+          grep -q 'Environment.isExternalStorageManager' "$JAVA"
+          grep -q 'UnityPlayer.currentActivity unavailable' "$JAVA"
+          grep -q 'MobileEditorShell.installLauncher' "$SRC/FilePicker.cpp"
+          grep -q 'InstallMobileEditorPreviewBridge' "$SRC/Main.cpp"
+          grep -q 'MobileEditorBridge.cpp' "$SRC/Android.mk"
+          grep -q 'nativeQueuePreview' "$SHELL"
+          grep -q 'Os.rename' "$SHELL"
+          grep -q 'Unknown root fields and unknown event payloads remain' "$SHELL"
+
+  android-build:
+    needs: compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install reproducible Android toolchain
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager \
+            'platforms;android-35' \
+            'build-tools;36.0.0' \
+            'ndk;29.0.14206865'
+
+      - name: Build canonical mobile editor payload
+        run: bash scripts/build-payload.sh .work/build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mobile-editor-patch-binaries
+          path: |
+            .work/build/classes2.dex
+            .work/build/libOctober.so
+            .work/build/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14

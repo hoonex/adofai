@@ -1,0 +1,42 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'dev.hoonex.adofai.gamepatcher'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'dev.hoonex.adofai.gamepatcher'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        resources {
+            excludes += [
+                'META-INF/DEPENDENCIES',
+                'META-INF/LICENSE',
+                'META-INF/LICENSE.txt',
+                'META-INF/NOTICE',
+                'META-INF/NOTICE.txt'
+            ]
+        }
+    }
+}
+
+dependencies {
+    implementation 'org.smali:dexlib2:2.5.2'
+    implementation 'com.google.guava:guava:31.1-android'
+    implementation 'com.android.tools.build:apksig:8.7.3'
+    implementation 'com.android:zipflinger:8.7.3'
+    implementation 'io.github.reandroid:ARSCLib:1.4.0'
+    testImplementation 'junit:junit:4.13.2'
+}

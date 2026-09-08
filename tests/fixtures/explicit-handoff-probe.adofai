@@ -1,0 +1,19 @@
+{
+  "angleData": [0, 90, 180, 270],
+  "settings": {
+    "version": 15,
+    "songFilename": "",
+    "artist": "ADOFAI Handoff Probe",
+    "song": "Explicit Intent Probe",
+    "author": "hoonex"
+  },
+  "actions": [
+    {
+      "floor": 1,
+      "eventType": "SetSpeed",
+      "speedType": "Bpm",
+      "beatsPerMinute": 128
+    }
+  ],
+  "decorations": []
+}

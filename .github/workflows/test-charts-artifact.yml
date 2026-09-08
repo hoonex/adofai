@@ -1,0 +1,49 @@
+name: Package ADOFAI Test Charts
+
+on:
+  push:
+    branches:
+      - feat/modern-mobile-editor
+    paths:
+      - 'fixtures/device/**'
+      - '.github/workflows/test-charts-artifact.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate charts
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          files = [
+              Path('fixtures/device/ADOFAI_3.3.1_SAFE_SMOKE_TEST.adofai'),
+              Path('fixtures/device/ADOFAI_3.3.1_MODERN_PRESERVATION_TEST.adofai'),
+          ]
+          for p in files:
+              json.loads(p.read_text(encoding='utf-8'))
+              print(f'validated {p}')
+          PY
+
+      - name: Stage downloadable files
+        run: |
+          mkdir -p dist/test-charts
+          cp fixtures/device/ADOFAI_3.3.1_SAFE_SMOKE_TEST.adofai dist/test-charts/
+          cp fixtures/device/ADOFAI_3.3.1_MODERN_PRESERVATION_TEST.adofai dist/test-charts/
+          sha256sum dist/test-charts/*.adofai > dist/test-charts/SHA256SUMS.txt
+
+      - name: Upload test charts
+        uses: actions/upload-artifact@v4
+        with:
+          name: adofai-3.3.1-test-charts
+          path: dist/test-charts/
+          if-no-files-found: error
+          retention-days: 14

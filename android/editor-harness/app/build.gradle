@@ -1,0 +1,28 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'dev.hoonex.adofai.companion'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'dev.hoonex.adofai.companion'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs += ['generated/java']
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+}
