@@ -3,6 +3,7 @@ package com.unity3d.player;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
@@ -76,18 +77,24 @@ public final class V240SettingsOverlay {
         new AlertDialog.Builder(owner)
                 .setTitle("ADOFAI 2.4 Mobile 설정")
                 .setView(root)
-                .setPositiveButton("적용", (dialog, which) -> {
-                    prefs.edit()
-                            .putFloat("ui_scale", uiScale.value() / 100f)
-                            .putFloat("touch_scale", touchScale.value() / 100f)
-                            .putFloat("drag_scale", drag.value() / 100f)
-                            .putInt("long_press_ms", longPress.value())
-                            .putBoolean("touch_assist", touchAssist.isChecked())
-                            .putBoolean("edge_guard", edgeGuard.isChecked())
-                            .putBoolean("safe_area", safeArea.isChecked())
-                            .apply();
+                .setPositiveButton("적용", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        prefs.edit()
+                                .putFloat("ui_scale", uiScale.value() / 100f)
+                                .putFloat("touch_scale", touchScale.value() / 100f)
+                                .putFloat("drag_scale", drag.value() / 100f)
+                                .putInt("long_press_ms", longPress.value())
+                                .putBoolean("touch_assist", touchAssist.isChecked())
+                                .putBoolean("edge_guard", edgeGuard.isChecked())
+                                .putBoolean("safe_area", safeArea.isChecked())
+                                .apply();
+                    }
                 })
-                .setNeutralButton("기본값", (dialog, which) -> prefs.edit().clear().apply())
+                .setNeutralButton("기본값", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        prefs.edit().clear().apply();
+                    }
+                })
                 .setNegativeButton("취소", null)
                 .show();
     }
