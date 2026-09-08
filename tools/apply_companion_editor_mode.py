@@ -95,9 +95,21 @@ def transform(text: str) -> str:
         });
     }
 
+    public static void showOfficialHandoffDiagnostic(final String message) {
+        if (message == null || message.length() == 0) return;
+        final Activity resolved = getCurrentActivity();
+        if (resolved == null || resolved.isFinishing()) return;
+        resolved.runOnUiThread(new Runnable() {
+            @Override public void run() {
+                if (statusView != null) setStatus(message, false);
+                Toast.makeText(resolved, message, Toast.LENGTH_LONG).show();
+            }
+        });
+    }
+
     private static Activity getCurrentActivity() {
 ''',
-        "standalone entry points",
+        "standalone entry points and handoff diagnostic surface",
     )
 
     text = replace_exact(
