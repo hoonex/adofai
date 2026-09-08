@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <queries>
-        <package android:name="com.fizzd.connectedworlds" />
-    </queries>
-
     <application
         android:allowBackup="false"
-        android:label="ADOFAI Companion Editor"
+        android:label="ADOFAI Custom"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
+        <activity
+            android:name=".PlayerActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
