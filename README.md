@@ -1,143 +1,106 @@
-# ADOFAI Modern Mobile Editor
+# ADOFAI Companion Editor
 
-Source-first modernization of the old ADOFAI Android custom editor. This repository contains patching/build/test tooling only; it does **not** contain or redistribute the proprietary game APK or game assets.
+Non-root Android companion editor for user-authored `.adofai` charts. The canonical product keeps the official Google Play ADOFAI installation untouched and runs the editor as a separate app (`dev.hoonex.adofai.companion`). This repository does **not** contain or redistribute the proprietary ADOFAI APK or game assets.
 
-## Architecture
-
-The old `V2.4.0 Custom.apk` is a behavioral reference, not the target runtime. Modern `.adofai` charts contain runtime/editor behavior that did not exist in 2.4.0, so teaching that old parser to ignore new keys would not make the missing event implementations work.
-
-The current architecture is:
+## Canonical architecture
 
 ```text
-current ADOFAI Android engine (validated against 3.3.1 / versionCode 300382)
-    + Android-native editor shell in injected secondary DEX
-    + current-runtime IL2CPP preview bridge in libOctober.so
-    + split-APK-safe repack/signing tooling
+ADOFAI Companion Editor
+    ├─ Android Storage Access Framework (Open / Save / Save As)
+    ├─ loss-preserving .adofai editor
+    ├─ app-private working copy
+    ├─ read-only, grant-scoped content:// chart provider
+    └─ explicit handoff to the installed official ADOFAI 3.3.1
+
+Official Google Play ADOFAI
+    └─ com.fizzd.connectedworlds / 3.3.1 / versionCode 300382
+       remains installed and unmodified
 ```
 
-Android 3.3.1 still exposes current chart/runtime symbols, but the serialized `scnEditor` scene itself is not packaged. The modern path therefore does **not** pretend that a hidden Unity editor scene can simply be enabled.
+The canonical path does **not** root the device, use Magisk/Zygisk, patch or resign the Play APK, replace its signing identity, bypass licensing, or bundle a clean-room gameplay player.
 
-Pinned public source/model references are recorded in `upstream.lock.json`.
+Legacy patcher/Zygisk experiments remain repository history/reference only. Their workflows are manual-only and are not part of the normal Companion Editor build.
 
-## Editor shell
+## Editor
 
-`android/mobile-editor-shell/src/com/unity3d/player/MobileEditorShell.java` provides the first usable mobile editing slice:
+The Companion Editor supports:
 
-- floating **Editor** launcher over the current Unity activity;
-- full-screen Android-native editor surface with normal Android IME/touch handling;
-- **Open** `.adofai` files through the Android file bridge;
-- tolerant load handling for UTF-8 BOMs, trailing commas and raw JSON control characters;
-- **Chart** tab for `pathData` and `angleData`;
-- **Settings** tab for inspect/edit/add/delete;
-- **Events** tab for `actions` and `decorations` object editing;
-- **Raw** tab as a future-compatible fallback;
-- unknown root fields and unknown event payloads preserved unless the user explicitly replaces them;
-- **Save / Save As** through sibling temporary file + flush + `fsync` + atomic rename;
-- **Preview** through a JNI/native queue drained on the Unity game thread.
+- **New** chart creation;
+- **Open** through Android's Storage Access Framework;
+- **Save / Save As** back to the selected Android document;
+- **Chart** editing for `pathData` / `angleData`;
+- **Settings** editing;
+- **Events** editing for `actions` and `decorations`;
+- **Raw** JSON editing as a future-compatible fallback;
+- UTF-8 BOM, trailing-comma and raw-control-character compatibility handling;
+- preservation of unknown root fields and unknown event payloads unless explicitly changed;
+- dirty-document guards around close/open/handoff flows.
 
-The preview bridge resolves current `GCS` state and `scrController.LoadCustomLevel` through BNM at runtime and fails closed when the required surface is missing instead of invoking guessed addresses.
+The editor works on an app-private mirror so its atomic-save semantics remain independent of the external document provider. Successful saves are synchronized back to the selected SAF document.
 
-## Modern chart tooling
+## Official-game handoff
 
-`tools/adofai_compat.py` provides source-side compatibility diagnostics/normalization:
+The **공식 ADOFAI** action first saves/synchronizes the current chart, then creates a temporary read-only `content://` URI from `OfficialChartProvider`. Read permission is granted only to `com.fizzd.connectedworlds`.
 
-- UTF-8 BOM handling;
-- trailing-comma tolerance;
-- raw control-character repair inside JSON strings;
-- `pathData` and `angleData`;
-- optional legacy path conversion;
-- current action/decorations inventory;
-- preservation of unknown/future payloads.
+`OfficialGameBridge` verifies the installed target is exactly:
+
+```text
+package:     com.fizzd.connectedworlds
+version:     3.3.1
+versionCode: 300382
+activity:    com.unity3d.player.UnityPlayerActivity
+```
+
+It then explicitly launches that exported official activity with the chart URI, `application/json`, a URI permission grant, `ClipData`, `EXTRA_STREAM`, and compatibility URI extras in one handoff attempt.
+
+### Verification boundary
+
+Real-device inventory from the exact Play build shows that ADOFAI 3.3.1 exposes `UnityPlayerActivity`, but does **not** advertise a normal public `ACTION_VIEW` or `ACTION_SEND` file-import handler for `.adofai` data. Therefore Android can launch the exported activity explicitly, but repository/CI evidence alone cannot prove that the unmodified game will consume the supplied chart URI and enter gameplay.
+
+If the official game ignores the supplied Intent data, a separate non-root app cannot directly invoke its private Unity/IL2CPP level loader or write its private app data. Doing that would require changing the constraints (for example modifying/injecting into the game process), which is intentionally outside the canonical product.
+
+The project must not label a mere successful app launch as “official preview success.”
+
+## Build
+
+Pinned build environment:
+
+- JDK 17
+- Android platform 35
+- build-tools 35.0.0
+- Gradle 8.9
+
+Local build:
+
+```bash
+bash scripts/prepare-editor-harness.sh
+gradle --no-daemon -p android/editor-harness :app:assembleDebug
+```
+
+GitHub Actions workflow:
+
+```text
+Build ADOFAI Companion Editor
+```
+
+Artifact:
+
+```text
+adofai-companion-editor-apk/
+└─ ADOFAI-Companion-Editor.apk
+```
+
+## Compatibility tooling
+
+`tools/adofai_compat.py` provides source-side chart diagnostics/normalization:
 
 ```bash
 python3 tools/adofai_compat.py level.adofai
 python3 tools/adofai_compat.py level.adofai --normalize normalized.adofai
 ```
 
-## Reproducible payload build
-
-CI and local builds produce:
-
-```text
-classes2.dex
-libOctober.so
-SHA256SUMS.txt
-```
-
-Pinned Android build environment:
-
-- JDK 17
-- Android platform 35
-- build-tools 36.0.0
-- Android NDK `29.0.14206865`
-
-Local build:
-
-```bash
-bash scripts/build-payload.sh dist/payload
-```
-
-## Build from the current installed game
-
-The recommended path for a user-owned Play installation is the split-aware flow. With USB debugging/ADB enabled:
-
-```bash
-bash scripts/build-from-installed-current.sh dist/device-build
-```
-
-That command:
-
-1. pulls the installed `com.fizzd.connectedworlds` split APK set through ADB;
-2. builds the DEX/native editor payload;
-3. patches the base and arm64 splits;
-4. preserves the large asset split instead of rebuilding it;
-5. signs **every** split with the same persistent local key;
-6. emits `INSTALL.txt` with the exact `adb install-multiple` command.
-
-It intentionally does **not** uninstall or install anything. The Play-signed build and locally signed mod have different signing identities, so replacing the Play build is an explicit user action. Back up any app-local data you care about first, and keep the generated local keystore if you want later local updates to install over the same modded build.
-
-Single-APK builds remain available when the target really is a monolithic APK:
-
-```bash
-bash scripts/build-modded-apk.sh /path/to/owned-current.apk dist/ADOFAI-Mobile-Editor.apk
-```
-
-## Real-device smoke evidence
-
-After a locally patched build is installed, run:
-
-```bash
-bash scripts/run-device-editor-smoke.sh dist/device-smoke
-```
-
-The guided harness is deliberately non-destructive. It does not install, uninstall or clear app data. It captures evidence for:
-
-- floating Editor launcher visibility;
-- full-screen editor shell visibility;
-- modern chart Open success;
-- Save success;
-- saved-chart reopen;
-- native preview bridge installation;
-- Preview reaching the current runtime `LoadCustomLevel` call.
-
-For each stage it stores UIAutomator XML and screenshots. It also records package/device identity, PID-scoped logcat, `meminfo` and `gfxinfo` framestats, then emits `REPORT.md` with `PASS`, `FAIL` or `UNPROVEN` per evidence boundary.
-
-A `LoadCustomLevel` call is **not** proof that every modern event rendered correctly. Representative chart/event/assets behavior still needs manual reconciliation on the device.
-
-## Current verification boundary
-
-Repository/CI evidence proves source preparation, tests, Java -> DEX compilation, arm64 NDK compilation and payload artifact generation. It does **not** by itself prove:
-
-- installation of the locally signed split set on a physical device;
-- touch/IME ergonomics across device shapes;
-- every storage provider/path;
-- every current/future event type;
-- sibling audio/image/font/video asset behavior;
-- large-chart runtime behavior;
-- performance, thermal or battery quality.
-
-Keep PR #1 in draft until the real-device smoke/evidence loop is completed on the exact target package and representative modern charts have been opened, edited, saved, reopened and previewed successfully.
+It handles BOMs, trailing commas, raw control characters, `pathData`/`angleData`, event inventories, optional legacy path conversion, and preservation of unknown/future payloads.
 
 ## Binary policy
 
-No proprietary ADOFAI APK, game library or game asset is committed here. Public third-party source references are pinned by immutable commit where applicable. User-owned game packages remain local to the user's machine/device.
+No proprietary ADOFAI APK, native game library, or game asset is committed here. The Companion Editor is built independently. The installed Play app remains the user's original installation.
