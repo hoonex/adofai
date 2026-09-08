@@ -77,18 +77,25 @@ final class ApkMutator {
         File payloadDex,
         File nativePayload,
         File workDir,
-        String packageName
+        String packageName,
+        String selectorDexEntry
     ) throws Exception {
         copyFile(sourceApk, outputApk);
+
         File originalManifest = new File(workDir, "v240-AndroidManifest.xml");
         File patchedManifest = new File(workDir, "v240-AndroidManifest-patched.xml");
         extractEntry(sourceApk, "AndroidManifest.xml", originalManifest);
         ManifestStoragePatcher.patch(originalManifest, patchedManifest, packageName);
 
+        File originalSelectorDex = new File(workDir, "v240-selector-source.dex");
+        File patchedSelectorDex = new File(workDir, "v240-selector-patched.dex");
+        extractEntry(sourceApk, selectorDexEntry, originalSelectorDex);
+        DexOverlayPatcher.patch(originalSelectorDex, payloadDex, patchedSelectorDex);
+
         try (ZipArchive zip = new ZipArchive(outputApk.toPath())) {
             deleteSignatureEntries(zip);
             zip.delete("AndroidManifest.xml");
-            zip.delete("classes2.dex");
+            zip.delete(selectorDexEntry);
             zip.delete("lib/arm64-v8a/libOctober.so");
 
             FullFileSource manifest = new FullFileSource(
@@ -97,11 +104,11 @@ final class ApkMutator {
             manifest.align(4);
             zip.add(manifest);
 
-            FullFileSource secondary = new FullFileSource(
-                payloadDex.toPath(), "classes2.dex", Deflater.NO_COMPRESSION
+            FullFileSource selectorDex = new FullFileSource(
+                patchedSelectorDex.toPath(), selectorDexEntry, Deflater.NO_COMPRESSION
             );
-            secondary.align(4);
-            zip.add(secondary);
+            selectorDex.align(4);
+            zip.add(selectorDex);
 
             FullFileSource library = new FullFileSource(
                 nativePayload.toPath(), "lib/arm64-v8a/libOctober.so", Deflater.NO_COMPRESSION
