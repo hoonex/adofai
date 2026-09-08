@@ -71,6 +71,46 @@ final class ApkMutator {
         }
     }
 
+    static void mutateV240Single(
+        File sourceApk,
+        File outputApk,
+        File payloadDex,
+        File nativePayload,
+        File workDir,
+        String packageName
+    ) throws Exception {
+        copyFile(sourceApk, outputApk);
+        File originalManifest = new File(workDir, "v240-AndroidManifest.xml");
+        File patchedManifest = new File(workDir, "v240-AndroidManifest-patched.xml");
+        extractEntry(sourceApk, "AndroidManifest.xml", originalManifest);
+        ManifestStoragePatcher.patch(originalManifest, patchedManifest, packageName);
+
+        try (ZipArchive zip = new ZipArchive(outputApk.toPath())) {
+            deleteSignatureEntries(zip);
+            zip.delete("AndroidManifest.xml");
+            zip.delete("classes2.dex");
+            zip.delete("lib/arm64-v8a/libOctober.so");
+
+            FullFileSource manifest = new FullFileSource(
+                patchedManifest.toPath(), "AndroidManifest.xml", Deflater.NO_COMPRESSION
+            );
+            manifest.align(4);
+            zip.add(manifest);
+
+            FullFileSource secondary = new FullFileSource(
+                payloadDex.toPath(), "classes2.dex", Deflater.NO_COMPRESSION
+            );
+            secondary.align(4);
+            zip.add(secondary);
+
+            FullFileSource library = new FullFileSource(
+                nativePayload.toPath(), "lib/arm64-v8a/libOctober.so", Deflater.NO_COMPRESSION
+            );
+            library.align(16 * 1024);
+            zip.add(library);
+        }
+    }
+
     static void assertEntry(File apk, String name) throws Exception {
         try (ZipFile zip = new ZipFile(apk)) {
             ZipEntry entry = zip.getEntry(name);
