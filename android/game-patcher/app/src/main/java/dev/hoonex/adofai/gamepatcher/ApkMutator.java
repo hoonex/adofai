@@ -71,11 +71,19 @@ final class ApkMutator {
         }
     }
 
+    /**
+     * Compatibility patch for the historical 2.4.0 Custom APK.
+     *
+     * Important: this path deliberately preserves every native library in the source APK.
+     * The historical 2023 Custom build is not the later libOctober-based runtime and must
+     * not be converted into one. If the APK already contains the old Java FileSelector,
+     * only that owning dex is overlaid with the storage/cancel fixes. Otherwise only the
+     * manifest storage permissions are changed.
+     */
     static void mutateV240Single(
         File sourceApk,
         File outputApk,
         File payloadDex,
-        File nativePayload,
         File workDir,
         String packageName,
         String selectorDexEntry
@@ -87,16 +95,17 @@ final class ApkMutator {
         extractEntry(sourceApk, "AndroidManifest.xml", originalManifest);
         ManifestStoragePatcher.patch(originalManifest, patchedManifest, packageName);
 
-        File originalSelectorDex = new File(workDir, "v240-selector-source.dex");
-        File patchedSelectorDex = new File(workDir, "v240-selector-patched.dex");
-        extractEntry(sourceApk, selectorDexEntry, originalSelectorDex);
-        DexOverlayPatcher.patch(originalSelectorDex, payloadDex, patchedSelectorDex);
+        File patchedSelectorDex = null;
+        if (selectorDexEntry != null) {
+            File originalSelectorDex = new File(workDir, "v240-selector-source.dex");
+            patchedSelectorDex = new File(workDir, "v240-selector-patched.dex");
+            extractEntry(sourceApk, selectorDexEntry, originalSelectorDex);
+            DexOverlayPatcher.patch(originalSelectorDex, payloadDex, patchedSelectorDex);
+        }
 
         try (ZipArchive zip = new ZipArchive(outputApk.toPath())) {
             deleteSignatureEntries(zip);
             zip.delete("AndroidManifest.xml");
-            zip.delete(selectorDexEntry);
-            zip.delete("lib/arm64-v8a/libOctober.so");
 
             FullFileSource manifest = new FullFileSource(
                 patchedManifest.toPath(), "AndroidManifest.xml", Deflater.NO_COMPRESSION
@@ -104,17 +113,14 @@ final class ApkMutator {
             manifest.align(4);
             zip.add(manifest);
 
-            FullFileSource selectorDex = new FullFileSource(
-                patchedSelectorDex.toPath(), selectorDexEntry, Deflater.NO_COMPRESSION
-            );
-            selectorDex.align(4);
-            zip.add(selectorDex);
-
-            FullFileSource library = new FullFileSource(
-                nativePayload.toPath(), "lib/arm64-v8a/libOctober.so", Deflater.NO_COMPRESSION
-            );
-            library.align(16 * 1024);
-            zip.add(library);
+            if (selectorDexEntry != null && patchedSelectorDex != null) {
+                zip.delete(selectorDexEntry);
+                FullFileSource selectorDex = new FullFileSource(
+                    patchedSelectorDex.toPath(), selectorDexEntry, Deflater.NO_COMPRESSION
+                );
+                selectorDex.align(4);
+                zip.add(selectorDex);
+            }
         }
     }
 
