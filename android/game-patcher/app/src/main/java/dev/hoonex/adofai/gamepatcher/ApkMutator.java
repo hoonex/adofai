@@ -74,7 +74,7 @@ final class ApkMutator {
     /**
      * Exact compatibility patch for the user's historical V2.4.0 Custom.apk.
      * Existing game/native assets are preserved. We only:
-     *  - add storage permissions,
+     *  - declare the internal SAF picker Activity,
      *  - inject V240Bootstrap.init() into UnityPlayerActivity.onCreate,
      *  - add the fixed Java runtime as classes2.dex,
      *  - add libv240fix.so without replacing any original native library.
@@ -92,7 +92,7 @@ final class ApkMutator {
         File originalManifest = new File(workDir, "v240-AndroidManifest.xml");
         File patchedManifest = new File(workDir, "v240-AndroidManifest-patched.xml");
         extractEntry(sourceApk, "AndroidManifest.xml", originalManifest);
-        ManifestStoragePatcher.patch(originalManifest, patchedManifest, packageName);
+        ManifestStoragePatcher.patchV240(originalManifest, patchedManifest, packageName);
 
         File originalDex = new File(workDir, "v240-classes.dex");
         File patchedDex = new File(workDir, "v240-classes-patched.dex");
