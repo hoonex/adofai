@@ -51,11 +51,14 @@ jobs:
           test -s dist/v240-bugfix-payload/classes2.dex
           test -s dist/v240-bugfix-payload/libOctober.so
           test -s dist/v240-bugfix-payload/SHA256SUMS.txt
+          test -s dist/v240-bugfix-payload/ORIGINAL_LIBOCTOBER_SHA256.txt
           test -s dist/v240-bugfix-payload/PATCHSET.txt
+          grep -Eq '^[0-9a-f]{64}$' dist/v240-bugfix-payload/ORIGINAL_LIBOCTOBER_SHA256.txt
           grep -q 'editor desktop-mode hook' dist/v240-bugfix-payload/PATCHSET.txt
           grep -q 'Open/Save/Folder' dist/v240-bugfix-payload/PATCHSET.txt
           grep -q 'Android storage' dist/v240-bugfix-payload/PATCHSET.txt
           grep -q 'Back/cancel' dist/v240-bugfix-payload/PATCHSET.txt
+          grep -q 'Replace libOctober.so only when' dist/v240-bugfix-payload/PATCHSET.txt
           ! grep -q 'Companion Editor / official handoff / Custom Player$' \
             <(sed -n '/Applied fixes only:/,/Explicitly excluded:/p' dist/v240-bugfix-payload/PATCHSET.txt)
 
