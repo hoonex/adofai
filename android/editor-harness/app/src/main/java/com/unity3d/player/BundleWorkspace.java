@@ -27,7 +27,7 @@ import java.util.zip.ZipOutputStream;
  * Keeps a custom level as a bundle, not just as a detached .adofai file.
  *
  * Old ADOFAI "Open From URL" levels are ZIP archives containing main.adofai
- * plus sibling audio/images.  The companion therefore extracts the complete
+ * plus sibling audio/images. The companion therefore extracts the complete
  * archive into an app-private workspace and edits main.adofai in place.
  */
 public final class BundleWorkspace {
@@ -35,11 +35,19 @@ public final class BundleWorkspace {
     private static final long MAX_DOWNLOAD_BYTES = 256L * 1024L * 1024L;
     private static final long MAX_EXTRACTED_BYTES = 1024L * 1024L * 1024L;
     private static final Map<String, String> ROOT_BY_CHART = new ConcurrentHashMap<String, String>();
+    private static final Map<String, String> SOURCE_URL_BY_CHART = new ConcurrentHashMap<String, String>();
 
     private BundleWorkspace() {}
 
     public static boolean isBundlePath(String chartPath) {
         return chartPath != null && ROOT_BY_CHART.containsKey(chartPath);
+    }
+
+    /** Returns the original HTTPS ZIP URL for a URL-imported chart, otherwise null. */
+    public static String sourceHttpsUrlForChart(String chartPath) {
+        if (chartPath == null) return null;
+        String value = SOURCE_URL_BY_CHART.get(chartPath);
+        return value != null && value.startsWith("https://") ? value : null;
     }
 
     public static String importZip(Context context, InputStream source, String displayName) throws Exception {
@@ -100,7 +108,9 @@ public final class BundleWorkspace {
         try {
             FileInputStream input = new FileInputStream(downloaded);
             try {
-                return importZip(context, input, nameFromUrl(value));
+                String chartPath = importZip(context, input, nameFromUrl(value));
+                SOURCE_URL_BY_CHART.put(chartPath, value);
+                return chartPath;
             } finally {
                 input.close();
             }
