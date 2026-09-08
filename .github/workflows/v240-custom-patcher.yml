@@ -1,0 +1,93 @@
+name: Build ADOFAI 2.4 Custom One-Click Patcher
+
+on:
+  push:
+    branches:
+      - fix/v240-custom-bugfix
+    paths:
+      - 'android/game-patcher/**'
+      - 'scripts/prepare-v240-bugfix-upstream.sh'
+      - 'scripts/build-v240-bugfix-payload.sh'
+      - 'tools/apply_hitmargin_editor_mode.py'
+      - 'tools/apply_hitmargin_file_dialogs.py'
+      - 'tools/apply_hitmargin_storage_guard.py'
+      - 'tools/apply_hitmargin_picker_cancel_guard.py'
+      - '.github/workflows/v240-custom-patcher.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: adofai-v240-custom-patcher-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install pinned Android toolchain
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager \
+            'platforms;android-35' \
+            'build-tools;36.0.0' \
+            'ndk;29.0.14206865'
+
+      - name: Build isolated 2.4 bugfix payload
+        run: bash scripts/build-v240-bugfix-payload.sh .work/v240-patcher-payload
+
+      - name: Stage 2.4 payload into patcher
+        run: |
+          set -euo pipefail
+          ASSETS=android/game-patcher/app/src/main/assets/payload
+          rm -rf "$ASSETS"
+          mkdir -p "$ASSETS"
+          cp .work/v240-patcher-payload/classes2.dex "$ASSETS/classes2.dex"
+          cp .work/v240-patcher-payload/libOctober.so "$ASSETS/libOctober.so"
+          cp .work/v240-patcher-payload/PATCHSET.txt "$ASSETS/PATCHSET.txt"
+          cp .work/v240-patcher-payload/ORIGINAL_LIBOCTOBER_SHA256.txt "$ASSETS/ORIGINAL_LIBOCTOBER_SHA256.txt"
+          test -s "$ASSETS/classes2.dex"
+          test -s "$ASSETS/libOctober.so"
+
+      - name: Compile 2.4 one-click patcher
+        run: gradle --no-daemon -p android/game-patcher :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Verify product contract
+        run: |
+          set -euo pipefail
+          grep -q 'V240PatchPipeline' android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/MainActivity.java
+          grep -q 'EXPECTED_VERSION = "2.4.0"' android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/V240PatchPipeline.java
+          grep -q 'FileSelector' android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/V240PatchPipeline.java
+          grep -q 'mutateV240Single' android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/ApkMutator.java
+          ! grep -q 'ADOFAI 3.3.1 Game Patcher' android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/MainActivity.java
+          test -s android/game-patcher/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Stage artifact
+        run: |
+          set -euo pipefail
+          mkdir -p dist/v240-patcher
+          cp android/game-patcher/app/build/outputs/apk/debug/app-debug.apk \
+            dist/v240-patcher/ADOFAI-2.4.0-Custom-Bugfix-Patcher.apk
+          sha256sum dist/v240-patcher/ADOFAI-2.4.0-Custom-Bugfix-Patcher.apk \
+            | tee dist/v240-patcher/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adofai-v240-custom-bugfix-patcher-apk
+          path: dist/v240-patcher/
+          if-no-files-found: error
+          retention-days: 14
