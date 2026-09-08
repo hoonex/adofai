@@ -20,6 +20,7 @@ final class PayloadAssets {
         }
     }
 
+    /** Legacy/general payload path retained for the unrelated patcher code. */
     static Payload stage(Context context, File workDir) throws Exception {
         if (!workDir.exists() && !workDir.mkdirs()) {
             throw new IllegalStateException("could not create payload work directory: " + workDir);
@@ -32,6 +33,22 @@ final class PayloadAssets {
             throw new IllegalStateException("embedded editor payload is missing or unexpectedly small");
         }
         return new Payload(dex, lib);
+    }
+
+    /**
+     * 2.4 historical Custom path: only the optional Java picker payload is staged.
+     * No native hook asset is required or read.
+     */
+    static File stageV240PickerDex(Context context, File workDir) throws Exception {
+        if (!workDir.exists() && !workDir.mkdirs()) {
+            throw new IllegalStateException("could not create payload work directory: " + workDir);
+        }
+        File dex = new File(workDir, "v240-picker-payload.dex");
+        copyAsset(context, "payload/classes2.dex", dex);
+        if (dex.length() < 1024L) {
+            throw new IllegalStateException("embedded 2.4 picker payload is missing or unexpectedly small");
+        }
+        return dex;
     }
 
     private static void copyAsset(Context context, String asset, File output) throws Exception {
