@@ -20,14 +20,19 @@ final class PayloadAssets {
         }
     }
 
-    /**
-     * Loads the Java payload and, when present, the unrelated newer native payload.
-     * The historical 2.4 Custom path intentionally works with classes2.dex only.
-     */
-    static Payload stage(Context context, File workDir) throws Exception {
-        if (!workDir.exists() && !workDir.mkdirs()) {
-            throw new IllegalStateException("could not create payload work directory: " + workDir);
+    static final class V240Runtime {
+        final File runtimeDex;
+        final File nativeLibrary;
+
+        V240Runtime(File runtimeDex, File nativeLibrary) {
+            this.runtimeDex = runtimeDex;
+            this.nativeLibrary = nativeLibrary;
         }
+    }
+
+    /** Legacy payload staging retained for the unrelated newer patch paths. */
+    static Payload stage(Context context, File workDir) throws Exception {
+        ensureDirectory(workDir);
         File dex = new File(workDir, "payload-classes2.dex");
         copyAsset(context, "payload/classes2.dex", dex);
         if (dex.length() < 1024L) {
@@ -40,23 +45,44 @@ final class PayloadAssets {
             copyAsset(context, "payload/libOctober.so", candidate);
             if (candidate.length() >= 4096L) lib = candidate;
         } catch (java.io.FileNotFoundException ignored) {
-            // Expected for the historical 2.4 Java-only patcher build.
         } catch (java.io.IOException ignored) {
-            // AssetManager reports a missing asset as IOException on some Android versions.
         }
         return new Payload(dex, lib);
     }
 
     static File stageV240PickerDex(Context context, File workDir) throws Exception {
-        if (!workDir.exists() && !workDir.mkdirs()) {
-            throw new IllegalStateException("could not create payload work directory: " + workDir);
-        }
+        ensureDirectory(workDir);
         File dex = new File(workDir, "v240-picker-payload.dex");
         copyAsset(context, "payload/classes2.dex", dex);
         if (dex.length() < 1024L) {
             throw new IllegalStateException("embedded 2.4 picker payload is missing or unexpectedly small");
         }
         return dex;
+    }
+
+    /**
+     * Stages the exact runtime built for the user's historical 2.4.0 Custom APK:
+     * a secondary DEX containing V240Bootstrap/FileSelector and a new arm64 libv240fix.so.
+     */
+    static V240Runtime stageV240FixedRuntime(Context context, File workDir) throws Exception {
+        ensureDirectory(workDir);
+        File dex = new File(workDir, "v240-fixed-runtime.dex");
+        File lib = new File(workDir, "libv240fix.so");
+        copyAsset(context, "payload/v240-fixed-runtime.dex", dex);
+        copyAsset(context, "payload/libv240fix.so", lib);
+        if (dex.length() < 4096L) {
+            throw new IllegalStateException("embedded v2.4 fixed runtime DEX is missing or unexpectedly small");
+        }
+        if (lib.length() < 64L * 1024L) {
+            throw new IllegalStateException("embedded libv240fix.so is missing or unexpectedly small");
+        }
+        return new V240Runtime(dex, lib);
+    }
+
+    private static void ensureDirectory(File workDir) {
+        if (!workDir.exists() && !workDir.mkdirs()) {
+            throw new IllegalStateException("could not create payload work directory: " + workDir);
+        }
     }
 
     private static void copyAsset(Context context, String asset, File output) throws Exception {
