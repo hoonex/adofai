@@ -17,11 +17,15 @@ import dev.hoonex.adofai.companion.OfficialChartProvider;
  * Non-root bridge from the standalone companion editor to the unmodified
  * Google Play ADOFAI 3.3.1 process.
  *
- * The historical mobile editor accepted a URL to a ZIP bundle.  We reproduce
+ * The historical mobile editor accepted a URL to a ZIP bundle. We reproduce
  * that input shape locally: package the current bundle, serve it from a
  * loopback-only HTTP endpoint, and launch the official Unity activity with the
- * ZIP URL on all reasonable Android/Unity handoff surfaces at once.  A scoped
+ * ZIP URL on all reasonable Android/Unity handoff surfaces at once. A scoped
  * content:// URI for main.adofai is also attached as a fallback.
+ *
+ * A loopback request probe is retained across the activity switch so returning
+ * to the Companion can distinguish "game launched" from "the ZIP URL was
+ * actually requested" without modifying or inspecting the official process.
  */
 public final class OfficialGameBridge {
     private static final String TAG = "ADOFAI.OfficialBridge";
@@ -29,8 +33,12 @@ public final class OfficialGameBridge {
     private static final String TARGET_ACTIVITY = "com.unity3d.player.UnityPlayerActivity";
     private static final String EXPECTED_VERSION_NAME = "3.3.1";
     private static final long EXPECTED_VERSION_CODE = 300382L;
+    private static final long MIN_RETURN_DIAGNOSTIC_DELAY_MS = 300L;
 
     private static volatile String lastStatus = "공식 ADOFAI handoff를 아직 시도하지 않았습니다";
+    private static volatile String lastBundleUrl;
+    private static volatile long lastHandoffAtMs;
+    private static volatile boolean pendingReturnDiagnostic;
 
     private OfficialGameBridge() {}
 
@@ -79,7 +87,15 @@ public final class OfficialGameBridge {
             intent.putExtra("levelPath", encodedChart);
             intent.putExtra("adofai", encodedChart);
 
-            owner.startActivity(intent);
+            lastBundleUrl = bundleUrl;
+            lastHandoffAtMs = System.currentTimeMillis();
+            pendingReturnDiagnostic = true;
+            try {
+                owner.startActivity(intent);
+            } catch (Throwable launchError) {
+                pendingReturnDiagnostic = false;
+                throw launchError;
+            }
             lastStatus = "공식 ADOFAI 3.3.1에 ZIP URL bundle을 전달했습니다 (" + bundleUrl + ")";
             return true;
         } catch (Throwable error) {
@@ -91,6 +107,25 @@ public final class OfficialGameBridge {
 
     public static String getLastStatus() {
         return lastStatus;
+    }
+
+    /**
+     * Called when the Companion activity resumes after the official game was
+     * launched. The diagnostic is consumed once so ordinary picker resumes do
+     * not repeatedly overwrite the editor status.
+     */
+    public static synchronized String consumeReturnDiagnostic() {
+        if (!pendingReturnDiagnostic || lastBundleUrl == null) return null;
+        if (System.currentTimeMillis() - lastHandoffAtMs < MIN_RETURN_DIAGNOSTIC_DELAY_MS) return null;
+        pendingReturnDiagnostic = false;
+        String diagnostic = LoopbackZipServer.diagnosticFor(lastBundleUrl);
+        return diagnostic == null ? "ZIP URL 진단 정보를 찾지 못했습니다." : diagnostic;
+    }
+
+    /** Non-consuming snapshot for debugging/tests. */
+    public static String getLastProbeStatus() {
+        String url = lastBundleUrl;
+        return url == null ? null : LoopbackZipServer.diagnosticFor(url);
     }
 
     private static void assertExactOfficialBuild(Activity owner) throws Exception {
