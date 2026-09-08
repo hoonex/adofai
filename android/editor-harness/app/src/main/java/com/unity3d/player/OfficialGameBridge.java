@@ -17,15 +17,14 @@ import dev.hoonex.adofai.companion.OfficialChartProvider;
  * Non-root bridge from the standalone companion editor to the unmodified
  * Google Play ADOFAI 3.3.1 process.
  *
- * The historical mobile editor accepted a URL to a ZIP bundle. We reproduce
- * that input shape locally: package the current bundle, serve it from a
- * loopback-only HTTP endpoint, and launch the official Unity activity with the
- * ZIP URL on all reasonable Android/Unity handoff surfaces at once. A scoped
- * content:// URI for main.adofai is also attached as a fallback.
+ * The canonical handoff packages the current bundle, serves it from a
+ * loopback-only HTTP endpoint, and launches the official Unity activity with
+ * the ZIP URL. A scoped content:// URI for main.adofai is attached as fallback.
  *
- * A loopback request probe is retained across the activity switch so returning
- * to the Companion can distinguish "game launched" from "the ZIP URL was
- * actually requested" without modifying or inspecting the official process.
+ * For URL-imported bundles an isolated HTTPS probe is also available. It sends
+ * only the original HTTPS ZIP URL (no content URI fallback), allowing a device
+ * test to distinguish loopback cleartext/network-policy failure from failure to
+ * consume a historical Open-From-URL-shaped external URL.
  */
 public final class OfficialGameBridge {
     private static final String TAG = "ADOFAI.OfficialBridge";
@@ -64,22 +63,10 @@ public final class OfficialGameBridge {
             Uri chartUri = OfficialChartProvider.publish(owner, chart);
             owner.grantUriPermission(TARGET_PACKAGE, chartUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
-            Intent intent = new Intent(Intent.ACTION_VIEW);
-            intent.setComponent(new ComponentName(TARGET_PACKAGE, TARGET_ACTIVITY));
-            intent.setDataAndType(bundleUri, "application/zip");
+            Intent intent = buildUrlIntent(bundleUri, bundleUrl);
             intent.setClipData(ClipData.newRawUri("ADOFAI main.adofai", chartUri));
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-
-            // Reproduce the old Open From URL shape and simultaneously provide
-            // the extracted chart URI. Unknown extras are harmless to Android;
-            // the unmodified official build may ignore any surface it does not consume.
-            intent.putExtra(Intent.EXTRA_TEXT, bundleUrl);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             intent.putExtra(Intent.EXTRA_STREAM, chartUri);
-            intent.putExtra("url", bundleUrl);
-            intent.putExtra("URL", bundleUrl);
-            intent.putExtra("levelUrl", bundleUrl);
-            intent.putExtra("zipUrl", bundleUrl);
-            intent.putExtra("openFromUrl", bundleUrl);
 
             String encodedChart = chartUri.toString();
             intent.putExtra("path", encodedChart);
@@ -96,13 +83,60 @@ public final class OfficialGameBridge {
                 pendingReturnDiagnostic = false;
                 throw launchError;
             }
-            lastStatus = "공식 ADOFAI 3.3.1에 ZIP URL bundle을 전달했습니다 (" + bundleUrl + ")";
+            lastStatus = "공식 ADOFAI 3.3.1에 localhost ZIP URL bundle을 전달했습니다 (" + bundleUrl + ")";
             return true;
         } catch (Throwable error) {
             Log.e(TAG, "Official ZIP-URL handoff failed", error);
             lastStatus = "공식 ADOFAI handoff 실패: " + error.getClass().getSimpleName() + safeMessage(error);
             return false;
         }
+    }
+
+    /**
+     * Sends only the original HTTPS URL used to import this bundle. This is a
+     * diagnostic path: it intentionally does not send the edited local bundle
+     * or the content:// fallback, so a positive result is attributable to the
+     * external URL-shaped entry surface.
+     */
+    public static boolean openOriginalHttps(String localPath) {
+        Activity owner = FileSelector.context;
+        if (owner == null || owner.isFinishing() || localPath == null || localPath.length() == 0) {
+            lastStatus = "원본 HTTPS 테스트를 실행할 수 없습니다: 편집기 Activity 또는 차트가 없습니다";
+            return false;
+        }
+
+        String sourceUrl = BundleWorkspace.sourceHttpsUrlForChart(localPath);
+        if (sourceUrl == null) {
+            lastStatus = "원본 HTTPS 테스트는 HTTPS ZIP URL로 가져온 bundle에서만 사용할 수 있습니다";
+            return false;
+        }
+
+        try {
+            assertExactOfficialBuild(owner);
+            pendingReturnDiagnostic = false;
+            Intent intent = buildUrlIntent(Uri.parse(sourceUrl), sourceUrl);
+            owner.startActivity(intent);
+            lastStatus = "원본 HTTPS ZIP URL만 공식 ADOFAI 3.3.1에 전달했습니다. 이 테스트는 로컬 편집 내용을 포함하지 않습니다: " + sourceUrl;
+            return true;
+        } catch (Throwable error) {
+            Log.e(TAG, "Official original-HTTPS handoff failed", error);
+            lastStatus = "원본 HTTPS handoff 실패: " + error.getClass().getSimpleName() + safeMessage(error);
+            return false;
+        }
+    }
+
+    private static Intent buildUrlIntent(Uri uri, String url) {
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setComponent(new ComponentName(TARGET_PACKAGE, TARGET_ACTIVITY));
+        intent.setDataAndType(uri, "application/zip");
+        intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        intent.putExtra(Intent.EXTRA_TEXT, url);
+        intent.putExtra("url", url);
+        intent.putExtra("URL", url);
+        intent.putExtra("levelUrl", url);
+        intent.putExtra("zipUrl", url);
+        intent.putExtra("openFromUrl", url);
+        return intent;
     }
 
     public static String getLastStatus() {
