@@ -1,0 +1,50 @@
+name: Build ADOFAI 2.4 Fixed Runtime
+
+on:
+  push:
+    branches: [fix/v240-custom-bugfix]
+    paths:
+      - 'android/v240-fixed-runtime/**'
+      - 'scripts/build-v240-fixed-java.sh'
+      - '.github/workflows/v240-fixed-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: adofai-v240-fixed-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  java-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android toolchain
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager 'platforms;android-35' 'build-tools;36.0.0'
+      - name: Build v2.4 Android bridge DEX
+        run: bash scripts/build-v240-fixed-java.sh dist/v240-fixed-runtime
+      - name: Verify fixed-runtime contract
+        run: |
+          set -euo pipefail
+          test -s dist/v240-fixed-runtime/v240-fixed-runtime.dex
+          grep -q 'ACTION_OPEN_DOCUMENT' android/v240-fixed-runtime/java/com/unity3d/player/V240PickerActivity.java
+          grep -q 'ACTION_CREATE_DOCUMENT' android/v240-fixed-runtime/java/com/unity3d/player/V240PickerActivity.java
+          grep -q 'ACTION_OPEN_DOCUMENT_TREE' android/v240-fixed-runtime/java/com/unity3d/player/V240PickerActivity.java
+          grep -q 'FileObserver' android/v240-fixed-runtime/java/com/unity3d/player/V240AndroidBridge.java
+          grep -q 'V240SettingsOverlay' android/v240-fixed-runtime/java/com/unity3d/player/V240Bootstrap.java
+          ! grep -R -q 'libOctober\|Companion\|OfficialGameBridge' android/v240-fixed-runtime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adofai-v240-fixed-java-runtime
+          path: dist/v240-fixed-runtime/
+          if-no-files-found: error
+          retention-days: 14
