@@ -138,7 +138,7 @@ ZIP URL -> paste HTTPS level.zip -> wait for import
 -> observe whether the exact remote ZIP produces level-specific behavior
 ```
 
-Report both the official-game behavior and the Companion diagnostic. Do not count a normal main-menu launch as preview success.
+Report both the official-game behavior and the Companion diagnostic. Do not count a normal main-menu launch as preview success. `원본 HTTPS` is diagnostic-only and deliberately reuses the remote source bundle, so it does not contain unsaved or locally edited chart changes.
 
 ## Runtime evidence boundary
 
@@ -174,6 +174,8 @@ Artifact:
 adofai-companion-editor-apk/
 └─ ADOFAI-Companion-Editor.apk
 ```
+
+Build success proves source preparation and APK compilation. It does not prove that the unmodified official game consumes either handoff path; that claim requires the physical-device test above.
 
 ## Compatibility tooling
 
