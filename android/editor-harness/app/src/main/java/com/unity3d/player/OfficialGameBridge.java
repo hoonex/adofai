@@ -16,6 +16,12 @@ import dev.hoonex.adofai.companion.OfficialChartProvider;
 /**
  * Non-root bridge from the standalone companion editor to the unmodified
  * Google Play ADOFAI 3.3.1 process.
+ *
+ * The historical mobile editor accepted a URL to a ZIP bundle.  We reproduce
+ * that input shape locally: package the current bundle, serve it from a
+ * loopback-only HTTP endpoint, and launch the official Unity activity with the
+ * ZIP URL on all reasonable Android/Unity handoff surfaces at once.  A scoped
+ * content:// URI for main.adofai is also attached as a fallback.
  */
 public final class OfficialGameBridge {
     private static final String TAG = "ADOFAI.OfficialBridge";
@@ -35,37 +41,49 @@ public final class OfficialGameBridge {
             return false;
         }
         if (!FileSelector.syncSavedPath(localPath)) {
-            lastStatus = "공식 ADOFAI로 넘기기 전에 저장 문서 동기화에 실패했습니다";
+            lastStatus = "공식 ADOFAI로 넘기기 전에 현재 bundle 저장에 실패했습니다";
             return false;
         }
 
         try {
             assertExactOfficialBuild(owner);
-            Uri uri = OfficialChartProvider.publish(owner, new File(localPath));
-            owner.grantUriPermission(TARGET_PACKAGE, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            File chart = new File(localPath);
+            File bundle = BundleWorkspace.packageBundle(owner, localPath);
+            String bundleUrl = LoopbackZipServer.publish(bundle);
+            Uri bundleUri = Uri.parse(bundleUrl);
+
+            Uri chartUri = OfficialChartProvider.publish(owner, chart);
+            owner.grantUriPermission(TARGET_PACKAGE, chartUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
             Intent intent = new Intent(Intent.ACTION_VIEW);
             intent.setComponent(new ComponentName(TARGET_PACKAGE, TARGET_ACTIVITY));
-            intent.setDataAndType(uri, "application/json");
-            intent.setClipData(ClipData.newRawUri("ADOFAI chart", uri));
+            intent.setDataAndType(bundleUri, "application/zip");
+            intent.setClipData(ClipData.newRawUri("ADOFAI main.adofai", chartUri));
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_SINGLE_TOP);
 
-            // Supply the same chart through the common Android/Unity handoff surfaces
-            // in one launch. The official build is not modified and may legally ignore
-            // fields it does not consume.
-            intent.putExtra(Intent.EXTRA_STREAM, uri);
-            String encoded = uri.toString();
-            intent.putExtra("url", encoded);
-            intent.putExtra("path", encoded);
-            intent.putExtra("filePath", encoded);
-            intent.putExtra("levelPath", encoded);
-            intent.putExtra("adofai", encoded);
+            // Reproduce the old Open From URL shape and simultaneously provide
+            // the extracted chart URI. Unknown extras are harmless to Android;
+            // the unmodified official build may ignore any surface it does not consume.
+            intent.putExtra(Intent.EXTRA_TEXT, bundleUrl);
+            intent.putExtra(Intent.EXTRA_STREAM, chartUri);
+            intent.putExtra("url", bundleUrl);
+            intent.putExtra("URL", bundleUrl);
+            intent.putExtra("levelUrl", bundleUrl);
+            intent.putExtra("zipUrl", bundleUrl);
+            intent.putExtra("openFromUrl", bundleUrl);
+
+            String encodedChart = chartUri.toString();
+            intent.putExtra("path", encodedChart);
+            intent.putExtra("filePath", encodedChart);
+            intent.putExtra("levelPath", encodedChart);
+            intent.putExtra("adofai", encodedChart);
 
             owner.startActivity(intent);
-            lastStatus = "공식 ADOFAI 3.3.1에 차트를 전달했습니다. 공식 앱이 외부 차트 URI를 소비하지 않으면 메인 화면만 열릴 수 있습니다";
+            lastStatus = "공식 ADOFAI 3.3.1에 ZIP URL bundle을 전달했습니다 (" + bundleUrl + ")";
             return true;
         } catch (Throwable error) {
-            Log.e(TAG, "Explicit official-game handoff failed", error);
+            Log.e(TAG, "Official ZIP-URL handoff failed", error);
             lastStatus = "공식 ADOFAI handoff 실패: " + error.getClass().getSimpleName() + safeMessage(error);
             return false;
         }

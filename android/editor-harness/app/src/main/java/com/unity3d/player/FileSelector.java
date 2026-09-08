@@ -1,31 +1,29 @@
 package com.unity3d.player;
 
 import android.app.Activity;
-import android.content.ActivityNotFoundException;
+import android.app.AlertDialog;
 import android.content.ContentResolver;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.provider.OpenableColumns;
+import android.text.InputType;
 import android.util.Log;
+import android.widget.EditText;
+import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Storage Access Framework bridge used by the standalone companion editor.
- *
- * The editor shell still edits an ordinary filesystem path so its atomic temp +
- * rename save semantics remain unchanged. SAF documents are mirrored into an
- * app-private working file, then synchronized back to the selected document only
- * after the shell's local save succeeds.
- */
+/** Storage Access Framework + URL bundle bridge for the standalone companion editor. */
 public final class FileSelector {
     private static final String TAG = "ADOFAI.CompanionSAF";
     private static final int REQUEST_OPEN = 4101;
@@ -39,6 +37,7 @@ public final class FileSelector {
     private static volatile String folderPath = "";
     private static volatile String pendingSaveName = "level.adofai";
     private static final Map<String, String> URI_BY_PATH = new ConcurrentHashMap<String, String>();
+    private static final Map<String, String> BUNDLE_URI_BY_PATH = new ConcurrentHashMap<String, String>();
     private static final Map<String, String> NAME_BY_PATH = new ConcurrentHashMap<String, String>();
 
     private FileSelector() {}
@@ -62,6 +61,64 @@ public final class FileSelector {
                     Log.e(TAG, "Could not launch open-document picker", error);
                     setPath("");
                 }
+            }
+        });
+    }
+
+    /** Historical ADOFAI-style entry point: paste a direct ZIP URL. */
+    public static void selectUrlBundle() {
+        isDone = false;
+        filePath = "";
+        final Activity owner = context;
+        if (owner == null || owner.isFinishing()) {
+            setPath("");
+            return;
+        }
+        owner.runOnUiThread(new Runnable() {
+            @Override public void run() {
+                final EditText input = new EditText(owner);
+                input.setSingleLine(true);
+                input.setHint("https://example.com/level.zip");
+                input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+                new AlertDialog.Builder(owner)
+                        .setTitle("ZIP URL 열기")
+                        .setMessage("예전 Open From URL처럼 .zip 링크를 입력하세요. main.adofai와 음악/이미지를 함께 보존합니다.")
+                        .setView(input)
+                        .setPositiveButton("열기", new DialogInterface.OnClickListener() {
+                            @Override public void onClick(DialogInterface dialog, int which) {
+                                final String url = input.getText().toString().trim();
+                                if (url.length() == 0) {
+                                    setPath("");
+                                    return;
+                                }
+                                Toast.makeText(owner, "ZIP 다운로드 중…", Toast.LENGTH_SHORT).show();
+                                Thread worker = new Thread(new Runnable() {
+                                    @Override public void run() {
+                                        try {
+                                            final String path = BundleWorkspace.importZipUrl(owner, url);
+                                            NAME_BY_PATH.put(path, nameFromUrl(url) + " / " + new File(path).getName());
+                                            setPath(path);
+                                        } catch (final Throwable error) {
+                                            Log.e(TAG, "ZIP URL import failed", error);
+                                            owner.runOnUiThread(new Runnable() {
+                                                @Override public void run() {
+                                                    Toast.makeText(owner, "ZIP URL 열기 실패: " + safeMessage(error), Toast.LENGTH_LONG).show();
+                                                }
+                                            });
+                                            setPath("");
+                                        }
+                                    }
+                                }, "adofai-url-bundle");
+                                worker.start();
+                            }
+                        })
+                        .setNegativeButton("취소", new DialogInterface.OnClickListener() {
+                            @Override public void onClick(DialogInterface dialog, int which) { setPath(""); }
+                        })
+                        .setOnCancelListener(new DialogInterface.OnCancelListener() {
+                            @Override public void onCancel(DialogInterface dialog) { setPath(""); }
+                        })
+                        .show();
             }
         });
     }
@@ -139,6 +196,7 @@ public final class FileSelector {
             setPath(working);
         } catch (Throwable error) {
             Log.e(TAG, "SAF result handling failed", error);
+            Toast.makeText(context, "파일 열기 실패: " + safeMessage(error), Toast.LENGTH_LONG).show();
             setPath("");
         }
         return true;
@@ -147,19 +205,28 @@ public final class FileSelector {
     public static String importUri(Uri uri) throws Exception {
         Activity owner = context;
         if (owner == null) throw new IllegalStateException("No foreground Activity");
-        String name = ensureExtension(queryDisplayName(owner.getContentResolver(), uri, "level.adofai"));
-        File working = newWorkingFile(owner, name);
+        String displayName = queryDisplayName(owner.getContentResolver(), uri, "level.adofai");
+        String lower = displayName.toLowerCase(Locale.US);
         InputStream input = owner.getContentResolver().openInputStream(uri);
         if (input == null) throw new IllegalStateException("Document provider returned no input stream");
         try {
+            if (lower.endsWith(".zip") || lower.endsWith(".adozip")) {
+                String chart = BundleWorkspace.importZip(owner, input, displayName);
+                BUNDLE_URI_BY_PATH.put(chart, uri.toString());
+                NAME_BY_PATH.put(chart, displayName + " / " + new File(chart).getName());
+                return chart;
+            }
+
+            String name = ensureExtension(displayName);
+            File working = newWorkingFile(owner, name);
             FileOutputStream output = new FileOutputStream(working, false);
             try { copy(input, output); output.getFD().sync(); }
             finally { output.close(); }
+            remember(working, uri, name);
+            return working.getAbsolutePath();
         } finally {
             input.close();
         }
-        remember(working, uri, name);
-        return working.getAbsolutePath();
     }
 
     private static String prepareSaveDocument(Uri uri, String fallbackName) throws Exception {
@@ -174,61 +241,45 @@ public final class FileSelector {
         return working.getAbsolutePath();
     }
 
+    /** Synchronize direct documents or repack an imported local ZIP bundle. */
     public static boolean syncSavedPath(String localPath) {
-        String encoded = URI_BY_PATH.get(localPath);
-        if (encoded == null) return true;
         Activity owner = context;
         if (owner == null) return false;
+
+        String bundleEncoded = BUNDLE_URI_BY_PATH.get(localPath);
+        if (bundleEncoded != null) {
+            try {
+                File bundle = BundleWorkspace.packageBundle(owner, localPath);
+                return writeFileToUri(owner, bundle, Uri.parse(bundleEncoded));
+            } catch (Throwable error) {
+                Log.e(TAG, "Could not synchronize ZIP bundle", error);
+                return false;
+            }
+        }
+
+        String encoded = URI_BY_PATH.get(localPath);
+        if (encoded == null) return true; // URL-imported bundles stay in the private workspace until exported/handoff.
         File source = new File(localPath);
         if (!source.isFile()) return false;
         try {
-            OutputStream output = owner.getContentResolver().openOutputStream(Uri.parse(encoded), "wt");
-            if (output == null) throw new IllegalStateException("Document provider returned no output stream");
-            try {
-                FileInputStream input = new FileInputStream(source);
-                try { copy(input, output); output.flush(); }
-                finally { input.close(); }
-            } finally {
-                output.close();
-            }
-            return true;
+            return writeFileToUri(owner, source, Uri.parse(encoded));
         } catch (Throwable error) {
             Log.e(TAG, "Could not synchronize saved chart to SAF document", error);
             return false;
         }
     }
 
-    public static boolean openInAdofaiOrShare(String localPath) {
-        Activity owner = context;
-        String encoded = URI_BY_PATH.get(localPath);
-        if (owner == null || encoded == null) return false;
-        if (!syncSavedPath(localPath)) return false;
-
-        Uri uri = Uri.parse(encoded);
-        Intent direct = new Intent(Intent.ACTION_VIEW);
-        direct.setPackage("com.fizzd.connectedworlds");
-        direct.setDataAndType(uri, "application/json");
-        direct.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+    private static boolean writeFileToUri(Activity owner, File source, Uri uri) throws Exception {
+        OutputStream output = owner.getContentResolver().openOutputStream(uri, "wt");
+        if (output == null) throw new IllegalStateException("Document provider returned no output stream");
         try {
-            owner.startActivity(direct);
-            return true;
-        } catch (ActivityNotFoundException ignored) {
-            Log.i(TAG, "Official ADOFAI does not expose a matching VIEW activity; falling back to Android share sheet");
-        } catch (SecurityException ignored) {
-            Log.i(TAG, "Direct ADOFAI VIEW was rejected; falling back to Android share sheet");
+            FileInputStream input = new FileInputStream(source);
+            try { copy(input, output); output.flush(); }
+            finally { input.close(); }
+        } finally {
+            output.close();
         }
-
-        try {
-            Intent share = new Intent(Intent.ACTION_SEND);
-            share.setType("application/json");
-            share.putExtra(Intent.EXTRA_STREAM, uri);
-            share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            owner.startActivity(Intent.createChooser(share, "ADOFAI chart"));
-            return true;
-        } catch (Throwable error) {
-            Log.e(TAG, "Could not open Android share sheet", error);
-            return false;
-        }
+        return true;
     }
 
     public static String displayNameForPath(String path) {
@@ -241,13 +292,8 @@ public final class FileSelector {
         isDone = true;
     }
 
-    public static String getFilePath() {
-        return filePath;
-    }
-
-    public static String getFolderPath() {
-        return folderPath;
-    }
+    public static String getFilePath() { return filePath; }
+    public static String getFolderPath() { return folderPath; }
 
     private static void remember(File working, Uri uri, String name) {
         URI_BY_PATH.put(working.getAbsolutePath(), uri.toString());
@@ -297,14 +343,12 @@ public final class FileSelector {
     private static void copy(InputStream input, OutputStream output) throws Exception {
         byte[] buffer = new byte[64 * 1024];
         int read;
-        while ((read = input.read(buffer)) >= 0) {
-            if (read > 0) output.write(buffer, 0, read);
-        }
+        while ((read = input.read(buffer)) >= 0) if (read > 0) output.write(buffer, 0, read);
     }
 
     private static String ensureExtension(String name) {
         String safe = sanitizeName(name);
-        return safe.toLowerCase(java.util.Locale.US).endsWith(".adofai") ? safe : safe + ".adofai";
+        return safe.toLowerCase(Locale.US).endsWith(".adofai") ? safe : safe + ".adofai";
     }
 
     private static String sanitizeName(String name) {
@@ -312,5 +356,20 @@ public final class FileSelector {
         safe = safe.replace('/', '_').replace('\\', '_');
         if (safe.isEmpty() || safe.equals(".") || safe.equals("..")) safe = "level.adofai";
         return safe;
+    }
+
+    private static String nameFromUrl(String url) {
+        try {
+            Uri uri = Uri.parse(url);
+            String last = uri.getLastPathSegment();
+            return last == null || last.length() == 0 ? "level.zip" : last;
+        } catch (Throwable ignored) {
+            return "level.zip";
+        }
+    }
+
+    private static String safeMessage(Throwable error) {
+        String value = error == null ? null : error.getMessage();
+        return value == null || value.length() == 0 ? error.getClass().getSimpleName() : value;
     }
 }

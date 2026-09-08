@@ -42,8 +42,11 @@ def transform(text: str) -> str:
         actions.addView(makeAction("Open", new View.OnClickListener() {
             @Override public void onClick(View v) { beginOpen(); }
         }));
+        actions.addView(makeAction("ZIP URL", new View.OnClickListener() {
+            @Override public void onClick(View v) { beginOpenUrl(); }
+        }));
 ''',
-        "New action insertion",
+        "New and ZIP URL action insertion",
     )
 
     text = replace_exact(
@@ -104,7 +107,7 @@ def transform(text: str) -> str:
 ''',
         '''            Os.rename(temp.getAbsolutePath(), target.getAbsolutePath());
             if (!FileSelector.syncSavedPath(target.getAbsolutePath())) {
-                throw new IllegalStateException("Could not synchronize saved chart to the selected Android document");
+                throw new IllegalStateException("Could not synchronize saved chart/bundle to the selected Android document");
             }
             currentPath = target.getAbsolutePath();
 ''',
@@ -118,6 +121,29 @@ def transform(text: str) -> str:
         '''        String value = currentPath == null ? "No chart open" : FileSelector.displayNameForPath(currentPath);
 ''',
         "document display name",
+    )
+
+    text = replace_exact(
+        text,
+        '''    private static void beginOpen() {
+''',
+        '''    private static void beginOpenUrl() {
+        setStatus("ZIP URL 입력…", false);
+        FileSelector.selectUrlBundle();
+        awaitPicker(new PickerCompletion() {
+            @Override public void complete(String path) {
+                if (path.length() == 0) {
+                    setStatus("ZIP URL 열기 취소 또는 실패", false);
+                    return;
+                }
+                loadPath(path);
+            }
+        });
+    }
+
+    private static void beginOpen() {
+''',
+        "ZIP URL open flow",
     )
 
     text = replace_exact(
@@ -158,7 +184,7 @@ def transform(text: str) -> str:
         }
         new android.app.AlertDialog.Builder(owner)
                 .setTitle("저장 후 공식 ADOFAI 열기")
-                .setMessage("현재 수정사항을 먼저 저장한 뒤 설치된 공식 Play판 ADOFAI 3.3.1에 차트를 전달합니다.")
+                .setMessage("현재 수정사항과 ZIP bundle을 먼저 저장한 뒤 설치된 공식 Play판 ADOFAI 3.3.1에 전달합니다.")
                 .setPositiveButton("저장 후 계속", new android.content.DialogInterface.OnClickListener() {
                     @Override public void onClick(android.content.DialogInterface ignored, int which) {
                         if (saveCurrent(false)) shareCurrent();
@@ -170,7 +196,7 @@ def transform(text: str) -> str:
 
     private static void shareCurrent() {
         if (document == null) {
-            setStatus("먼저 맵을 열거나 새로 만드세요", true);
+            setStatus("먼저 맵 또는 ZIP bundle을 여세요", true);
             return;
         }
         if (currentPath == null) {

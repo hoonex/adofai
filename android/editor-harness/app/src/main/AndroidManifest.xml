@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <queries>
         <package android:name="com.fizzd.connectedworlds" />
     </queries>
@@ -33,6 +35,8 @@
                 <data android:mimeType="application/json" />
                 <data android:mimeType="text/plain" />
                 <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
             </intent-filter>
         </activity>
     </application>
