@@ -1,16 +1,19 @@
 # ADOFAI Companion Editor
 
-Non-root Android companion editor for user-authored `.adofai` charts. The canonical product keeps the official Google Play ADOFAI installation untouched and runs the editor as a separate app (`dev.hoonex.adofai.companion`). This repository does **not** contain or redistribute the proprietary ADOFAI APK or game assets.
+Non-root Android companion editor for user-authored ADOFAI custom levels. The canonical product keeps the official Google Play ADOFAI installation untouched and runs the editor as a separate app (`dev.hoonex.adofai.companion`). This repository does **not** contain or redistribute the proprietary ADOFAI APK or game assets.
 
 ## Canonical architecture
 
 ```text
 ADOFAI Companion Editor
-    ├─ Android Storage Access Framework (Open / Save / Save As)
-    ├─ loss-preserving .adofai editor
-    ├─ app-private working copy
-    ├─ read-only, grant-scoped content:// chart provider
-    └─ explicit handoff to the installed official ADOFAI 3.3.1
+    ├─ Open .adofai / local .zip through Android SAF
+    ├─ ZIP URL (historical Open From URL-style input)
+    ├─ safe app-private bundle workspace
+    │   └─ main.adofai + sibling audio/images/decorations stay together
+    ├─ loss-preserving chart editor
+    ├─ repackage current workspace as ZIP
+    ├─ loopback-only http://127.0.0.1:<port>/.../level.zip
+    └─ explicit ZIP-URL handoff to official ADOFAI 3.3.1
 
 Official Google Play ADOFAI
     └─ com.fizzd.connectedworlds / 3.3.1 / versionCode 300382
@@ -21,13 +24,43 @@ The canonical path does **not** root the device, use Magisk/Zygisk, patch or res
 
 Legacy patcher/Zygisk experiments remain repository history/reference only. Their workflows are manual-only and are not part of the normal Companion Editor build.
 
+## Why ZIP bundles are first-class
+
+Real custom levels are commonly not a standalone JSON file. A package can contain:
+
+```text
+Level Name/
+├─ main.adofai
+├─ song.ogg
+├─ background.jpg
+├─ decoration.png
+└─ ...
+```
+
+`main.adofai` refers to those assets by relative filename. Detaching only the chart breaks song/background/decoration resolution.
+
+Older mobile editor builds exposed **Open From URL** for this purpose: a direct `.zip` URL was downloaded and extracted before the chart was opened. The Companion Editor therefore preserves the complete ZIP hierarchy and edits the chart in place inside that bundle workspace.
+
+### Bundle safety
+
+ZIP import is bounded and rejects unsafe archives:
+
+- canonical-path check against ZIP path traversal / Zip Slip;
+- entry-count limit;
+- download-size limit;
+- extracted-size limit;
+- unique `main.adofai` preferred; otherwise exactly one `.adofai` is required.
+
+A URL-imported level remains inside the Companion app's private workspace. A locally opened ZIP is repackaged and synchronized back to that selected SAF document after a successful chart save.
+
 ## Editor
 
 The Companion Editor supports:
 
 - **New** chart creation;
-- **Open** through Android's Storage Access Framework;
-- **Save / Save As** back to the selected Android document;
+- **Open** local `.adofai`, `.zip`, or `.adozip` through Android's Storage Access Framework;
+- **ZIP URL** for a direct HTTP/HTTPS level archive;
+- **Save / Save As** for chart documents and in-place synchronization of opened ZIP bundles;
 - **Chart** editing for `pathData` / `angleData`;
 - **Settings** editing;
 - **Events** editing for `actions` and `decorations`;
@@ -36,11 +69,9 @@ The Companion Editor supports:
 - preservation of unknown root fields and unknown event payloads unless explicitly changed;
 - dirty-document guards around close/open/handoff flows.
 
-The editor works on an app-private mirror so its atomic-save semantics remain independent of the external document provider. Successful saves are synchronized back to the selected SAF document.
-
 ## Official-game handoff
 
-The **공식 ADOFAI** action first saves/synchronizes the current chart, then creates a temporary read-only `content://` URI from `OfficialChartProvider`. Read permission is granted only to `com.fizzd.connectedworlds`.
+The **공식 ADOFAI** action saves the current chart, keeps all sibling bundle assets in their original relative layout, repackages the workspace as a ZIP, and exposes that ZIP only on the device loopback interface (`127.0.0.1`). The user's level is not uploaded to an external server.
 
 `OfficialGameBridge` verifies the installed target is exactly:
 
@@ -51,15 +82,15 @@ versionCode: 300382
 activity:    com.unity3d.player.UnityPlayerActivity
 ```
 
-It then explicitly launches that exported official activity with the chart URI, `application/json`, a URI permission grant, `ClipData`, `EXTRA_STREAM`, and compatibility URI extras in one handoff attempt.
+It explicitly launches the official Unity activity with the loopback ZIP URL as the Intent data (`application/zip`) and supplies the same URL through multiple URL-oriented extras. A temporary read-only `content://` URI for the extracted chart is attached as a fallback with a package-scoped read grant.
 
-### Verification boundary
+### Why this route is technically plausible
 
-Real-device inventory from the exact Play build shows that ADOFAI 3.3.1 exposes `UnityPlayerActivity`, but does **not** advertise a normal public `ACTION_VIEW` or `ACTION_SEND` file-import handler for `.adofai` data. Therefore Android can launch the exported activity explicitly, but repository/CI evidence alone cannot prove that the unmodified game will consume the supplied chart URI and enter gameplay.
+The exact 3.3.1 runtime still contains the custom-level gameplay pipeline: `scrController.LoadCustomLevel(path, id, fromBundle)` populates `GCS.customLevelPaths`, transitions to `scnGame`, and the level loader resolves sibling resources relative to the chart file's directory.
 
-If the official game ignores the supplied Intent data, a separate non-root app cannot directly invoke its private Unity/IL2CPP level loader or write its private app data. Doing that would require changing the constraints (for example modifying/injecting into the game process), which is intentionally outside the canonical product.
+The missing part on current Android is a proven public external entry point into that internal loader. Explicitly launching `UnityPlayerActivity` with a ZIP URL recreates the historical URL-shaped input without modifying the official package, but **build/CI success does not prove that 3.3.1 consumes that launch URL**. A real-device run is required for that final boundary.
 
-The project must not label a mere successful app launch as “official preview success.”
+A successful official-app launch by itself must not be reported as successful custom-level gameplay.
 
 ## Build
 
