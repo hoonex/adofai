@@ -14,7 +14,7 @@ import android.widget.Toast;
 import com.unity3d.player.FileSelector;
 import com.unity3d.player.MobileEditorShell;
 
-/** Standalone ADOFAI chart editor that coexists with the official Play build. */
+/** Standalone editor + clean-room playable runtime for user-authored ADOFAI charts. */
 public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -28,23 +28,23 @@ public final class MainActivity extends Activity {
         root.setBackgroundColor(Color.rgb(18, 18, 22));
 
         TextView title = new TextView(this);
-        title.setText("ADOFAI Companion Editor");
+        title.setText("ADOFAI Custom");
         title.setTextColor(Color.WHITE);
-        title.setTextSize(24f);
+        title.setTextSize(26f);
         root.addView(title);
 
         TextView description = new TextView(this);
         description.setText(
-                "공식 Play판 ADOFAI는 그대로 유지합니다. 이 앱은 .adofai 파일만 독립적으로 열고 편집·저장하며, " +
-                "Android 시스템 파일 선택기(SAF)를 사용합니다. 저장 후에는 'ADOFAI / 공유'로 공식 게임 열기를 시도하고, " +
-                "지원되지 않으면 Android 공유 화면으로 전환합니다.");
+                "비루트 독립 실행형 ADOFAI 커스텀 에디터 + 플레이어입니다. " +
+                "상용 게임 APK나 에셋을 포함하거나 수정하지 않고, 사용자가 연 .adofai 맵을 직접 편집하고 플레이합니다. " +
+                "에디터에서 Play를 누르면 현재 맵이 즉시 플레이 화면으로 전환됩니다.");
         description.setTextColor(Color.rgb(190, 190, 200));
         description.setTextSize(15f);
         description.setPadding(0, dp(14), 0, dp(18));
         root.addView(description);
 
         Button openEditor = new Button(this);
-        openEditor.setText("에디터 열기");
+        openEditor.setText("에디터 / 맵 열기");
         openEditor.setAllCaps(false);
         openEditor.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
@@ -55,7 +55,7 @@ public final class MainActivity extends Activity {
         root.addView(openEditor);
 
         TextView hint = new TextView(this);
-        hint.setText("파일 앱에서 .adofai를 이 앱으로 열어도 됩니다. 새 맵은 에디터의 New → Save As 순서로 저장하세요.");
+        hint.setText(".adofai 파일을 이 앱으로 열거나, New → Save As로 새 맵을 만든 뒤 Play를 누르세요.");
         hint.setTextColor(Color.rgb(160, 185, 230));
         hint.setTextSize(13f);
         hint.setPadding(0, dp(14), 0, 0);
@@ -72,22 +72,19 @@ public final class MainActivity extends Activity {
         }
     }
 
-    @Override
-    protected void onResume() {
+    @Override protected void onResume() {
         super.onResume();
         FileSelector.context = this;
     }
 
-    @Override
-    protected void onNewIntent(Intent intent) {
+    @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
         FileSelector.context = this;
         handleIncomingIntent(intent);
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (FileSelector.handleActivityResult(requestCode, resultCode, data)) return;
         super.onActivityResult(requestCode, resultCode, data);
     }
