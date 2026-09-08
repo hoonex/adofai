@@ -7,6 +7,7 @@ SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 PLATFORM="${ADOFAI_ANDROID_PLATFORM:-android-35}"
 BUILD_TOOLS="${ADOFAI_BUILD_TOOLS:-36.0.0}"
 NDK_VERSION="${ADOFAI_NDK_VERSION:-29.0.14206865}"
+UPSTREAM_SHA="74bcc7a0d8c8be1267504e21e28a35e199b5d4eb"
 
 if [[ -z "${SDK}" ]]; then
   echo "ANDROID_SDK_ROOT (or ANDROID_HOME) is required" >&2
@@ -58,6 +59,22 @@ if [[ ! -s "${LIB}" ]]; then
 fi
 cp "${LIB}" "${OUT}/libOctober.so"
 
+# Build the exact pinned source before our transforms as a compatibility fingerprint.
+# A patcher may replace the native library only when the source APK's existing
+# libOctober.so matches this pristine hash. This prevents guessing across game versions.
+git -C "${SRC}" reset --hard "${UPSTREAM_SHA}"
+git -C "${SRC}" clean -fdx
+"${NDK_BUILD}" -C "${JNI}" -j2
+PRISTINE_LIB="${SRC}/app/src/main/libs/arm64-v8a/libOctober.so"
+if [[ ! -s "${PRISTINE_LIB}" ]]; then
+  PRISTINE_LIB="${SRC}/app/src/main/obj/local/arm64-v8a/libOctober.so"
+fi
+if [[ ! -s "${PRISTINE_LIB}" ]]; then
+  echo "pristine native build did not produce libOctober.so" >&2
+  exit 4
+fi
+sha256sum "${PRISTINE_LIB}" | awk '{print $1}' > "${OUT}/ORIGINAL_LIBOCTOBER_SHA256.txt"
+
 cat > "${OUT}/PATCHSET.txt" <<'EOF'
 ADOFAI v2.4 Custom bugfix payload
 
@@ -70,6 +87,10 @@ Applied fixes only:
   01df912cbc65c75d03b92880154388cade87b600  Open/Save/Folder file-dialog bridge
   5d33b38572c1545ff7907c070f2a0ed267ad4725  Android storage + Activity acquisition
   3b2b0b109f6b954ec168354b7b5f040602b21fbb  Back/cancel completion guard
+
+Native replacement rule:
+  Replace libOctober.so only when the source APK's current libOctober.so SHA-256
+  exactly equals ORIGINAL_LIBOCTOBER_SHA256.txt. Otherwise fail closed.
 
 Explicitly excluded:
   ADOFAI 3.3 safe-runtime profile
@@ -85,6 +106,8 @@ EOF
 
 test -s "${OUT}/classes2.dex"
 test -s "${OUT}/libOctober.so"
+test "$(wc -c < "${OUT}/ORIGINAL_LIBOCTOBER_SHA256.txt")" -eq 65
 rm -rf "${OUT}/classes" "${OUT}/dex" "${OUT}/filepicker.jar"
 printf 'v2.4 bugfix payload ready: %s\n' "${OUT}"
+printf 'pristine libOctober SHA-256: %s\n' "$(cat "${OUT}/ORIGINAL_LIBOCTOBER_SHA256.txt")"
 cat "${OUT}/SHA256SUMS.txt"
