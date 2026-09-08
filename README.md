@@ -12,8 +12,9 @@ ADOFAI Companion Editor
     ├─ loss-preserving .adofai editor
     ├─ app-private bundle workspace
     ├─ sibling audio/image/decor asset preservation
-    ├─ loopback-only ZIP URL publisher
-    ├─ read-only, grant-scoped content:// chart fallback
+    ├─ loopback-only ZIP URL publisher + GET/HEAD diagnostics
+    ├─ original HTTPS URL-only diagnostic handoff
+    ├─ read-only, grant-scoped content:// chart fallback for canonical handoff
     └─ explicit handoff to installed official ADOFAI 3.3.1
 
 Official Google Play ADOFAI
@@ -47,7 +48,7 @@ Supported inputs:
 
 ZIP import prefers a unique `main.adofai`. If no `main.adofai` exists, exactly one `.adofai` file must be present. The importer rejects canonical-path traversal, excessive entry counts, oversized downloads, and oversized expanded archives.
 
-When a bundled chart is saved, the edited chart remains in the same workspace as its sibling assets. A locally opened ZIP is repackaged and synchronized back to its selected Android document.
+When a bundled chart is saved, the edited chart remains in the same workspace as its sibling assets. A locally opened ZIP is repackaged and synchronized back to its selected Android document. For a URL-imported bundle, the original HTTPS source URL is remembered only for the isolated URL-entry diagnostic described below.
 
 ## Editor
 
@@ -76,9 +77,9 @@ The **공식 ADOFAI** action reproduces the historical ZIP-URL-shaped input as c
 5. explicitly launch `com.unity3d.player.UnityPlayerActivity` with the ZIP URL as `ACTION_VIEW` data and `application/zip`;
 6. also supply URL-oriented extras and a read-only package-granted `content://` URI for the extracted chart as a fallback.
 
-Nothing is uploaded to an external server by this path.
+Nothing is uploaded to an external server by this canonical path.
 
-### Runtime consumption diagnostic
+### Loopback runtime-consumption diagnostic
 
 Launching the official Activity is not considered proof that the game consumed the level. The loopback server therefore records requests for the exact published ZIP, including:
 
@@ -105,13 +106,30 @@ HEAD = 0, GET = 0
      policy that rejected http://127.0.0.1 before a request reached the server.
 ```
 
-If the zero-request case occurs on a physical device, the next bounded experiment is a direct HTTPS ZIP URL using the same explicit official-Activity handoff. That removes the localhost-cleartext ambiguity before considering any different architecture.
+### Isolated original-HTTPS diagnostic
+
+When the current bundle was imported through an **HTTPS** ZIP URL, the editor also exposes **원본 HTTPS**.
+
+That action intentionally sends only the original external HTTPS ZIP URL to the exact official `UnityPlayerActivity` using the same URL-oriented handoff surfaces. It does **not** attach the Companion's `content://` chart fallback and it does not send the edited local bundle. This keeps the experiment isolated:
+
+```text
+localhost gets GET/HEAD
+  => official side touched the loopback URL; investigate bundle/download/load behavior next.
+
+localhost gets 0 requests, but original HTTPS opens/loads the level
+  => the URL-entry path exists and localhost cleartext/network policy is the likely blocker.
+
+localhost gets 0 requests and original HTTPS also only opens the menu
+  => external Activity URL consumption is increasingly unlikely on this official 3.3.1 build.
+```
+
+The Companion successfully downloads the same source URL before this test, so an HTTPS test avoids the specific cleartext-loopback ambiguity. It still does not prove every server/TLS/redirect behavior is identical inside the game.
 
 ## Runtime evidence boundary
 
 Reverse analysis of the exact 3.3.1 runtime confirms that the custom gameplay pipeline still exists internally: `scrController.LoadCustomLevel(path, id, fromBundle)` populates custom-level state, transitions to `scnGame`, and the custom-level path resolves sibling assets relative to the chart directory.
 
-What remains device-runtime-unverified is the final external entry boundary: whether the unmodified Android 3.3.1 Activity consumes the supplied ZIP URL and routes it into that internal loader. A successful app launch alone must never be described as official preview success.
+What remains device-runtime-unverified is the final external entry boundary: whether the unmodified Android 3.3.1 Activity consumes a supplied ZIP URL and routes it into that internal loader. A successful app launch alone must never be described as official preview success.
 
 ## Build
 
