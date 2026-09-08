@@ -125,6 +125,21 @@ localhost gets 0 requests and original HTTPS also only opens the menu
 
 The Companion successfully downloads the same source URL before this test, so an HTTPS test avoids the specific cleartext-loopback ambiguity. It still does not prove every server/TLS/redirect behavior is identical inside the game.
 
+### Recommended physical-device test
+
+Use a real direct **HTTPS ZIP URL** for a known custom level:
+
+```text
+ZIP URL -> paste HTTPS level.zip -> wait for import
+-> 공식 ADOFAI
+-> observe official game behavior
+-> return to Companion and record GET/HEAD diagnostic
+-> 원본 HTTPS
+-> observe whether the exact remote ZIP produces level-specific behavior
+```
+
+Report both the official-game behavior and the Companion diagnostic. Do not count a normal main-menu launch as preview success.
+
 ## Runtime evidence boundary
 
 Reverse analysis of the exact 3.3.1 runtime confirms that the custom gameplay pipeline still exists internally: `scrController.LoadCustomLevel(path, id, fromBundle)` populates custom-level state, transitions to `scnGame`, and the custom-level path resolves sibling assets relative to the chart directory.
