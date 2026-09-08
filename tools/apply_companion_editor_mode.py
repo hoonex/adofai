@@ -58,8 +58,11 @@ def transform(text: str) -> str:
         '''        actions.addView(makeAction("공식 ADOFAI", new View.OnClickListener() {
             @Override public void onClick(View v) { shareCurrent(); }
         }));
+        actions.addView(makeAction("원본 HTTPS", new View.OnClickListener() {
+            @Override public void onClick(View v) { shareOriginalHttps(); }
+        }));
 ''',
-        "official handoff action replacement",
+        "official handoff actions replacement",
     )
 
     text = replace_exact(
@@ -220,6 +223,15 @@ def transform(text: str) -> str:
             return;
         }
         boolean opened = OfficialGameBridge.open(currentPath);
+        setStatus(OfficialGameBridge.getLastStatus(), !opened);
+    }
+
+    private static void shareOriginalHttps() {
+        if (document == null || currentPath == null) {
+            setStatus("먼저 HTTPS ZIP URL로 bundle을 여세요", true);
+            return;
+        }
+        boolean opened = OfficialGameBridge.openOriginalHttps(currentPath);
         setStatus(OfficialGameBridge.getLastStatus(), !opened);
     }
 
