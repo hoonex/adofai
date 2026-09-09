@@ -1,0 +1,45 @@
+name: Verify Exact ADOFAI 2.4 Custom Source
+
+on:
+  push:
+    branches: [fix/v240-custom-bugfix]
+    paths:
+      - '.github/workflows/v240-source-verify-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download archived source candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          ID='1aTmEKCgTijMvCuOuDlmA-uU6VEUStBqw'
+          OUT='V2.4.0 Custom.apk'
+          python3 -m pip install --quiet --disable-pip-version-check gdown
+          gdown --id "$ID" -O "$OUT"
+          test -s "$OUT"
+      - name: Verify exact user source fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='V2.4.0 Custom.apk'
+          EXPECTED_SIZE=370092054
+          EXPECTED_SHA='630f519ae1ab3391aad95da90ebc296f4f0f8ae4ea41024ace7349d93926ef30'
+          SIZE=$(stat -c '%s' "$APK")
+          SHA=$(sha256sum "$APK" | awk '{print $1}')
+          printf 'size=%s\nsha256=%s\n' "$SIZE" "$SHA" | tee source-report.txt
+          test "$SIZE" = "$EXPECTED_SIZE"
+          test "$SHA" = "$EXPECTED_SHA"
+          echo 'EXACT_SOURCE_MATCH=YES' | tee -a source-report.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v240-exact-source-verification
+          path: source-report.txt
+          if-no-files-found: error
+          retention-days: 3
