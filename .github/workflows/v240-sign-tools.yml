@@ -1,0 +1,41 @@
+name: Package Android Signing Tools
+
+on:
+  push:
+    branches: [fix/v240-custom-bugfix]
+    paths:
+      - '.github/workflows/v240-sign-tools.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v3
+      - name: Install build tools
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager 'build-tools;36.0.0'
+      - name: Stage apksigner and zipalign
+        run: |
+          set -euo pipefail
+          BT="$ANDROID_SDK_ROOT/build-tools/36.0.0"
+          OUT=dist/android-sign-tools
+          mkdir -p "$OUT/lib"
+          cp "$BT/apksigner" "$OUT/apksigner"
+          cp "$BT/zipalign" "$OUT/zipalign"
+          cp "$BT/lib/apksigner.jar" "$OUT/lib/apksigner.jar"
+          chmod +x "$OUT/apksigner" "$OUT/zipalign"
+          "$OUT/apksigner" version
+          "$OUT/zipalign" -h >/dev/null 2>&1 || test $? -eq 1
+          sha256sum "$OUT/apksigner" "$OUT/zipalign" "$OUT/lib/apksigner.jar" > "$OUT/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-sign-tools-36
+          path: dist/android-sign-tools/
+          if-no-files-found: error
+          retention-days: 3
