@@ -22,7 +22,7 @@ jobs:
           ID='1aTmEKCgTijMvCuOuDlmA-uU6VEUStBqw'
           OUT='V2.4.0 Custom.apk'
           python3 -m pip install --quiet --disable-pip-version-check gdown
-          gdown --id "$ID" -O "$OUT"
+          gdown "$ID" -O "$OUT"
           test -s "$OUT"
       - name: Verify exact user source fingerprint
         shell: bash
