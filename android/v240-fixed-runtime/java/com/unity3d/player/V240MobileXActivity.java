@@ -16,7 +16,9 @@ import android.view.WindowManager;
  * whole resource table.
  *
  * The activity also owns SAF results directly, so no extra Activity declaration is
- * required in the legacy binary manifest.
+ * required in the legacy binary manifest. V240AndroidBridge still asks Android to
+ * start V240PickerActivity; startActivity intercepts that one internal intent and
+ * launches the SAF picker here instead.
  */
 public final class V240MobileXActivity extends UnityPlayerActivity {
     private static final String TAG = "ADOFAI.V240Mobile";
@@ -43,9 +45,27 @@ public final class V240MobileXActivity extends UnityPlayerActivity {
         V240SettingsOverlay.install();
     }
 
+    @Override public void startActivity(Intent intent) {
+        try {
+            if (intent != null && intent.getComponent() != null &&
+                    V240PickerActivity.class.getName().equals(intent.getComponent().getClassName())) {
+                int id = intent.getIntExtra(V240AndroidBridge.EXTRA_REQUEST_ID, -1);
+                int mode = intent.getIntExtra(V240AndroidBridge.EXTRA_MODE, 0);
+                String title = intent.getStringExtra(V240AndroidBridge.EXTRA_TITLE);
+                String mime = intent.getStringExtra(V240AndroidBridge.EXTRA_MIME);
+                launchPicker(id, mode, title, mime);
+                return;
+            }
+        } catch (Throwable error) {
+            Log.e(TAG, "picker intent interception failed", error);
+        }
+        super.startActivity(intent);
+    }
+
     void launchPicker(final int requestId, final int mode, final String title, final String mime) {
         runOnUiThread(new Runnable() {
             @Override public void run() {
+                if (requestId <= 0) return;
                 if (pendingRequestId > 0) {
                     V240AndroidBridge.fail(requestId,
                             new IllegalStateException("another file picker is already active"));
