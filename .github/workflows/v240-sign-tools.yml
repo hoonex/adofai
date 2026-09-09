@@ -31,7 +31,8 @@ jobs:
           cp "$BT/lib/apksigner.jar" "$OUT/lib/apksigner.jar"
           chmod +x "$OUT/apksigner" "$OUT/zipalign"
           "$OUT/apksigner" version
-          "$OUT/zipalign" -h >/dev/null 2>&1 || test $? -eq 1
+          test -x "$OUT/zipalign"
+          "$OUT/zipalign" 2>&1 | grep -q 'Zip alignment utility' || true
           sha256sum "$OUT/apksigner" "$OUT/zipalign" "$OUT/lib/apksigner.jar" > "$OUT/SHA256SUMS.txt"
       - uses: actions/upload-artifact@v4
         with:
