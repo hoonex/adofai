@@ -1,0 +1,222 @@
+name: Build and Release ADOFAI 2.4 Custom Mobile Bugfix
+
+on:
+  push:
+    branches: [fix/v240-custom-bugfix]
+    paths:
+      - 'android/game-patcher/app/src/test/java/dev/hoonex/adofai/gamepatcher/V240HostPatchTest.java'
+      - 'android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/ApkMutator.java'
+      - 'android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/V240DexBootstrapPatcher.java'
+      - 'android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/ManifestStoragePatcher.java'
+      - 'android/v240-fixed-runtime/**'
+      - 'scripts/build-v240-fixed-java.sh'
+      - 'scripts/build-v240-fixed-native.sh'
+      - '.github/workflows/v240-final-release.yml'
+  workflow_dispatch:
+    inputs:
+      source_url:
+        description: 'Direct HTTPS URL for the authoritative V2.4.0 Custom.apk'
+        required: false
+        type: string
+      source_gdrive_id:
+        description: 'Google Drive file ID when source_url is not a direct URL'
+        required: false
+        type: string
+      publish_release:
+        description: 'Publish/replace the GitHub Release asset after verification'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: adofai-v240-final-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install pinned Android toolchain
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager \
+            'platforms;android-35' \
+            'build-tools;36.0.0' \
+            'ndk;29.0.14206865'
+
+      - name: Compile host patch contract and ordinary unit tests
+        run: gradle --no-daemon -p android/game-patcher :app:testDebugUnitTest
+
+      - name: Build exact v2.4 runtime payloads
+        run: |
+          set -euo pipefail
+          bash scripts/build-v240-fixed-java.sh .work/v240-final-java
+          bash scripts/build-v240-fixed-native.sh .work/v240-final-native
+          test -s .work/v240-final-java/v240-fixed-runtime.dex
+          test -s .work/v240-final-native/libv240fix.so
+          readelf -h .work/v240-final-native/libv240fix.so | grep -q 'AArch64'
+          readelf -Ws .work/v240-final-native/libv240fix.so | grep -q 'JNI_OnLoad'
+          strings .work/v240-final-native/libv240fix.so | grep -q 'SaveFilePanelAsync'
+          strings .work/v240-final-native/libv240fix.so | grep -q 'OpenFilePanelAsync'
+          strings .work/v240-final-native/libv240fix.so | grep -q 'OpenFolderPanelAsync'
+
+  final-apk:
+    if: github.event_name == 'workflow_dispatch'
+    needs: contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install pinned Android toolchain
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager \
+            'platforms;android-35' \
+            'build-tools;36.0.0' \
+            'ndk;29.0.14206865'
+
+      - name: Download authoritative source APK
+        env:
+          SOURCE_URL: ${{ inputs.source_url }}
+          SOURCE_GDRIVE_ID: ${{ inputs.source_gdrive_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p .work/v240-final dist/v240-final
+          OUT='.work/v240-final/V2.4.0 Custom.apk'
+          if [[ -n "${SOURCE_URL}" ]]; then
+            curl --fail --location --retry 2 --retry-all-errors \
+              --connect-timeout 20 --max-time 900 \
+              --output "${OUT}" "${SOURCE_URL}"
+          elif [[ -n "${SOURCE_GDRIVE_ID}" ]]; then
+            python3 -m pip install --quiet --disable-pip-version-check gdown
+            gdown "${SOURCE_GDRIVE_ID}" -O "${OUT}"
+          else
+            echo 'source_url or source_gdrive_id is required' >&2
+            exit 2
+          fi
+          test -s "${OUT}"
+          SIZE=$(stat -c '%s' "${OUT}")
+          SHA=$(sha256sum "${OUT}" | awk '{print $1}')
+          echo "source_size=${SIZE}"
+          echo "source_sha256=${SHA}"
+          test "${SIZE}" = '370092054'
+          test "${SHA}" = '630f519ae1ab3391aad95da90ebc296f4f0f8ae4ea41024ace7349d93926ef30'
+
+      - name: Build exact v2.4 Java and native runtimes
+        run: |
+          set -euo pipefail
+          bash scripts/build-v240-fixed-java.sh .work/v240-final-java
+          bash scripts/build-v240-fixed-native.sh .work/v240-final-native
+          test -s .work/v240-final-java/v240-fixed-runtime.dex
+          test -s .work/v240-final-native/libv240fix.so
+
+      - name: Produce unsigned exact-source patched APK on host
+        env:
+          V240_SOURCE_APK: ${{ github.workspace }}/.work/v240-final/V2.4.0 Custom.apk
+          V240_RUNTIME_DEX: ${{ github.workspace }}/.work/v240-final-java/v240-fixed-runtime.dex
+          V240_NATIVE_LIB: ${{ github.workspace }}/.work/v240-final-native/libv240fix.so
+          V240_UNSIGNED_OUTPUT: ${{ github.workspace }}/.work/v240-final/ADOFAI-2.4.0-Custom-Mobile-Bugfix-unsigned.apk
+        run: |
+          set -euo pipefail
+          gradle --no-daemon -p android/game-patcher \
+            :app:testDebugUnitTest \
+            --tests dev.hoonex.adofai.gamepatcher.V240HostPatchTest.patchAuthoritativeSourceForCiWhenSupplied
+          test -s "${V240_UNSIGNED_OUTPUT}"
+          unzip -t "${V240_UNSIGNED_OUTPUT}" >/dev/null
+          test "$(stat -c '%s' "${V240_UNSIGNED_OUTPUT}")" -gt $((300 * 1024 * 1024))
+
+      - name: Align, sign, and verify final APK
+        env:
+          BUILD_TOOLS: ${{ env.ANDROID_SDK_ROOT }}/build-tools/36.0.0
+        run: |
+          set -euo pipefail
+          UNSIGNED='.work/v240-final/ADOFAI-2.4.0-Custom-Mobile-Bugfix-unsigned.apk'
+          ALIGNED='.work/v240-final/ADOFAI-2.4.0-Custom-Mobile-Bugfix-aligned.apk'
+          FINAL='dist/v240-final/ADOFAI-2.4.0-Custom-Mobile-Bugfix.apk'
+          KEYSTORE='.work/v240-final/release.jks'
+          PASS="v240-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          "${ANDROID_SDK_ROOT}/build-tools/36.0.0/zipalign" -p -f 4 "${UNSIGNED}" "${ALIGNED}"
+          keytool -genkeypair -noprompt \
+            -keystore "${KEYSTORE}" -storepass "${PASS}" -keypass "${PASS}" \
+            -alias adofai-v240-mobile-bugfix -keyalg RSA -keysize 3072 \
+            -validity 7300 -dname 'CN=ADOFAI 2.4 Mobile Bugfix,O=Local Sideload'
+          "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" sign \
+            --ks "${KEYSTORE}" --ks-pass "pass:${PASS}" --key-pass "pass:${PASS}" \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out "${FINAL}" "${ALIGNED}"
+          "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify \
+            --verbose --print-certs "${FINAL}" | tee dist/v240-final/APKSIGNER-VERIFY.txt
+          unzip -t "${FINAL}" >/dev/null
+          test "$(stat -c '%s' "${FINAL}")" -gt $((300 * 1024 * 1024))
+          sha256sum "${FINAL}" | tee dist/v240-final/SHA256SUMS.txt
+          unzip -l "${FINAL}" | grep -q 'classes2.dex'
+          unzip -l "${FINAL}" | grep -q 'lib/arm64-v8a/libv240fix.so'
+          unzip -l "${FINAL}" | grep -q 'lib/arm64-v8a/libil2cpp.so'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adofai-v240-final-mobile-bugfix-apk
+          path: dist/v240-final/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish stable GitHub Release asset
+        if: inputs.publish_release == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG='v2.4.0-custom-mobile-bugfix'
+          TITLE='ADOFAI 2.4.0 Custom Mobile Bugfix'
+          NOTES='.work/v240-final/release-notes.md'
+          cat > "${NOTES}" <<'EOF'
+          Exact-source Android rebuild of the historical V2.4.0 Custom APK.
+
+          Included runtime work:
+          - Android SAF-backed Open / Save As / Folder selection for the legacy SFB editor path
+          - v2.4-specific IL2CPP SFB sync/async hook runtime
+          - mobile editor UI scale, drag sensitivity, and touch-assist runtime
+          - original game native libraries preserved; libv240fix.so is additive
+
+          The APK is re-signed for sideloading. Runtime behavior still requires real-device validation.
+          EOF
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release edit "${TAG}" --title "${TITLE}" --notes-file "${NOTES}"
+          else
+            gh release create "${TAG}" --title "${TITLE}" --notes-file "${NOTES}" --target "${GITHUB_SHA}"
+          fi
+          gh release upload "${TAG}" \
+            dist/v240-final/ADOFAI-2.4.0-Custom-Mobile-Bugfix.apk \
+            dist/v240-final/SHA256SUMS.txt \
+            dist/v240-final/APKSIGNER-VERIFY.txt \
+            --clobber
