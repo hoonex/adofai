@@ -1,0 +1,41 @@
+name: Build ADOFAI 2.4 Host Patch Toolkit
+
+on:
+  push:
+    branches: [fix/v240-custom-bugfix]
+    paths:
+      - 'tools/v240-host-toolkit/**'
+      - '.github/workflows/v240-host-toolkit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build portable host patcher
+        run: |
+          set -euo pipefail
+          gradle --no-daemon -p tools/v240-host-toolkit clean jar
+          JAR=tools/v240-host-toolkit/build/libs/v240-host-patcher.jar
+          test -s "$JAR"
+          java -jar "$JAR" 2>&1 | grep -q 'usage:' || true
+          mkdir -p dist/v240-host-toolkit
+          cp "$JAR" dist/v240-host-toolkit/
+          sha256sum "$JAR" | tee dist/v240-host-toolkit/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adofai-v240-host-patch-toolkit
+          path: dist/v240-host-toolkit/
+          if-no-files-found: error
+          retention-days: 7
