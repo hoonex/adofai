@@ -1,0 +1,34 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+dependencies {
+    implementation 'org.smali:dexlib2:2.5.2'
+    implementation 'com.google.guava:guava:31.1-jre'
+    implementation 'com.android:zipflinger:8.7.3'
+    implementation 'io.github.reandroid:ARSCLib:1.4.0'
+}
+
+tasks.named('jar') {
+    archiveBaseName = 'v240-host-patcher'
+    archiveVersion = ''
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes 'Main-Class': 'dev.hoonex.adofai.v240tool.V240HostPatchCli'
+    }
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    exclude 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA', 'META-INF/INDEX.LIST'
+}
