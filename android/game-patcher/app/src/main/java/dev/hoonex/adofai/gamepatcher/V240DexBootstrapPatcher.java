@@ -58,9 +58,12 @@ final class V240DexBootstrapPatcher {
         boolean alreadyPatched = containsBootstrapInvoke(onCreate.getImplementation());
         Method patchedOnCreate = alreadyPatched ? onCreate : injectBootstrap(onCreate);
 
+        // dexlib2 may materialize fresh Method wrapper instances on each getMethods()
+        // traversal. Match the unique onCreate signature instead of Java object identity,
+        // otherwise the freshly-built method can be silently discarded.
         List<Method> activityMethods = new ArrayList<Method>();
         for (Method method : activity.getMethods()) {
-            activityMethods.add(method == onCreate ? patchedOnCreate : method);
+            activityMethods.add(isOnCreate(method) ? patchedOnCreate : method);
         }
         ImmutableClassDef patchedActivity = new ImmutableClassDef(
             activity.getType(), activity.getAccessFlags(), activity.getSuperclass(),
@@ -76,6 +79,9 @@ final class V240DexBootstrapPatcher {
         DexFileFactory.writeDexFile(outputDex.getAbsolutePath(), new ImmutableDexFile(main.getOpcodes(), classes));
         if (!outputDex.isFile() || outputDex.length() == 0L) {
             throw new IllegalStateException("patched classes.dex was not written");
+        }
+        if (!containsBootstrapInvoke(outputDex)) {
+            throw new IllegalStateException("V240Bootstrap.init() missing after classes.dex rewrite");
         }
         return new Result(alreadyPatched, classes.size());
     }
