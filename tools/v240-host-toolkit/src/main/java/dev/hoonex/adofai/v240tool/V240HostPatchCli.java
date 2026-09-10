@@ -160,14 +160,17 @@ public final class V240HostPatchCli {
         }
         if (onCreate == null || onCreate.getImplementation() == null) throw new IllegalStateException("UnityPlayerActivity.onCreate implementation missing");
         Method patched = containsBootstrapInvoke(onCreate.getImplementation()) ? onCreate : injectBootstrap(onCreate);
+        // dexlib2 may return new Method wrapper objects for a later traversal. The
+        // signature is the stable identity; Java reference equality is not.
         List<Method> activityMethods = new ArrayList<Method>();
-        for (Method method : activity.getMethods()) activityMethods.add(method == onCreate ? patched : method);
+        for (Method method : activity.getMethods()) activityMethods.add(isOnCreate(method) ? patched : method);
         ImmutableClassDef patchedActivity = new ImmutableClassDef(activity.getType(), activity.getAccessFlags(), activity.getSuperclass(),
                 activity.getInterfaces(), activity.getSourceFile(), activity.getAnnotations(), activity.getFields(), activityMethods);
         List<ClassDef> classes = new ArrayList<ClassDef>();
         for (ClassDef c : main.getClasses()) classes.add(ACTIVITY.equals(c.getType()) ? patchedActivity : c);
         DexFileFactory.writeDexFile(output.getAbsolutePath(), new ImmutableDexFile(main.getOpcodes(), classes));
         requireFile(output, "patched classes.dex");
+        if (!containsBootstrapInvoke(output)) throw new IllegalStateException("bootstrap invoke missing immediately after DEX rewrite");
     }
 
     private static Method injectBootstrap(Method method) {
