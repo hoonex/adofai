@@ -1,5 +1,7 @@
 package com.unity3d.player;
 
+import java.util.Locale;
+
 /**
  * Compatibility facade consumed by the native SFB hooks.
  *
@@ -15,12 +17,12 @@ public final class FileSelector {
 
     private FileSelector() {}
 
-    public static void selectFile(String ignoredExtensions) {
-        start(V240AndroidBridge.beginOpen("*/*"), false);
+    public static void selectFile(String extensions) {
+        start(V240AndroidBridge.beginOpen(mimeForExtensions(extensions)), false);
     }
 
     public static void saveAs(String suggestedName) {
-        start(V240AndroidBridge.beginSave(suggestedName, "application/octet-stream"), false);
+        start(V240AndroidBridge.beginSave(suggestedName, mimeForFilename(suggestedName)), false);
     }
 
     public static void selectFolder() {
@@ -65,5 +67,35 @@ public final class FileSelector {
         }, folder ? "adofai-v240-folder" : "adofai-v240-file");
         waiter.setDaemon(true);
         waiter.start();
+    }
+
+    private static String mimeForFilename(String name) {
+        if (name == null) return "application/octet-stream";
+        int dot = name.lastIndexOf('.');
+        if (dot < 0 || dot + 1 >= name.length()) return "application/octet-stream";
+        return mimeForExtensions(name.substring(dot + 1));
+    }
+
+    private static String mimeForExtensions(String raw) {
+        if (raw == null) return "*/*";
+        String value = raw.trim().toLowerCase(Locale.US);
+        if (value.startsWith("*.")) value = value.substring(2);
+        else if (value.startsWith(".")) value = value.substring(1);
+        // An ExtensionFilter[] overload can contain several unrelated types. The native
+        // bridge deliberately serializes that as a comma-separated broad fallback; SAF
+        // cannot reliably filter custom .adofai plus media by extension, so keep */*.
+        if (value.length() == 0 || value.indexOf(',') >= 0 || value.indexOf(';') >= 0 ||
+                value.indexOf('|') >= 0 || value.indexOf(' ') >= 0) return "*/*";
+        if ("png".equals(value)) return "image/png";
+        if ("jpg".equals(value) || "jpeg".equals(value)) return "image/jpeg";
+        if ("ogg".equals(value)) return "audio/ogg";
+        if ("mp3".equals(value)) return "audio/mpeg";
+        if ("wav".equals(value)) return "audio/wav";
+        if ("zip".equals(value)) return "application/zip";
+        if ("json".equals(value)) return "application/json";
+        // Custom .adofai files are reported as different MIME types by different SAF
+        // providers, so restricting them would hide valid levels on some devices.
+        if ("adofai".equals(value)) return "*/*";
+        return "*/*";
     }
 }
