@@ -39,6 +39,16 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         self.assertIn("g_editorSceneCacheAtNs", self.native)
         self.assertIn("IsDragAxis(axis) && IsEditorScene()", self.native)
 
+    def test_native_input_string_checks_do_not_allocate_utf8_strings(self):
+        self.assertIn("MonoStringEqualsAscii", self.native)
+        self.assertIn("MonoStringStartsWithAscii", self.native)
+        self.assertIn('MonoStringEqualsAscii(axis, "Mouse X", 7)', self.native)
+        self.assertIn('MonoStringEqualsAscii(axis, "Mouse Y", 7)', self.native)
+        self.assertIn('MonoStringEqualsAscii(axis, "Mouse ScrollWheel", 17)', self.native)
+        self.assertIn('MonoStringStartsWithAscii(g_getSceneName.Call(), "scnEditor", 9)', self.native)
+        self.assertNotIn("const std::string value = axis->str()", self.native)
+        self.assertNotIn("const std::string value = name->str()", self.native)
+
     def test_touch_assist_reuses_raycast_work_objects(self):
         self.assertIn("Method<void> g_listClear", self.native)
         self.assertIn("RaycastUiWithContext", self.native)
