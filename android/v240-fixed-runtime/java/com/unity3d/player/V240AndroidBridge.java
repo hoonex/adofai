@@ -9,12 +9,11 @@ import android.net.Uri;
 import android.os.FileObserver;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.Process;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.util.Log;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -176,8 +175,8 @@ public final class V240AndroidBridge {
         try {
             persist(context, uri, grantFlags);
             File working = makeWorkingFile(context, displayName(context.getContentResolver(), uri, "level.adofai"));
-            try (InputStream in = new BufferedInputStream(requireInput(context.getContentResolver(), uri));
-                 OutputStream out = new BufferedOutputStream(new FileOutputStream(working))) {
+            try (InputStream in = requireInput(context.getContentResolver(), uri);
+                 OutputStream out = new FileOutputStream(working)) {
                 copy(in, out);
             }
             complete(id, Result.OK, working.getAbsolutePath());
@@ -261,7 +260,8 @@ public final class V240AndroidBridge {
         synchronized (IO_LOCK) {
             handler = IO;
             if (handler != null) return handler;
-            HandlerThread thread = new HandlerThread("adofai-v240-storage");
+            HandlerThread thread = new HandlerThread(
+                    "adofai-v240-storage", Process.THREAD_PRIORITY_BACKGROUND);
             thread.start();
             IO_THREAD = thread;
             handler = new Handler(thread.getLooper());
@@ -283,8 +283,8 @@ public final class V240AndroidBridge {
     private static void syncNow(SaveBinding binding) throws Exception {
         if (!binding.file.isFile()) return;
         ContentResolver resolver = binding.context.getContentResolver();
-        try (InputStream in = new BufferedInputStream(new FileInputStream(binding.file));
-             OutputStream out = new BufferedOutputStream(requireOutput(resolver, binding.uri))) {
+        try (InputStream in = new FileInputStream(binding.file);
+             OutputStream out = requireOutput(resolver, binding.uri)) {
             copy(in, out);
         }
     }
@@ -321,8 +321,8 @@ public final class V240AndroidBridge {
                 }
                 File target = uniqueChild(localParent, displayName.length() == 0 ? "file" : displayName);
                 Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId);
-                try (InputStream in = new BufferedInputStream(requireInput(resolver, documentUri));
-                     OutputStream out = new BufferedOutputStream(new FileOutputStream(target))) {
+                try (InputStream in = requireInput(resolver, documentUri);
+                     OutputStream out = new FileOutputStream(target)) {
                     copy(in, out);
                 }
             }
