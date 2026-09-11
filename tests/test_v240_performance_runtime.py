@@ -80,11 +80,11 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         self.assertIn("binding.observer.stopWatching()", self.bridge)
         self.assertNotIn("volatile long generation", self.bridge)
 
-    def test_storage_worker_is_lazy(self):
+    def test_storage_worker_is_lazy_and_background_priority(self):
         self.assertIn("private static volatile HandlerThread IO_THREAD", self.bridge)
         self.assertIn("private static volatile Handler IO", self.bridge)
         self.assertIn("private static Handler io()", self.bridge)
-        self.assertIn('HandlerThread thread = new HandlerThread("adofai-v240-storage")', self.bridge)
+        self.assertIn('"adofai-v240-storage", Process.THREAD_PRIORITY_BACKGROUND', self.bridge)
         self.assertNotIn(
             'private static final HandlerThread IO_THREAD = new HandlerThread("adofai-v240-storage")',
             self.bridge,
@@ -97,6 +97,12 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         self.assertIn("byte[] buffer = COPY_BUFFER.get()", self.bridge)
         self.assertEqual(self.bridge.count("new byte[COPY_BUFFER_BYTES]"), 1)
         self.assertNotIn("new byte[256 * 1024]", self.bridge)
+
+    def test_large_copy_path_does_not_double_buffer(self):
+        self.assertNotIn("BufferedInputStream", self.bridge)
+        self.assertNotIn("BufferedOutputStream", self.bridge)
+        self.assertIn("InputStream in = requireInput", self.bridge)
+        self.assertIn("OutputStream out = requireOutput", self.bridge)
 
     def test_explicit_flush_cancels_pending_background_write(self):
         self.assertIn("if (IO != null) IO.removeCallbacks(binding.syncTask);\n                syncNow(binding);", self.bridge)
