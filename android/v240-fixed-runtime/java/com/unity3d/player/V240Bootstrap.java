@@ -30,6 +30,23 @@ public final class V240Bootstrap {
 
     private static void installMobileRuntimeWhenActivityIsReady() {
         final Handler main = new Handler(Looper.getMainLooper());
+        final Runnable forceRebind = new Runnable() {
+            @Override public void run() {
+                try {
+                    // Activity recreation can leave the old overlay's process-global
+                    // installed flag true before UnityPlayer.currentActivity points at
+                    // the replacement Activity. Re-run idempotent binding after the
+                    // transition window even if the normal retry loop ended early.
+                    V240WindowCompat.apply();
+                    V240SettingsOverlay.install();
+                    V240SettingsOverlay.refresh();
+                } catch (Throwable error) {
+                    Log.w(TAG, "delayed mobile runtime rebind failed", error);
+                }
+            }
+        };
+        main.postDelayed(forceRebind, 500L);
+        main.postDelayed(forceRebind, 1500L);
         main.post(new Runnable() {
             int attempts;
 
