@@ -33,11 +33,18 @@ std::atomic<float> g_uiScale{1.15f};
 std::atomic<float> g_touchScale{1.25f};
 std::atomic<float> g_dragScale{1.0f};
 std::atomic<bool> g_touchAssist{true};
+std::atomic<int> g_targetFps{0};
+std::atomic<bool> g_unlockFps{true};
+std::atomic<bool> g_lowLatency{true};
+std::atomic<int> g_lastRequestedFps{-1};
+std::atomic<int> g_lastRequestedVSync{1};
 
 void (*g_oldCanvasSetScaleFactor)(IL2CPP::Il2CppObject*, float) = nullptr;
 float (*g_oldGetAxis)(String*) = nullptr;
 float (*g_oldGetAxisRaw)(String*) = nullptr;
 bool (*g_oldInsideUI)(IL2CPP::Il2CppObject*, Vector2) = nullptr;
+void (*g_oldSetTargetFrameRate)(int) = nullptr;
+void (*g_oldSetVSyncCount)(int) = nullptr;
 
 Property<IL2CPP::Il2CppObject*> g_eventSystemCurrent;
 Class g_pointerEventDataClass;
@@ -277,6 +284,40 @@ bool HookInsideUI(IL2CPP::Il2CppObject* self, Vector2 point) {
            RaycastUi(Vector2(point.x, point.y - radius));
 }
 
+void HookSetTargetFrameRate(int fps) {
+    g_lastRequestedFps.store(fps, std::memory_order_relaxed);
+    if (!g_oldSetTargetFrameRate) return;
+    int target = g_targetFps.load(std::memory_order_relaxed);
+    if (g_unlockFps.load(std::memory_order_relaxed) && target > 0) {
+        g_oldSetTargetFrameRate(target);
+    } else {
+        g_oldSetTargetFrameRate(fps);
+    }
+}
+
+void HookSetVSyncCount(int count) {
+    g_lastRequestedVSync.store(count, std::memory_order_relaxed);
+    if (!g_oldSetVSyncCount) return;
+    if (g_lowLatency.load(std::memory_order_relaxed)) g_oldSetVSyncCount(0);
+    else g_oldSetVSyncCount(count);
+}
+
+void ApplyFramePolicy() {
+    if (g_oldSetTargetFrameRate) {
+        int requested = g_lastRequestedFps.load(std::memory_order_relaxed);
+        int target = g_targetFps.load(std::memory_order_relaxed);
+        if (g_unlockFps.load(std::memory_order_relaxed) && target > 0) {
+            g_oldSetTargetFrameRate(target);
+        } else {
+            g_oldSetTargetFrameRate(requested);
+        }
+    }
+    if (g_oldSetVSyncCount) {
+        int requested = g_lastRequestedVSync.load(std::memory_order_relaxed);
+        g_oldSetVSyncCount(g_lowLatency.load(std::memory_order_relaxed) ? 0 : requested);
+    }
+}
+
 template <typename Fn>
 void InstallNamedHook(
         Class& klass,
@@ -340,6 +381,26 @@ void InstallMobileHooks() {
     g_raycastAll = eventSystem.GetMethod("RaycastAll");
     g_pointerPosition = g_pointerEventDataClass.GetProperty("position");
     if (g_listRaycastResultClass) g_listCount = g_listRaycastResultClass.GetProperty("Count");
+
+    Class application("UnityEngine", "Application");
+    auto setTargetFrameRate = application.GetMethod("set_targetFrameRate", 1);
+    if (setTargetFrameRate.IsValid()) {
+        BasicHook(setTargetFrameRate, HookSetTargetFrameRate, g_oldSetTargetFrameRate);
+        LOGD("V240: hooked Application.targetFrameRate");
+    } else {
+        LOGW("V240: Application.set_targetFrameRate missing");
+    }
+
+    Class qualitySettings("UnityEngine", "QualitySettings");
+    auto setVSyncCount = qualitySettings.GetMethod("set_vSyncCount", 1);
+    if (setVSyncCount.IsValid()) {
+        BasicHook(setVSyncCount, HookSetVSyncCount, g_oldSetVSyncCount);
+        LOGD("V240: hooked QualitySettings.vSyncCount");
+    } else {
+        LOGW("V240: QualitySettings.set_vSyncCount missing");
+    }
+
+    ApplyFramePolicy();
 }
 
 void InstallAllHooks() {
@@ -353,11 +414,23 @@ void InstallAllHooks() {
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_unity3d_player_V240SettingsOverlay_nativeApply(
-        JNIEnv*, jclass, jfloat uiScale, jfloat touchScale, jfloat dragScale, jboolean touchAssist) {
+        JNIEnv*, jclass,
+        jfloat uiScale,
+        jfloat touchScale,
+        jfloat dragScale,
+        jboolean touchAssist,
+        jint targetFps,
+        jboolean unlockFps,
+        jboolean lowLatency) {
     g_uiScale.store(std::fmax(0.70f, std::fmin(1.60f, uiScale)), std::memory_order_relaxed);
     g_touchScale.store(std::fmax(1.00f, std::fmin(2.00f, touchScale)), std::memory_order_relaxed);
     g_dragScale.store(std::fmax(0.50f, std::fmin(2.00f, dragScale)), std::memory_order_relaxed);
     g_touchAssist.store(touchAssist == JNI_TRUE, std::memory_order_relaxed);
+    int fps = targetFps <= 0 ? 0 : std::max(30, std::min(240, static_cast<int>(targetFps)));
+    g_targetFps.store(fps, std::memory_order_relaxed);
+    g_unlockFps.store(unlockFps == JNI_TRUE, std::memory_order_relaxed);
+    g_lowLatency.store(lowLatency == JNI_TRUE, std::memory_order_relaxed);
+    ApplyFramePolicy();
 }
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
