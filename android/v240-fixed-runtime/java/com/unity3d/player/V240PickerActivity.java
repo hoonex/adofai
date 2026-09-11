@@ -1,9 +1,12 @@
 package com.unity3d.player;
 
 import android.app.Activity;
+import android.content.ClipData;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+
+import java.util.ArrayList;
 
 /** Transparent proxy Activity that owns SAF results without modifying UnityPlayerActivity.onActivityResult. */
 public final class V240PickerActivity extends Activity {
@@ -12,6 +15,7 @@ public final class V240PickerActivity extends Activity {
     private int mode;
     private String title;
     private String mime;
+    private boolean multiselect;
     private boolean launched;
 
     @Override protected void onCreate(Bundle state) {
@@ -20,6 +24,7 @@ public final class V240PickerActivity extends Activity {
         mode = getIntent().getIntExtra(V240AndroidBridge.EXTRA_MODE, 0);
         title = getIntent().getStringExtra(V240AndroidBridge.EXTRA_TITLE);
         mime = getIntent().getStringExtra(V240AndroidBridge.EXTRA_MIME);
+        multiselect = getIntent().getBooleanExtra(V240AndroidBridge.EXTRA_MULTI, false);
         if (state != null) launched = state.getBoolean("launched", false);
         if (!launched) launchPicker();
     }
@@ -40,6 +45,7 @@ public final class V240PickerActivity extends Activity {
                 intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
                 intent.setType(mime == null || mime.length() == 0 ? "*/*" : mime);
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, multiselect);
             } else if (mode == V240AndroidBridge.MODE_SAVE) {
                 intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -65,14 +71,39 @@ public final class V240PickerActivity extends Activity {
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != PICK) return;
-        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+        if (resultCode != RESULT_OK || data == null) {
             V240AndroidBridge.cancel(requestId);
             finish();
             return;
         }
-        Uri uri = data.getData();
-        int flags = data.getFlags();
-        V240AndroidBridge.handleResultAsync(this, requestId, mode, uri, flags, title);
+
+        if (mode == V240AndroidBridge.MODE_OPEN) {
+            ArrayList<Uri> uris = new ArrayList<Uri>();
+            ClipData clip = data.getClipData();
+            if (clip != null) {
+                for (int i = 0; i < clip.getItemCount(); i++) {
+                    Uri uri = clip.getItemAt(i).getUri();
+                    if (uri != null) uris.add(uri);
+                }
+            }
+            if (uris.isEmpty() && data.getData() != null) uris.add(data.getData());
+            if (uris.isEmpty()) {
+                V240AndroidBridge.cancel(requestId);
+            } else {
+                V240AndroidBridge.handleOpenResultsAsync(
+                        this, requestId, uris.toArray(new Uri[uris.size()]), data.getFlags());
+            }
+            finish();
+            return;
+        }
+
+        if (data.getData() == null) {
+            V240AndroidBridge.cancel(requestId);
+            finish();
+            return;
+        }
+        V240AndroidBridge.handleResultAsync(
+                this, requestId, mode, data.getData(), data.getFlags(), title);
         finish();
     }
 
