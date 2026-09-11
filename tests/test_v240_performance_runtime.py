@@ -3,6 +3,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 JAVA = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java"
+BOOTSTRAP = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240Bootstrap.java"
 BRIDGE = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240AndroidBridge.java"
 NATIVE = ROOT / "android/v240-fixed-runtime/native/V240Fix.cpp"
 
@@ -11,6 +12,7 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.java = JAVA.read_text(encoding="utf-8")
+        cls.bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
         cls.bridge = BRIDGE.read_text(encoding="utf-8")
         cls.native = NATIVE.read_text(encoding="utf-8")
 
@@ -20,6 +22,18 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         self.assertIn("preferredDisplayModeId = 0", self.java)
         self.assertIn("preferredRefreshRate = 0f", self.java)
         self.assertIn("60, 90, 120, 144, 165, 240", self.java)
+
+    def test_overlay_bootstrap_stops_retrying_after_success(self):
+        self.assertIn("private static volatile boolean installed", self.java)
+        self.assertIn("public static boolean isInstalled()", self.java)
+        self.assertIn("if (installed) return;", self.java)
+        self.assertIn("installed = true;", self.java)
+        self.assertIn("if (V240SettingsOverlay.isInstalled()) return;", self.bootstrap)
+        self.assertIn("if (attempts < 24) main.postDelayed(this, 250L);", self.bootstrap)
+        self.assertLess(
+            self.java.index("pushNative(owner, owner.getSharedPreferences"),
+            self.java.index("installed = true;", self.java.index("pushNative(owner, owner.getSharedPreferences")),
+        )
 
     def test_native_fps_policy_intercepts_only_render_pacing(self):
         self.assertIn('Class application("UnityEngine", "Application")', self.native)
