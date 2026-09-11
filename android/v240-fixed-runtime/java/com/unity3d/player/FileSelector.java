@@ -1,5 +1,6 @@
 package com.unity3d.player;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Locale;
 
@@ -100,6 +101,12 @@ public final class FileSelector {
                     result = "";
                 }
 
+                if (ok && !folder && isLocalLevelPath(result)) {
+                    // One compatibility pass covers direct documents, tree mirrors and TUF ZIPs.
+                    // It only adds aliases inside private storage and fails open on malformed maps.
+                    V240MapCompatibility.repairMap(new File(result));
+                }
+
                 if (ok && releaseLevelOnSuccess) {
                     V240LevelFolderBridge.releaseActiveLevel(true);
                 }
@@ -116,6 +123,11 @@ public final class FileSelector {
                         (folder ? "adofai-v240-folder" : "adofai-v240-file")));
         waiter.setDaemon(true);
         waiter.start();
+    }
+
+    private static boolean isLocalLevelPath(String value) {
+        if (value == null || value.indexOf(V240AndroidBridge.PATH_SEPARATOR) >= 0) return false;
+        return value.toLowerCase(Locale.US).endsWith(".adofai");
     }
 
     private static boolean isOnlyLevelExtension(String raw) {
