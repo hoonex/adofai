@@ -171,6 +171,24 @@ public final class V240AndroidBridge {
         result.state = state;
     }
 
+    static void handleResultAsync(final Context context, final int id, final int mode,
+                                  final Uri uri, final int grantFlags, final String suggestedName) {
+        final Context appContext = context.getApplicationContext();
+        io().post(new Runnable() {
+            @Override public void run() {
+                if (mode == MODE_OPEN) {
+                    handleOpen(appContext, id, uri, grantFlags);
+                } else if (mode == MODE_SAVE) {
+                    handleSave(appContext, id, uri, grantFlags, suggestedName);
+                } else if (mode == MODE_FOLDER) {
+                    handleFolder(appContext, id, uri, grantFlags);
+                } else {
+                    fail(id, new IllegalArgumentException("unknown picker mode: " + mode));
+                }
+            }
+        });
+    }
+
     static void handleOpen(Context context, int id, Uri uri, int grantFlags) {
         try {
             persist(context, uri, grantFlags);
