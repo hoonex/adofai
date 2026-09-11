@@ -16,7 +16,13 @@ namespace {
 std::atomic<bool> g_enabled{true};
 std::atomic<float> g_radiusPx{0.0f};
 std::atomic<bool> g_installed{false};
+std::atomic<bool> g_nativeApplyInProgress{false};
 std::once_flag g_registrationOnce;
+
+JavaVM* g_touchVm = nullptr;
+jclass g_overlayClass = nullptr;
+jmethodID g_refreshMethod = nullptr;
+std::mutex g_jniStateMutex;
 
 Method<int> g_getTouchCount;
 Method<String*> g_getSceneName;
@@ -63,6 +69,52 @@ bool IsEditorScene() {
 bool HasActiveTouch() {
     if (!g_getTouchCount.IsValid()) return false;
     return g_getTouchCount.Call() > 0;
+}
+
+void CaptureJavaRefresh(JNIEnv* env, jclass overlayClass) {
+    if (!env || !overlayClass) return;
+    std::lock_guard<std::mutex> lock(g_jniStateMutex);
+    if (!g_touchVm) env->GetJavaVM(&g_touchVm);
+    if (!g_overlayClass) {
+        g_overlayClass = reinterpret_cast<jclass>(env->NewGlobalRef(overlayClass));
+    }
+    if (g_overlayClass && !g_refreshMethod) {
+        g_refreshMethod = env->GetStaticMethodID(g_overlayClass, "refresh", "()V");
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            g_refreshMethod = nullptr;
+        }
+    }
+}
+
+void RequestJavaRefresh() {
+    JavaVM* vm;
+    jclass overlayClass;
+    jmethodID refreshMethod;
+    {
+        std::lock_guard<std::mutex> lock(g_jniStateMutex);
+        vm = g_touchVm;
+        overlayClass = g_overlayClass;
+        refreshMethod = g_refreshMethod;
+    }
+    if (!vm || !overlayClass || !refreshMethod) return;
+
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    const jint state = vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (state == JNI_EDETACHED) {
+        if (vm->AttachCurrentThread(&env, nullptr) != JNI_OK || !env) return;
+        attached = true;
+    } else if (state != JNI_OK || !env) {
+        return;
+    }
+
+    env->CallStaticVoidMethod(overlayClass, refreshMethod);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        LOGW("V240: delayed touch-assist refresh failed");
+    }
+    if (attached) vm->DetachCurrentThread();
 }
 
 bool RaycastAt(IL2CPP::Il2CppObject* eventSystem,
@@ -165,6 +217,10 @@ bool InstallTouchAssistHook() {
 
     g_installed.store(true, std::memory_order_release);
     LOGD("V240: enhanced touch EventSystem.RaycastAll hook installed");
+    // If BNM became ready after Java already applied the legacy fallback scale,
+    // ask Java to re-apply settings. It will now see this hook as installed and
+    // neutralize the old proximity expansion instead of stacking both systems.
+    if (!g_nativeApplyInProgress.load(std::memory_order_acquire)) RequestJavaRefresh();
     return true;
 }
 
@@ -181,10 +237,13 @@ void RegisterTouchAssistHook() {
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_unity3d_player_V240SettingsOverlay_nativeApplyTouchAssist(
-        JNIEnv*, jclass, jboolean enabled, jfloat radiusPx) {
+        JNIEnv* env, jclass overlayClass, jboolean enabled, jfloat radiusPx) {
+    CaptureJavaRefresh(env, overlayClass);
     g_enabled.store(enabled == JNI_TRUE, std::memory_order_relaxed);
     g_radiusPx.store(std::max(0.0f, std::min(160.0f, static_cast<float>(radiusPx))),
                      std::memory_order_relaxed);
+    g_nativeApplyInProgress.store(true, std::memory_order_release);
     RegisterTouchAssistHook();
+    g_nativeApplyInProgress.store(false, std::memory_order_release);
     return g_installed.load(std::memory_order_acquire) ? JNI_TRUE : JNI_FALSE;
 }
