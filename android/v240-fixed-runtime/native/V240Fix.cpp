@@ -155,15 +155,43 @@ bool InitSelector(JNIEnv* env) {
     return g_selectorClass != nullptr;
 }
 
-std::string SuggestedName(String* value) {
-    if (!value) return "level.adofai";
-    std::string name = value->str();
-    if (name.empty()) name = "level.adofai";
-    if (name.size() < 7 || name.substr(name.size() - 7) != ".adofai") name += ".adofai";
+std::string NormalizeExtension(String* value) {
+    if (!value) return "";
+    std::string extension = value->str();
+    while (!extension.empty() && (extension[0] == '.' || extension[0] == '*')) {
+        extension.erase(extension.begin());
+    }
+    return extension;
+}
+
+std::string SuggestedName(String* value, String* extension = nullptr) {
+    std::string name = value ? value->str() : "";
+    if (name.empty()) name = "level";
+
+    std::string ext = NormalizeExtension(extension);
+    if (ext.empty()) {
+        // Filter-array overloads normally pass a fully formed defaultName. Preserve it
+        // instead of forcing .adofai onto exports that already carry another suffix.
+        const std::size_t slash = name.find_last_of("/\\");
+        const std::size_t dot = name.find_last_of('.');
+        if (dot != std::string::npos && (slash == std::string::npos || dot > slash)) return name;
+        ext = "adofai";
+    }
+    const std::string suffix = "." + ext;
+    if (name.size() < suffix.size() || name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) {
+        name += suffix;
+    }
     return name;
 }
 
-std::string RunPicker(PickerMode mode, String* suggestedName = nullptr) {
+std::string PickerExtensions(String* extensions) {
+    if (!extensions) return "adofai,zip,json,ogg,mp3,wav,png,jpg,jpeg";
+    std::string value = extensions->str();
+    if (value.empty()) return "adofai,zip,json,ogg,mp3,wav,png,jpg,jpeg";
+    return value;
+}
+
+std::string RunPicker(PickerMode mode, String* suggestedName = nullptr, String* extensions = nullptr) {
     std::lock_guard<std::mutex> serialized(g_pickerCallMutex);
     JNIEnv* env = nullptr;
     bool attached = false;
@@ -181,11 +209,12 @@ std::string RunPicker(PickerMode mode, String* suggestedName = nullptr) {
     }
 
     if (mode == PickerMode::Open) {
-        jstring filter = env->NewStringUTF("adofai,zip,json,ogg,mp3,wav,png,jpg,jpeg");
+        const std::string filterValue = PickerExtensions(extensions);
+        jstring filter = env->NewStringUTF(filterValue.c_str());
         env->CallStaticVoidMethod(g_selectorClass, g_selectFile, filter);
         env->DeleteLocalRef(filter);
     } else if (mode == PickerMode::Save) {
-        std::string name = SuggestedName(suggestedName);
+        std::string name = SuggestedName(suggestedName, extensions);
         jstring jname = env->NewStringUTF(name.c_str());
         env->CallStaticVoidMethod(g_selectorClass, g_saveAs, jname);
         env->DeleteLocalRef(jname);
@@ -236,14 +265,14 @@ Array<String*>* ToArray(const std::string& path) {
 using StringArrayAction = Action<Array<String*>*>;
 using StringAction = Action<String*>;
 
-Array<String*>* HookOpenString(String*, String*, String*, bool) {
-    return ToArray(RunPicker(PickerMode::Open));
+Array<String*>* HookOpenString(String*, String*, String* extension, bool) {
+    return ToArray(RunPicker(PickerMode::Open, nullptr, extension));
 }
 Array<String*>* HookOpenFilters(String*, String*, void*, bool) {
     return ToArray(RunPicker(PickerMode::Open));
 }
-String* HookSaveString(String*, String*, String* defaultName, String*) {
-    return CreateMonoString(RunPicker(PickerMode::Save, defaultName));
+String* HookSaveString(String*, String*, String* defaultName, String* extension) {
+    return CreateMonoString(RunPicker(PickerMode::Save, defaultName, extension));
 }
 String* HookSaveFilters(String*, String*, String* defaultName, void*) {
     return CreateMonoString(RunPicker(PickerMode::Save, defaultName));
@@ -251,16 +280,16 @@ String* HookSaveFilters(String*, String*, String* defaultName, void*) {
 Array<String*>* HookFolder(String*, String*, bool) {
     return ToArray(RunPicker(PickerMode::Folder));
 }
-void HookOpenAsyncString(String*, String*, String*, bool, StringArrayAction* callback) {
-    Array<String*>* value = ToArray(RunPicker(PickerMode::Open));
+void HookOpenAsyncString(String*, String*, String* extension, bool, StringArrayAction* callback) {
+    Array<String*>* value = ToArray(RunPicker(PickerMode::Open, nullptr, extension));
     if (callback) callback->Invoke(value);
 }
 void HookOpenAsyncFilters(String*, String*, void*, bool, StringArrayAction* callback) {
     Array<String*>* value = ToArray(RunPicker(PickerMode::Open));
     if (callback) callback->Invoke(value);
 }
-void HookSaveAsyncString(String*, String*, String* defaultName, String*, StringAction* callback) {
-    String* value = CreateMonoString(RunPicker(PickerMode::Save, defaultName));
+void HookSaveAsyncString(String*, String*, String* defaultName, String* extension, StringAction* callback) {
+    String* value = CreateMonoString(RunPicker(PickerMode::Save, defaultName, extension));
     if (callback) callback->Invoke(value);
 }
 void HookSaveAsyncFilters(String*, String*, String* defaultName, void*, StringAction* callback) {
