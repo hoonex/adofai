@@ -39,6 +39,15 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         self.assertIn("g_editorSceneCacheAtNs", self.native)
         self.assertIn("IsDragAxis(axis) && IsEditorScene()", self.native)
 
+    def test_touch_assist_reuses_raycast_work_objects(self):
+        self.assertIn("Method<void> g_listClear", self.native)
+        self.assertIn("RaycastUiWithContext", self.native)
+        self.assertIn("g_listClear[results].Call()", self.native)
+        self.assertIn('g_listRaycastResultClass.GetMethod("Clear", 0)', self.native)
+        self.assertEqual(self.native.count("CreateNewObjectParameters(eventSystem)"), 1)
+        self.assertEqual(self.native.count("g_listRaycastResultClass.CreateNewObjectParameters()"), 1)
+        self.assertNotIn("bool RaycastUi(Vector2 point)", self.native)
+
     def test_save_sync_uses_single_debounced_task(self):
         self.assertIn("final Runnable syncTask", self.bridge)
         self.assertIn("IO.removeCallbacks(binding.syncTask)", self.bridge)
