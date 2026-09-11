@@ -24,12 +24,17 @@ jobs:
         run: |
           set -euo pipefail
           BT="${ANDROID_SDK_ROOT}/build-tools/36.0.0"
-          mkdir -p dist/build-tools-36/lib
+          mkdir -p dist/build-tools-36/lib dist/build-tools-36/lib64
           cp "${BT}/zipalign" dist/build-tools-36/zipalign
           cp "${BT}/apksigner" dist/build-tools-36/apksigner
           cp "${BT}/lib/apksigner.jar" dist/build-tools-36/lib/apksigner.jar
+          cp "${BT}/lib64/libc++.so" dist/build-tools-36/lib64/libc++.so
           chmod +x dist/build-tools-36/zipalign dist/build-tools-36/apksigner
-          sha256sum dist/build-tools-36/zipalign dist/build-tools-36/lib/apksigner.jar > dist/build-tools-36/SHA256SUMS.txt
+          sha256sum \
+            dist/build-tools-36/zipalign \
+            dist/build-tools-36/lib/apksigner.jar \
+            dist/build-tools-36/lib64/libc++.so \
+            > dist/build-tools-36/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: android-build-tools-36-signing
