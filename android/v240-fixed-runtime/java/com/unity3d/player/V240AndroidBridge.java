@@ -21,7 +21,6 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
-import java.util.ArrayList;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -51,17 +50,19 @@ public final class V240AndroidBridge {
 
     private static final int MAX_TREE_FILES = 4096;
     private static final long MAX_TREE_BYTES = 512L * 1024L * 1024L;
+    private static final int COPY_BUFFER_BYTES = 256 * 1024;
 
     private static final AtomicInteger NEXT_ID = new AtomicInteger(24000);
     private static final Map<Integer, Result> RESULTS = new ConcurrentHashMap<Integer, Result>();
     private static final Map<String, SaveBinding> SAVE_BINDINGS = new ConcurrentHashMap<String, SaveBinding>();
-    private static final HandlerThread IO_THREAD = new HandlerThread("adofai-v240-storage");
-    private static final Handler IO;
-
-    static {
-        IO_THREAD.start();
-        IO = new Handler(IO_THREAD.getLooper());
-    }
+    private static final Object IO_LOCK = new Object();
+    private static volatile HandlerThread IO_THREAD;
+    private static volatile Handler IO;
+    private static final ThreadLocal<byte[]> COPY_BUFFER = new ThreadLocal<byte[]>() {
+        @Override protected byte[] initialValue() {
+            return new byte[COPY_BUFFER_BYTES];
+        }
+    };
 
     private V240AndroidBridge() {}
 
@@ -223,7 +224,7 @@ public final class V240AndroidBridge {
         if (binding == null) return true;
         try {
             synchronized (binding) {
-                IO.removeCallbacks(binding.syncTask);
+                if (IO != null) IO.removeCallbacks(binding.syncTask);
                 syncNow(binding);
             }
             return true;
@@ -249,8 +250,23 @@ public final class V240AndroidBridge {
         if (binding == null) return;
         synchronized (binding) {
             binding.active = false;
-            IO.removeCallbacks(binding.syncTask);
+            if (IO != null) IO.removeCallbacks(binding.syncTask);
             binding.observer.stopWatching();
+        }
+    }
+
+    private static Handler io() {
+        Handler handler = IO;
+        if (handler != null) return handler;
+        synchronized (IO_LOCK) {
+            handler = IO;
+            if (handler != null) return handler;
+            HandlerThread thread = new HandlerThread("adofai-v240-storage");
+            thread.start();
+            IO_THREAD = thread;
+            handler = new Handler(thread.getLooper());
+            IO = handler;
+            return handler;
         }
     }
 
@@ -258,8 +274,9 @@ public final class V240AndroidBridge {
         synchronized (binding) {
             if (!binding.active) return;
             // True debounce: keep one delayed sync task instead of one Runnable per MODIFY event.
-            IO.removeCallbacks(binding.syncTask);
-            IO.postDelayed(binding.syncTask, 180L);
+            Handler handler = io();
+            handler.removeCallbacks(binding.syncTask);
+            handler.postDelayed(binding.syncTask, 180L);
         }
     }
 
@@ -386,7 +403,7 @@ public final class V240AndroidBridge {
     }
 
     private static void copy(InputStream in, OutputStream out) throws Exception {
-        byte[] buffer = new byte[256 * 1024];
+        byte[] buffer = COPY_BUFFER.get();
         int count;
         while ((count = in.read(buffer)) != -1) out.write(buffer, 0, count);
         out.flush();
