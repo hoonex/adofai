@@ -54,6 +54,8 @@ public final class V240SettingsOverlay {
             boolean unlockFps,
             boolean lowLatency);
 
+    private static native boolean nativeApplyTouchAssist(boolean enabled, float radiusPx);
+
     public static boolean isInstalled() {
         return installed;
     }
@@ -135,7 +137,7 @@ public final class V240SettingsOverlay {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView note = new TextView(owner);
-        note.setText("폰/태블릿의 화면 크기와 DPI를 자동 보정합니다. 원본 게임 파일은 유지하고 런타임에서만 모바일 동작을 조정합니다. 화면 Hz보다 높은 FPS는 내부 렌더링 부하와 발열을 늘릴 수 있습니다.");
+        note.setText("폰/태블릿의 화면 크기와 DPI를 자동 보정합니다. 작은 Unity UI는 실제 터치 hit-test도 확장합니다. 원본 게임 파일은 유지하고 런타임에서만 모바일 동작을 조정합니다. 화면 Hz보다 높은 FPS는 내부 렌더링 부하와 발열을 늘릴 수 있습니다.");
         note.setTextSize(13f);
         note.setPadding(0, 0, 0, dp(10));
         root.addView(note);
@@ -193,13 +195,21 @@ public final class V240SettingsOverlay {
         try {
             final boolean unlock = prefs.getBoolean("fps_unlock", true);
             final boolean lowLatency = prefs.getBoolean("low_latency", true);
+            final boolean touchAssist = prefs.getBoolean("touch_assist", true);
             final int requestedFps = prefs.getInt("fps_mode", DEFAULT_FPS_MODE);
             final Display.Mode mode = unlock ? selectPreferredMode(owner, requestedFps) : null;
             final int targetFps = unlock ? effectiveTargetFps(owner, mode, requestedFps) : 0;
             final float uiScale = deviceAdjustedUiScale(owner,
                     prefs.getFloat("ui_scale", DEFAULT_UI_SCALE));
-            final float touchScale = deviceAdjustedTouchScale(owner,
-                    prefs.getFloat("touch_scale", DEFAULT_TOUCH_SCALE));
+            final float requestedTouchScale = prefs.getFloat("touch_scale", DEFAULT_TOUCH_SCALE);
+            final float legacyTouchScale = deviceAdjustedTouchScale(owner, requestedTouchScale);
+            final float touchRadiusPx = deviceTouchRadiusPx(owner, requestedTouchScale);
+            boolean enhancedTouch = false;
+            try {
+                enhancedTouch = nativeApplyTouchAssist(touchAssist, touchRadiusPx);
+            } catch (Throwable ignored) {
+                enhancedTouch = false;
+            }
             owner.runOnUiThread(new Runnable() {
                 @Override public void run() {
                     applyWindowPolicy(owner, unlock ? mode : null, lowLatency);
@@ -207,9 +217,9 @@ public final class V240SettingsOverlay {
             });
             nativeApply(
                     uiScale,
-                    touchScale,
+                    enhancedTouch ? 1.0f : legacyTouchScale,
                     prefs.getFloat("drag_scale", DEFAULT_DRAG_SCALE),
-                    prefs.getBoolean("touch_assist", true),
+                    touchAssist,
                     targetFps,
                     unlock,
                     lowLatency);
@@ -233,9 +243,18 @@ public final class V240SettingsOverlay {
         float density = metrics != null ? metrics.density : 1.0f;
         density = clamp(density, 1.0f, 3.25f);
         float extra = Math.max(0f, requestedScale - 1.0f);
-        // Native expands by 40 px per +1.0 scale. Multiplying the extra by density
-        // converts the setting into an approximately dp-stable physical hit margin.
+        // Legacy native expands by 40 px per +1.0 scale. Multiplying by density
+        // keeps the fallback margin approximately stable in dp across phones/tablets.
         return clamp(1.0f + extra * density, 1.0f, 2.0f);
+    }
+
+    private static float deviceTouchRadiusPx(Context context, float requestedScale) {
+        DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+        float density = metrics != null ? Math.max(0.75f, metrics.density) : 1.0f;
+        float extra = Math.max(0f, requestedScale - 1.0f);
+        float raw = extra * 40.0f * density;
+        float maxRadius = Math.min(128.0f, 32.0f * density);
+        return clamp(raw, 0.0f, maxRadius);
     }
 
     private static int smallestWidthDp(Context context) {
