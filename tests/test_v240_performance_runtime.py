@@ -6,6 +6,7 @@ JAVA = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOv
 BOOTSTRAP = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240Bootstrap.java"
 BRIDGE = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240AndroidBridge.java"
 PICKER = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240PickerActivity.java"
+SELECTOR = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/FileSelector.java"
 NATIVE = ROOT / "android/v240-fixed-runtime/native/V240Fix.cpp"
 
 
@@ -16,6 +17,7 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         cls.bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
         cls.bridge = BRIDGE.read_text(encoding="utf-8")
         cls.picker = PICKER.read_text(encoding="utf-8")
+        cls.selector = SELECTOR.read_text(encoding="utf-8")
         cls.native = NATIVE.read_text(encoding="utf-8")
 
     def test_android_refresh_policy_is_explicit_reversible_and_low_latency(self):
@@ -120,6 +122,20 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         self.assertNotIn("V240AndroidBridge.handleOpen(this", self.picker)
         self.assertNotIn("V240AndroidBridge.handleSave(this", self.picker)
         self.assertNotIn("V240AndroidBridge.handleFolder(this", self.picker)
+
+    def test_file_selector_waits_for_signal_instead_of_polling(self):
+        self.assertIn("final CountDownLatch done = new CountDownLatch(1)", self.bridge)
+        self.assertIn("result.done.await(waitMs, TimeUnit.MILLISECONDS)", self.bridge)
+        self.assertIn("result.done.countDown()", self.bridge)
+        self.assertIn("V240AndroidBridge.await(requestId, 600_000L)", self.selector)
+        self.assertNotIn("V240AndroidBridge.poll(requestId)", self.selector)
+        self.assertNotIn("Thread.sleep(80L)", self.selector)
+
+    def test_picker_completion_is_first_terminal_result_wins(self):
+        self.assertIn("if (result.state != Result.PENDING) return", self.bridge)
+        self.assertIn("final int previousRequestId = activeRequestId", self.selector)
+        self.assertIn("V240AndroidBridge.cancel(previousRequestId)", self.selector)
+        self.assertIn("if (generation != myGeneration) return", self.selector)
 
     def test_explicit_flush_cancels_pending_background_write(self):
         self.assertIn("if (IO != null) IO.removeCallbacks(binding.syncTask);\n                syncNow(binding);", self.bridge)
