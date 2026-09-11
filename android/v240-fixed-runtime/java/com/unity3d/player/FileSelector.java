@@ -11,6 +11,10 @@ public final class FileSelector {
     private static volatile int generation = 0;
     private static int activeRequestId = -1;
 
+    private static final int BACKEND_DOCUMENT = 0;
+    private static final int BACKEND_LEVEL_TREE = 1;
+    private static final int BACKEND_ARCHIVE = 2;
+
     private FileSelector() {}
 
     /** Legacy ABI retained for older native payloads. */
@@ -22,30 +26,40 @@ public final class FileSelector {
     public static void selectFile(String extensions, boolean multiselect) {
         // A standalone .adofai almost always references sibling song/image assets. When the
         // caller is specifically opening one level, use a tree picker and mirror the complete
-        // map directory so relative paths keep working. Mixed/import filters still use the
-        // document picker (ZIP imports are expanded by V240AndroidBridge).
+        // map directory so relative paths keep working.
         if (!multiselect && isOnlyLevelExtension(extensions)) {
-            start(V240LevelFolderBridge.begin(), false, true);
+            start(V240LevelFolderBridge.begin(), false, BACKEND_LEVEL_TREE, false);
             return;
         }
+        // TUF distributes levels as ZIP bundles. If the picker is specifically level/archive
+        // oriented, let the archive bridge copy + safely unpack the bundle and return its chart.
+        if (!multiselect && isLevelArchiveFilter(extensions)) {
+            start(V240ArchiveOpenBridge.begin(), false, BACKEND_ARCHIVE, false);
+            return;
+        }
+
         String[] mimeTypes = mimeTypesForExtensions(extensions);
         String primaryMime = mimeTypes != null && mimeTypes.length == 1 ? mimeTypes[0] : "*/*";
-        start(V240AndroidBridge.beginOpen(primaryMime, mimeTypes, multiselect), false, false);
+        start(V240AndroidBridge.beginOpen(primaryMime, mimeTypes, multiselect), false,
+                BACKEND_DOCUMENT, false);
     }
 
     public static void saveAs(String suggestedName) {
-        start(V240AndroidBridge.beginSave(suggestedName, mimeForFilename(suggestedName)), false, false);
+        // Release a tree-backed old chart only after the new Save-As document is successfully
+        // prepared, so cancellation never loses the authoritative old save target.
+        start(V240AndroidBridge.beginSave(suggestedName, mimeForFilename(suggestedName)), false,
+                BACKEND_DOCUMENT, true);
     }
 
     public static void selectFolder() {
-        start(V240AndroidBridge.beginFolder(), true, false);
+        start(V240AndroidBridge.beginFolder(), true, BACKEND_DOCUMENT, false);
     }
 
     public static String getFilePath() { return filePath; }
     public static String getFolderPath() { return folderPath; }
 
     private static synchronized void start(final int requestId, final boolean folder,
-                                           final boolean levelTree) {
+                                           final int backend, final boolean releaseLevelOnSuccess) {
         final int myGeneration = ++generation;
         final int previousRequestId = activeRequestId;
         activeRequestId = requestId > 0 ? requestId : -1;
@@ -53,10 +67,11 @@ public final class FileSelector {
         if (folder) folderPath = ""; else filePath = "";
 
         if (previousRequestId > 0 && previousRequestId != requestId) {
-            // Request id ranges are intentionally distinct, but cancelling both backends keeps
+            // Request id ranges are intentionally distinct, but cancelling all backends keeps
             // transitions race-free without coupling this ABI facade to their internal ranges.
             V240AndroidBridge.cancel(previousRequestId);
             V240LevelFolderBridge.cancel(previousRequestId);
+            V240ArchiveOpenBridge.cancel(previousRequestId);
         }
         if (requestId <= 0) {
             activeRequestId = -1;
@@ -67,14 +82,28 @@ public final class FileSelector {
         Thread waiter = new Thread(new Runnable() {
             @Override public void run() {
                 String result = "";
+                boolean ok = false;
                 try {
-                    String state = levelTree
-                            ? V240LevelFolderBridge.await(requestId, 600_000L)
-                            : V240AndroidBridge.await(requestId, 600_000L);
-                    if (state != null && state.startsWith("O:")) result = state.substring(2);
+                    String state;
+                    if (backend == BACKEND_LEVEL_TREE) {
+                        state = V240LevelFolderBridge.await(requestId, 600_000L);
+                    } else if (backend == BACKEND_ARCHIVE) {
+                        state = V240ArchiveOpenBridge.await(requestId, 600_000L);
+                    } else {
+                        state = V240AndroidBridge.await(requestId, 600_000L);
+                    }
+                    if (state != null && state.startsWith("O:")) {
+                        result = state.substring(2);
+                        ok = result.length() > 0;
+                    }
                 } catch (Throwable ignored) {
                     result = "";
                 }
+
+                if (ok && releaseLevelOnSuccess) {
+                    V240LevelFolderBridge.releaseActiveLevel(true);
+                }
+
                 synchronized (FileSelector.class) {
                     if (generation != myGeneration) return;
                     if (folder) folderPath = result; else filePath = result;
@@ -82,23 +111,43 @@ public final class FileSelector {
                     isDone = true;
                 }
             }
-        }, levelTree ? "adofai-v240-level-tree" :
-                (folder ? "adofai-v240-folder" : "adofai-v240-file"));
+        }, backend == BACKEND_LEVEL_TREE ? "adofai-v240-level-tree" :
+                (backend == BACKEND_ARCHIVE ? "adofai-v240-archive" :
+                        (folder ? "adofai-v240-folder" : "adofai-v240-file")));
         waiter.setDaemon(true);
         waiter.start();
     }
 
     private static boolean isOnlyLevelExtension(String raw) {
         if (raw == null) return false;
+        String[] values = normalizedExtensions(raw);
+        return values.length == 1 && "adofai".equals(values[0]);
+    }
+
+    private static boolean isLevelArchiveFilter(String raw) {
+        if (raw == null) return false;
+        String[] values = normalizedExtensions(raw);
+        if (values.length == 0) return false;
+        boolean hasArchive = false;
+        for (String value : values) {
+            if ("zip".equals(value) || "adozip".equals(value)) {
+                hasArchive = true;
+            } else if (!"adofai".equals(value)) {
+                return false;
+            }
+        }
+        return hasArchive;
+    }
+
+    private static String[] normalizedExtensions(String raw) {
+        if (raw == null || raw.trim().length() == 0) return new String[0];
         String[] parts = raw.toLowerCase(Locale.US).split("[,;|\\s]+");
-        int count = 0;
+        ArrayList<String> values = new ArrayList<String>();
         for (String part : parts) {
             String extension = normalizeExtension(part);
-            if (extension.length() == 0) continue;
-            count++;
-            if (!"adofai".equals(extension)) return false;
+            if (extension.length() > 0 && !values.contains(extension)) values.add(extension);
         }
-        return count == 1;
+        return values.toArray(new String[values.size()]);
     }
 
     private static String mimeForFilename(String name) {
