@@ -16,11 +16,15 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         cls.bridge = BRIDGE.read_text(encoding="utf-8")
         cls.native = NATIVE.read_text(encoding="utf-8")
 
-    def test_android_refresh_policy_is_explicit_and_reversible(self):
-        self.assertIn("preferredDisplayModeId = mode.getModeId()", self.java)
-        self.assertIn("preferredRefreshRate = mode.getRefreshRate()", self.java)
-        self.assertIn("preferredDisplayModeId = 0", self.java)
-        self.assertIn("preferredRefreshRate = 0f", self.java)
+    def test_android_refresh_policy_is_explicit_reversible_and_low_latency(self):
+        self.assertIn("private static void applyWindowPolicy", self.java)
+        self.assertIn("int targetModeId = mode != null ? mode.getModeId() : 0", self.java)
+        self.assertIn("float targetRefreshRate = mode != null ? mode.getRefreshRate() : 0f", self.java)
+        self.assertIn("params.preferredDisplayModeId = targetModeId", self.java)
+        self.assertIn("params.preferredRefreshRate = targetRefreshRate", self.java)
+        self.assertIn("Build.VERSION.SDK_INT >= 30", self.java)
+        self.assertIn("params.preferMinimalPostProcessing = lowLatency", self.java)
+        self.assertIn("if (changed) owner.getWindow().setAttributes(params)", self.java)
         self.assertIn("60, 90, 120, 144, 165, 240", self.java)
 
     def test_overlay_bootstrap_stops_retrying_after_success(self):
