@@ -31,6 +31,16 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         self.assertIn("if (changed) owner.getWindow().setAttributes(params)", self.java)
         self.assertIn("60, 90, 120, 144, 165, 240", self.java)
 
+    def test_explicit_fps_target_is_not_clamped_to_display_refresh(self):
+        self.assertIn(
+            "if (requestedFps > 0) return Math.max(30, Math.min(240, requestedFps))",
+            self.java,
+        )
+        self.assertIn("Display.Mode atLeastRequested = null", self.java)
+        self.assertIn("rate + 1.0f >= requestedFps", self.java)
+        self.assertIn("return atLeastRequested != null ? atLeastRequested : highest", self.java)
+        self.assertNotIn("Math.min(requestedFps, max)", self.java)
+
     def test_overlay_bootstrap_stops_retrying_after_success(self):
         self.assertIn("private static volatile boolean installed", self.java)
         self.assertIn("public static boolean isInstalled()", self.java)
