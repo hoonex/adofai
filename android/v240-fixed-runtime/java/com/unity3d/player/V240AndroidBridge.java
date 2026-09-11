@@ -21,6 +21,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,24 +31,21 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * Android Storage Access Framework backend for the historical ADOFAI 2.4 editor.
- *
- * The old editor expects ordinary filesystem paths. Android document providers return
- * content:// URIs, so this bridge mirrors selected documents into app-private working
- * files and keeps writable Open / Save-As destinations synchronized back to the provider.
- */
+/** Android Storage Access Framework backend for the historical ADOFAI 2.4 editor. */
 public final class V240AndroidBridge {
     public static final String TAG = "ADOFAI.V240Bridge";
     public static final String EXTRA_REQUEST_ID = "dev.hoonex.adofai.v240.REQUEST_ID";
     public static final String EXTRA_MODE = "dev.hoonex.adofai.v240.MODE";
     public static final String EXTRA_TITLE = "dev.hoonex.adofai.v240.TITLE";
     public static final String EXTRA_MIME = "dev.hoonex.adofai.v240.MIME";
+    public static final String EXTRA_MULTI = "dev.hoonex.adofai.v240.MULTI";
 
     public static final int MODE_OPEN = 1;
     public static final int MODE_SAVE = 2;
     public static final int MODE_FOLDER = 3;
 
+    static final char PATH_SEPARATOR = '\u001f';
+    private static final int MAX_OPEN_FILES = 128;
     private static final int MAX_TREE_FILES = 4096;
     private static final int MAX_TREE_DEPTH = 64;
     private static final long MAX_TREE_BYTES = 512L * 1024L * 1024L;
@@ -59,9 +59,7 @@ public final class V240AndroidBridge {
     private static volatile HandlerThread IO_THREAD;
     private static volatile Handler IO;
     private static final ThreadLocal<byte[]> COPY_BUFFER = new ThreadLocal<byte[]>() {
-        @Override protected byte[] initialValue() {
-            return new byte[COPY_BUFFER_BYTES];
-        }
+        @Override protected byte[] initialValue() { return new byte[COPY_BUFFER_BYTES]; }
     };
 
     private V240AndroidBridge() {}
@@ -105,10 +103,6 @@ public final class V240AndroidBridge {
                 }
             };
 
-            // Watch the parent directory instead of a single inode. Unity/editor code can
-            // save through a temporary file followed by an atomic rename, which detaches a
-            // file-only observer. CLOSE_WRITE/MOVED_TO/CREATE are terminal save signals and
-            // are pushed back immediately; noisy MODIFY events remain debounced.
             final File parent = file.getParentFile();
             final String watchedName = file.getName();
             this.observer = new FileObserver(parent.getAbsolutePath(),
@@ -129,21 +123,24 @@ public final class V240AndroidBridge {
         }
     }
 
-    /** Returns a positive request id, or -1 when no foreground Activity exists. */
     public static int beginOpen(String mime) {
-        return begin(MODE_OPEN, "", emptyToDefault(mime, "*/*"));
+        return beginOpen(mime, false);
+    }
+
+    public static int beginOpen(String mime, boolean multiselect) {
+        return begin(MODE_OPEN, "", emptyToDefault(mime, "*/*"), multiselect);
     }
 
     public static int beginSave(String suggestedName, String mime) {
         return begin(MODE_SAVE, sanitizeName(emptyToDefault(suggestedName, "level.adofai")),
-                emptyToDefault(mime, "application/octet-stream"));
+                emptyToDefault(mime, "application/octet-stream"), false);
     }
 
     public static int beginFolder() {
-        return begin(MODE_FOLDER, "", "");
+        return begin(MODE_FOLDER, "", "", false);
     }
 
-    private static int begin(int mode, String title, String mime) {
+    private static int begin(int mode, String title, String mime, boolean multiselect) {
         Activity activity = currentActivity();
         if (activity == null || activity.isFinishing()) return -1;
         int id = NEXT_ID.incrementAndGet();
@@ -153,6 +150,7 @@ public final class V240AndroidBridge {
         proxy.putExtra(EXTRA_MODE, mode);
         proxy.putExtra(EXTRA_TITLE, title);
         proxy.putExtra(EXTRA_MIME, mime);
+        proxy.putExtra(EXTRA_MULTI, multiselect);
         try {
             activity.startActivity(proxy);
             return id;
@@ -168,7 +166,6 @@ public final class V240AndroidBridge {
         return consumeResult(id, result);
     }
 
-    /** Blocks only the FileSelector daemon waiter, never the Android main thread. */
     static String await(int id, long timeoutMs) {
         Result result = RESULTS.get(id);
         if (result == null) return "E:unknown request";
@@ -198,9 +195,7 @@ public final class V240AndroidBridge {
         return "E:" + value;
     }
 
-    static void cancel(int id) {
-        complete(id, Result.CANCEL, "");
-    }
+    static void cancel(int id) { complete(id, Result.CANCEL, ""); }
 
     static void fail(int id, Throwable error) {
         Log.e(TAG, "picker request failed id=" + id, error);
@@ -230,13 +225,15 @@ public final class V240AndroidBridge {
 
     static void handleResultAsync(final Context context, final int id, final int mode,
                                   final Uri uri, final int grantFlags, final String suggestedName) {
+        if (mode == MODE_OPEN) {
+            handleOpenResultsAsync(context, id, uri == null ? new Uri[0] : new Uri[] {uri}, grantFlags);
+            return;
+        }
         final Context appContext = context.getApplicationContext();
         io().post(new Runnable() {
             @Override public void run() {
                 if (!isPending(id)) return;
-                if (mode == MODE_OPEN) {
-                    handleOpen(appContext, id, uri, grantFlags);
-                } else if (mode == MODE_SAVE) {
+                if (mode == MODE_SAVE) {
                     handleSave(appContext, id, uri, grantFlags, suggestedName);
                 } else if (mode == MODE_FOLDER) {
                     handleFolder(appContext, id, uri, grantFlags);
@@ -247,34 +244,68 @@ public final class V240AndroidBridge {
         });
     }
 
+    static void handleOpenResultsAsync(final Context context, final int id,
+                                       final Uri[] uris, final int grantFlags) {
+        final Context appContext = context.getApplicationContext();
+        final Uri[] snapshot = uris == null ? new Uri[0] : uris.clone();
+        io().post(new Runnable() {
+            @Override public void run() {
+                if (!isPending(id)) return;
+                handleOpenMany(appContext, id, snapshot, grantFlags);
+            }
+        });
+    }
+
     static void handleOpen(Context context, int id, Uri uri, int grantFlags) {
-        File working = null;
+        handleOpenMany(context, id, uri == null ? new Uri[0] : new Uri[] {uri}, grantFlags);
+    }
+
+    private static void handleOpenMany(Context context, int id, Uri[] uris, int grantFlags) {
+        List<File> workingFiles = new ArrayList<File>();
         boolean bound = false;
         boolean success = false;
         try {
             ensurePending(id);
-            persist(context, uri, grantFlags);
-            ensurePending(id);
-            working = makeWorkingFile(context,
-                    displayName(context.getContentResolver(), uri, "level.adofai"));
-            try (InputStream in = requireInput(context.getContentResolver(), uri);
-                 OutputStream out = new FileOutputStream(working)) {
-                copy(in, out, id, Long.MAX_VALUE);
+            if (uris == null || uris.length == 0) throw new IllegalArgumentException("no document selected");
+            if (uris.length > MAX_OPEN_FILES) {
+                throw new IllegalStateException("too many documents selected at once");
+            }
+            ContentResolver resolver = context.getContentResolver();
+            for (Uri uri : uris) {
+                ensurePending(id);
+                if (uri == null) continue;
+                persist(context, uri, grantFlags);
+                String name = displayName(resolver, uri, "file");
+                File working = makeWorkingFile(context, name);
+                try (InputStream in = requireInput(resolver, uri);
+                     OutputStream out = new FileOutputStream(working)) {
+                    copy(in, out, id, Long.MAX_VALUE);
+                }
+                workingFiles.add(working);
             }
             ensurePending(id);
-            if ((grantFlags & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0) {
-                bindSave(context, uri, working);
+            if (workingFiles.isEmpty()) throw new IllegalArgumentException("no readable document selected");
+
+            // Only a single .adofai level document becomes the editor's writable Save target.
+            // Images/audio/zip imports also use OpenFilePanel; binding those would allow the
+            // next level Save to overwrite the imported asset's content:// URI.
+            if (workingFiles.size() == 1 && uris.length == 1 &&
+                    (grantFlags & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0 &&
+                    isLevelDocument(workingFiles.get(0))) {
+                bindSave(context, uris[0], workingFiles.get(0));
                 bound = true;
             }
-            success = complete(id, Result.OK, working.getAbsolutePath());
+            success = complete(id, Result.OK, encodePaths(workingFiles));
         } catch (RequestCancelledException ignored) {
             // Cancellation already owns the terminal result.
         } catch (Throwable error) {
             if (isPending(id)) fail(id, error);
         } finally {
-            if (!success && working != null) {
-                if (bound) removeSaveBinding(working.getAbsolutePath());
-                deleteRecursively(working.getParentFile());
+            if (!success) {
+                if (bound && !workingFiles.isEmpty()) {
+                    removeSaveBinding(workingFiles.get(0).getAbsolutePath());
+                }
+                for (File working : workingFiles) deleteRecursively(working.getParentFile());
             }
         }
     }
@@ -298,7 +329,6 @@ public final class V240AndroidBridge {
             bound = true;
             success = complete(id, Result.OK, working.getAbsolutePath());
         } catch (RequestCancelledException ignored) {
-            // Cancellation already owns the terminal result.
         } catch (Throwable error) {
             if (isPending(id)) fail(id, error);
         } finally {
@@ -326,7 +356,6 @@ public final class V240AndroidBridge {
             ensurePending(id);
             success = complete(id, Result.OK, mirror.getAbsolutePath());
         } catch (RequestCancelledException ignored) {
-            // Cancellation already owns the terminal result.
         } catch (Throwable error) {
             if (isPending(id)) fail(id, error);
         } finally {
@@ -334,7 +363,6 @@ public final class V240AndroidBridge {
         }
     }
 
-    /** Explicit flush used before preview/close; FileObserver remains the normal path. */
     public static boolean flushSave(String localPath) {
         SaveBinding binding = SAVE_BINDINGS.get(localPath);
         if (binding == null) return true;
@@ -352,9 +380,6 @@ public final class V240AndroidBridge {
     }
 
     private static void bindSave(Context context, Uri uri, File file) {
-        // Retire the previous document only after a final synchronous flush. This closes a
-        // real data-loss race where a pending MODIFY debounce could otherwise be cancelled
-        // by Open/Save-As before it reached the document provider.
         for (Map.Entry<String, SaveBinding> entry : SAVE_BINDINGS.entrySet()) {
             SaveBinding existing = entry.getValue();
             if (SAVE_BINDINGS.remove(entry.getKey(), existing)) stopBinding(existing, true);
@@ -378,8 +403,6 @@ public final class V240AndroidBridge {
                 try {
                     syncNow(binding);
                 } catch (Throwable error) {
-                    // Do not silently hide a failed final flush: the next document can still
-                    // open, but diagnostics clearly show that provider write-back failed.
                     Log.e(TAG, "final save sync failed: " + binding.file, error);
                 }
             }
@@ -507,7 +530,6 @@ public final class V240AndroidBridge {
         try {
             context.getContentResolver().takePersistableUriPermission(uri, allowed);
         } catch (SecurityException ignored) {
-            // Some providers intentionally grant only the lifetime of the picker result.
         }
     }
 
@@ -549,16 +571,9 @@ public final class V240AndroidBridge {
 
     private static OutputStream requireOutput(ContentResolver resolver, Uri uri) throws Exception {
         OutputStream out = null;
-        try {
-            out = resolver.openOutputStream(uri, "wt");
-        } catch (Throwable ignored) {
-            // Not every DocumentsProvider implements truncate mode even when it supports write.
-        }
+        try { out = resolver.openOutputStream(uri, "wt"); } catch (Throwable ignored) {}
         if (out == null) {
-            try {
-                out = resolver.openOutputStream(uri, "w");
-            } catch (Throwable ignored) {
-            }
+            try { out = resolver.openOutputStream(uri, "w"); } catch (Throwable ignored) {}
         }
         if (out == null) out = resolver.openOutputStream(uri);
         if (out == null) throw new IllegalStateException("document provider returned no output stream");
@@ -587,6 +602,21 @@ public final class V240AndroidBridge {
         return total;
     }
 
+    private static String encodePaths(List<File> files) {
+        StringBuilder out = new StringBuilder();
+        for (File file : files) {
+            if (file == null) continue;
+            if (out.length() > 0) out.append(PATH_SEPARATOR);
+            out.append(file.getAbsolutePath());
+        }
+        return out.toString();
+    }
+
+    private static boolean isLevelDocument(File file) {
+        if (file == null) return false;
+        return file.getName().toLowerCase(Locale.US).endsWith(".adofai");
+    }
+
     private static void deleteRecursively(File file) {
         if (file == null || !file.exists()) return;
         if (file.isDirectory()) {
@@ -600,7 +630,13 @@ public final class V240AndroidBridge {
 
     private static String sanitizeName(String raw) {
         String value = raw == null ? "file" : raw.trim();
-        value = value.replace('/', '_').replace('\\', '_').replace('\u0000', '_');
+        StringBuilder clean = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch < 0x20 || ch == '/' || ch == '\\' || ch == PATH_SEPARATOR) clean.append('_');
+            else clean.append(ch);
+        }
+        value = clean.toString();
         while (value.startsWith(".")) value = value.substring(1);
         if (value.length() == 0) value = "file";
         if (value.length() > 120) value = value.substring(value.length() - 120);
