@@ -1,0 +1,38 @@
+name: Export Android Build Tools 36
+
+on:
+  push:
+    branches: [fix/v240-custom-bugfix]
+    paths:
+      - '.github/workflows/v240-build-tools-artifact.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: android-actions/setup-android@v3
+      - name: Install pinned build tools
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager 'build-tools;36.0.0'
+      - name: Stage signing tools
+        run: |
+          set -euo pipefail
+          BT="${ANDROID_SDK_ROOT}/build-tools/36.0.0"
+          mkdir -p dist/build-tools-36/lib
+          cp "${BT}/zipalign" dist/build-tools-36/zipalign
+          cp "${BT}/apksigner" dist/build-tools-36/apksigner
+          cp "${BT}/lib/apksigner.jar" dist/build-tools-36/lib/apksigner.jar
+          chmod +x dist/build-tools-36/zipalign dist/build-tools-36/apksigner
+          sha256sum dist/build-tools-36/zipalign dist/build-tools-36/lib/apksigner.jar > dist/build-tools-36/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-build-tools-36-signing
+          path: dist/build-tools-36/
+          if-no-files-found: error
+          retention-days: 7
