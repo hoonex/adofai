@@ -7,18 +7,22 @@ import android.util.Log;
 /** Entry point injected into the historical 2.4 APK. No root/Zygisk dependency. */
 public final class V240Bootstrap {
     private static final String TAG = "ADOFAI.V240Bootstrap";
-    private static boolean started;
+    private static boolean nativeStarted;
 
     private V240Bootstrap() {}
 
     public static synchronized void init() {
-        if (started) return;
-        started = true;
-        try {
-            System.loadLibrary("v240fix");
-            Log.i(TAG, "v240fix native runtime loaded");
-        } catch (Throwable error) {
-            Log.e(TAG, "v240fix native runtime failed to load", error);
+        // The native library only needs to load once per process, but this method is
+        // injected into UnityPlayerActivity.onCreate and therefore also runs after an
+        // Activity recreation. Always re-bind the overlay to the current Activity.
+        if (!nativeStarted) {
+            nativeStarted = true;
+            try {
+                System.loadLibrary("v240fix");
+                Log.i(TAG, "v240fix native runtime loaded");
+            } catch (Throwable error) {
+                Log.e(TAG, "v240fix native runtime failed to load", error);
+            }
         }
         installOverlayWhenActivityIsReady();
     }
@@ -32,6 +36,7 @@ public final class V240Bootstrap {
                 attempts++;
                 try {
                     V240SettingsOverlay.install();
+                    V240SettingsOverlay.refresh();
                     if (V240SettingsOverlay.isInstalled()) return;
                 } catch (Throwable error) {
                     Log.w(TAG, "mobile settings overlay install attempt failed", error);
