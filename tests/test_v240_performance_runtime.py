@@ -6,6 +6,7 @@ JAVA = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOv
 BOOTSTRAP = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240Bootstrap.java"
 BRIDGE = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240AndroidBridge.java"
 PICKER = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240PickerActivity.java"
+MOBILE_ACTIVITY = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240MobileXActivity.java"
 SELECTOR = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/FileSelector.java"
 NATIVE = ROOT / "android/v240-fixed-runtime/native/V240Fix.cpp"
 
@@ -17,6 +18,7 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         cls.bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
         cls.bridge = BRIDGE.read_text(encoding="utf-8")
         cls.picker = PICKER.read_text(encoding="utf-8")
+        cls.mobile_activity = MOBILE_ACTIVITY.read_text(encoding="utf-8")
         cls.selector = SELECTOR.read_text(encoding="utf-8")
         cls.native = NATIVE.read_text(encoding="utf-8")
 
@@ -41,17 +43,25 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         self.assertIn("return atLeastRequested != null ? atLeastRequested : highest", self.java)
         self.assertNotIn("Math.min(requestedFps, max)", self.java)
 
-    def test_overlay_bootstrap_stops_retrying_after_success(self):
+    def test_overlay_bootstrap_stops_retrying_after_success_but_reinstalls_on_new_activity(self):
         self.assertIn("private static volatile boolean installed", self.java)
         self.assertIn("public static boolean isInstalled()", self.java)
-        self.assertIn("if (installed) return;", self.java)
+        self.assertIn("View existing = root.findViewWithTag(TAG)", self.java)
+        self.assertIn("public static void refresh()", self.java)
         self.assertIn("installed = true;", self.java)
+        self.assertNotIn("public static void install() {\n        if (installed) return;", self.java)
         self.assertIn("if (V240SettingsOverlay.isInstalled()) return;", self.bootstrap)
         self.assertIn("if (attempts < 24) main.postDelayed(this, 250L);", self.bootstrap)
-        self.assertLess(
-            self.java.index("pushNative(owner, owner.getSharedPreferences"),
-            self.java.index("installed = true;", self.java.index("pushNative(owner, owner.getSharedPreferences")),
-        )
+
+    def test_phone_and_tablet_ui_touch_scaling_is_device_adaptive(self):
+        self.assertIn("deviceAdjustedUiScale", self.java)
+        self.assertIn("deviceAdjustedTouchScale", self.java)
+        self.assertIn("smallestWidthDp", self.java)
+        self.assertIn("metrics.density", self.java)
+        self.assertIn("extra * density", self.java)
+        self.assertIn("if (smallest <= 360) boost = 1.18f", self.java)
+        self.assertIn("else if (smallest < 600) boost = 1.03f", self.java)
+        self.assertIn("else boost = 1.00f", self.java)
 
     def test_native_fps_policy_intercepts_only_render_pacing(self):
         self.assertIn('Class application("UnityEngine", "Application")', self.native)
@@ -122,16 +132,30 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         self.assertIn("InputStream in = requireInput", self.bridge)
         self.assertIn("OutputStream out = requireOutput", self.bridge)
 
-    def test_picker_result_io_leaves_activity_main_thread(self):
+    def test_picker_result_io_leaves_every_activity_main_thread(self):
         self.assertIn("static void handleResultAsync", self.bridge)
         self.assertIn("io().post(new Runnable()", self.bridge)
         self.assertIn(
             "V240AndroidBridge.handleResultAsync(this, requestId, mode, uri, flags, title);",
             self.picker,
         )
-        self.assertNotIn("V240AndroidBridge.handleOpen(this", self.picker)
-        self.assertNotIn("V240AndroidBridge.handleSave(this", self.picker)
-        self.assertNotIn("V240AndroidBridge.handleFolder(this", self.picker)
+        self.assertIn(
+            "V240AndroidBridge.handleResultAsync(this, id, mode, uri, flags, title);",
+            self.mobile_activity,
+        )
+        for source in (self.picker, self.mobile_activity):
+            self.assertNotIn("V240AndroidBridge.handleOpen(this", source)
+            self.assertNotIn("V240AndroidBridge.handleSave(this", source)
+            self.assertNotIn("V240AndroidBridge.handleFolder(this", source)
+
+    def test_launcher_picker_survives_rotation_and_reapplies_device_policy(self):
+        self.assertIn("onSaveInstanceState", self.mobile_activity)
+        self.assertIn("STATE_REQUEST_ID", self.mobile_activity)
+        self.assertIn("pendingRequestId = state.getInt", self.mobile_activity)
+        self.assertIn("onConfigurationChanged", self.mobile_activity)
+        self.assertIn("V240SettingsOverlay.refresh()", self.mobile_activity)
+        self.assertIn("onWindowFocusChanged", self.mobile_activity)
+        self.assertIn("if (isFinishing() && pendingRequestId > 0)", self.mobile_activity)
 
     def test_file_selector_waits_for_signal_instead_of_polling(self):
         self.assertIn("final CountDownLatch done = new CountDownLatch(1)", self.bridge)
@@ -142,10 +166,18 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         self.assertNotIn("Thread.sleep(80L)", self.selector)
 
     def test_picker_completion_is_first_terminal_result_wins(self):
-        self.assertIn("if (result.state != Result.PENDING) return", self.bridge)
+        self.assertIn("if (result.state != Result.PENDING) return false", self.bridge)
         self.assertIn("final int previousRequestId = activeRequestId", self.selector)
         self.assertIn("V240AndroidBridge.cancel(previousRequestId)", self.selector)
         self.assertIn("if (generation != myGeneration) return", self.selector)
+
+    def test_cancelled_copy_stops_and_partial_files_are_cleaned(self):
+        self.assertIn("private static void ensurePending", self.bridge)
+        self.assertIn("if (requestId > 0) ensurePending(requestId)", self.bridge)
+        self.assertIn("deleteRecursively(working.getParentFile())", self.bridge)
+        self.assertIn("deleteRecursively(mirror)", self.bridge)
+        self.assertIn("MAX_TREE_DEPTH", self.bridge)
+        self.assertIn("budget.bytes += copy(in, out, requestId, remaining)", self.bridge)
 
     def test_explicit_flush_cancels_pending_background_write(self):
         self.assertIn("if (IO != null) IO.removeCallbacks(binding.syncTask);\n                syncNow(binding);", self.bridge)
