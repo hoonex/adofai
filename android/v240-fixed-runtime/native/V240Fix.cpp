@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -34,10 +35,15 @@ std::atomic<float> g_touchScale{1.25f};
 std::atomic<float> g_dragScale{1.0f};
 std::atomic<bool> g_touchAssist{true};
 std::atomic<int> g_targetFps{0};
-std::atomic<bool> g_unlockFps{true};
-std::atomic<bool> g_lowLatency{true};
+std::atomic<bool> g_unlockFps{false};
+std::atomic<bool> g_lowLatency{false};
+std::atomic<bool> g_framePolicyConfigured{false};
 std::atomic<int> g_lastRequestedFps{-1};
 std::atomic<int> g_lastRequestedVSync{1};
+
+constexpr int64_t kEditorSceneCacheNs = 250000000LL;
+std::atomic<int64_t> g_editorSceneCacheAtNs{0};
+std::atomic<bool> g_editorSceneCacheValue{false};
 
 void (*g_oldCanvasSetScaleFactor)(IL2CPP::Il2CppObject*, float) = nullptr;
 float (*g_oldGetAxis)(String*) = nullptr;
@@ -56,12 +62,29 @@ Property<int> g_listCount;
 
 enum class PickerMode { Open, Save, Folder };
 
+int64_t SteadyNowNs() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
 bool IsEditorScene() {
-    if (!g_getSceneName.IsValid()) return false;
-    String* name = g_getSceneName.Call();
-    if (!name) return false;
-    const std::string value = name->str();
-    return value == "scnEditor" || value.rfind("scnEditor", 0) == 0;
+    const int64_t now = SteadyNowNs();
+    const int64_t cachedAt = g_editorSceneCacheAtNs.load(std::memory_order_acquire);
+    if (cachedAt > 0 && now >= cachedAt && now - cachedAt < kEditorSceneCacheNs) {
+        return g_editorSceneCacheValue.load(std::memory_order_relaxed);
+    }
+
+    bool isEditor = false;
+    if (g_getSceneName.IsValid()) {
+        String* name = g_getSceneName.Call();
+        if (name) {
+            const std::string value = name->str();
+            isEditor = value == "scnEditor" || value.rfind("scnEditor", 0) == 0;
+        }
+    }
+    g_editorSceneCacheValue.store(isEditor, std::memory_order_relaxed);
+    g_editorSceneCacheAtNs.store(now, std::memory_order_release);
+    return isEditor;
 }
 
 jclass LoadAppClass(JNIEnv* env, const char* slashName, const char* dotName) {
@@ -248,12 +271,12 @@ bool IsDragAxis(String* axis) {
 }
 float HookGetAxis(String* axis) {
     float value = g_oldGetAxis ? g_oldGetAxis(axis) : 0.f;
-    if (IsEditorScene() && IsDragAxis(axis)) value *= g_dragScale.load(std::memory_order_relaxed);
+    if (IsDragAxis(axis) && IsEditorScene()) value *= g_dragScale.load(std::memory_order_relaxed);
     return value;
 }
 float HookGetAxisRaw(String* axis) {
     float value = g_oldGetAxisRaw ? g_oldGetAxisRaw(axis) : 0.f;
-    if (IsEditorScene() && IsDragAxis(axis)) value *= g_dragScale.load(std::memory_order_relaxed);
+    if (IsDragAxis(axis) && IsEditorScene()) value *= g_dragScale.load(std::memory_order_relaxed);
     return value;
 }
 
@@ -273,7 +296,7 @@ bool RaycastUi(Vector2 point) {
 
 bool HookInsideUI(IL2CPP::Il2CppObject* self, Vector2 point) {
     if (g_oldInsideUI && g_oldInsideUI(self, point)) return true;
-    if (!IsEditorScene() || !g_touchAssist.load(std::memory_order_relaxed)) return false;
+    if (!g_touchAssist.load(std::memory_order_relaxed) || !IsEditorScene()) return false;
     if (RaycastUi(point)) return true;
     float scale = std::max(1.0f, g_touchScale.load(std::memory_order_relaxed));
     float radius = (scale - 1.0f) * 40.0f;
@@ -287,6 +310,10 @@ bool HookInsideUI(IL2CPP::Il2CppObject* self, Vector2 point) {
 void HookSetTargetFrameRate(int fps) {
     g_lastRequestedFps.store(fps, std::memory_order_relaxed);
     if (!g_oldSetTargetFrameRate) return;
+    if (!g_framePolicyConfigured.load(std::memory_order_acquire)) {
+        g_oldSetTargetFrameRate(fps);
+        return;
+    }
     int target = g_targetFps.load(std::memory_order_relaxed);
     if (g_unlockFps.load(std::memory_order_relaxed) && target > 0) {
         g_oldSetTargetFrameRate(target);
@@ -298,11 +325,16 @@ void HookSetTargetFrameRate(int fps) {
 void HookSetVSyncCount(int count) {
     g_lastRequestedVSync.store(count, std::memory_order_relaxed);
     if (!g_oldSetVSyncCount) return;
+    if (!g_framePolicyConfigured.load(std::memory_order_acquire)) {
+        g_oldSetVSyncCount(count);
+        return;
+    }
     if (g_lowLatency.load(std::memory_order_relaxed)) g_oldSetVSyncCount(0);
     else g_oldSetVSyncCount(count);
 }
 
 void ApplyFramePolicy() {
+    if (!g_framePolicyConfigured.load(std::memory_order_acquire)) return;
     if (g_oldSetTargetFrameRate) {
         int requested = g_lastRequestedFps.load(std::memory_order_relaxed);
         int target = g_targetFps.load(std::memory_order_relaxed);
@@ -430,6 +462,7 @@ Java_com_unity3d_player_V240SettingsOverlay_nativeApply(
     g_targetFps.store(fps, std::memory_order_relaxed);
     g_unlockFps.store(unlockFps == JNI_TRUE, std::memory_order_relaxed);
     g_lowLatency.store(lowLatency == JNI_TRUE, std::memory_order_relaxed);
+    g_framePolicyConfigured.store(true, std::memory_order_release);
     ApplyFramePolicy();
 }
 
