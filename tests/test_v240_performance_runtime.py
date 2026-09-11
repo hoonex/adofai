@@ -119,11 +119,14 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         self.assertEqual(self.native.count("g_listRaycastResultClass.CreateNewObjectParameters()"), 1)
         self.assertNotIn("bool RaycastUi(Vector2 point)", self.native)
 
-    def test_save_sync_uses_single_debounced_task(self):
+    def test_save_sync_uses_one_debounced_task_and_immediate_terminal_events(self):
         self.assertIn("final Runnable syncTask", self.bridge)
+        self.assertIn("private static final long MODIFY_DEBOUNCE_MS = 180L", self.bridge)
         self.assertIn("handler.removeCallbacks(binding.syncTask)", self.bridge)
-        self.assertIn("handler.postDelayed(binding.syncTask, 180L)", self.bridge)
-        self.assertIn("stopBinding(existing)", self.bridge)
+        self.assertIn("handler.postDelayed(binding.syncTask, delayMs)", self.bridge)
+        self.assertIn("scheduleSync(SaveBinding.this, MODIFY_DEBOUNCE_MS)", self.bridge)
+        self.assertIn("scheduleSync(SaveBinding.this, 0L)", self.bridge)
+        self.assertIn("stopBinding(existing, true)", self.bridge)
         self.assertIn("binding.observer.stopWatching()", self.bridge)
         self.assertNotIn("volatile long generation", self.bridge)
 
@@ -140,7 +143,7 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
 
     def test_storage_copy_buffer_is_reused_per_thread(self):
         self.assertIn("private static final ThreadLocal<byte[]> COPY_BUFFER", self.bridge)
-        self.assertIn("return new byte[COPY_BUFFER_BYTES]", self.bridge)
+        self.assertIn("new byte[COPY_BUFFER_BYTES]", self.bridge)
         self.assertIn("byte[] buffer = COPY_BUFFER.get()", self.bridge)
         self.assertEqual(self.bridge.count("new byte[COPY_BUFFER_BYTES]"), 1)
         self.assertNotIn("new byte[256 * 1024]", self.bridge)
@@ -153,24 +156,41 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
 
     def test_picker_result_io_leaves_every_activity_main_thread(self):
         self.assertIn("static void handleResultAsync", self.bridge)
+        self.assertIn("static void handleOpenResultsAsync", self.bridge)
         self.assertIn("io().post(new Runnable()", self.bridge)
-        self.assertIn(
-            "V240AndroidBridge.handleResultAsync(this, requestId, mode, uri, flags, title);",
-            self.picker,
-        )
-        self.assertIn(
-            "V240AndroidBridge.handleResultAsync(this, id, mode, uri, flags, title);",
-            self.mobile_activity,
-        )
+        self.assertIn("V240AndroidBridge.handleOpenResultsAsync(", self.picker)
+        self.assertIn("V240AndroidBridge.handleResultAsync(", self.picker)
+        self.assertIn("V240AndroidBridge.handleOpenResultsAsync(", self.mobile_activity)
+        self.assertIn("V240AndroidBridge.handleResultAsync(", self.mobile_activity)
         for source in (self.picker, self.mobile_activity):
             self.assertNotIn("V240AndroidBridge.handleOpen(this", source)
             self.assertNotIn("V240AndroidBridge.handleSave(this", source)
             self.assertNotIn("V240AndroidBridge.handleFolder(this", source)
 
+    def test_multiselect_and_filter_contract_is_preserved_end_to_end(self):
+        self.assertIn("Intent.EXTRA_ALLOW_MULTIPLE", self.picker)
+        self.assertIn("Intent.EXTRA_ALLOW_MULTIPLE", self.mobile_activity)
+        self.assertIn("getClipData()", self.picker)
+        self.assertIn("getClipData()", self.mobile_activity)
+        self.assertIn("selectFile(String extensions, boolean multiselect)", self.selector)
+        self.assertIn("(Ljava/lang/String;Z)V", self.native)
+        self.assertIn("ExtensionFilterValue", self.native)
+        self.assertIn("ReadFilterExtensions", self.native)
+        self.assertIn("SplitPickerPaths", self.native)
+        self.assertIn("bool multiselect", self.native)
+
+    def test_imported_assets_cannot_become_level_save_targets(self):
+        self.assertIn("isLevelDocument(workingFiles.get(0))", self.bridge)
+        self.assertIn('endsWith(".adofai")', self.bridge)
+        self.assertIn("workingFiles.size() == 1", self.bridge)
+        self.assertIn("uris.length == 1", self.bridge)
+
     def test_launcher_picker_survives_rotation_and_reapplies_device_policy(self):
         self.assertIn("onSaveInstanceState", self.mobile_activity)
         self.assertIn("STATE_REQUEST_ID", self.mobile_activity)
         self.assertIn("pendingRequestId = state.getInt", self.mobile_activity)
+        self.assertIn("STATE_MULTI", self.mobile_activity)
+        self.assertIn("pendingMulti = state.getBoolean", self.mobile_activity)
         self.assertIn("onConfigurationChanged", self.mobile_activity)
         self.assertIn("V240SettingsOverlay.refresh()", self.mobile_activity)
         self.assertIn("onWindowFocusChanged", self.mobile_activity)
@@ -198,8 +218,16 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         self.assertIn("MAX_TREE_DEPTH", self.bridge)
         self.assertIn("budget.bytes += copy(in, out, requestId, remaining)", self.bridge)
 
-    def test_explicit_flush_cancels_pending_background_write(self):
-        self.assertIn("if (IO != null) IO.removeCallbacks(binding.syncTask);\n                syncNow(binding);", self.bridge)
+    def test_explicit_flush_cancels_pending_background_write_before_sync(self):
+        self.assertIn("if (IO != null) IO.removeCallbacks(binding.syncTask)", self.bridge)
+        self.assertIn("if (!binding.active) return true", self.bridge)
+        self.assertIn("syncNow(binding)", self.bridge)
+        self.assertIn("final save sync failed", self.bridge)
+
+    def test_provider_write_mode_has_compatibility_fallbacks(self):
+        self.assertIn('openOutputStream(uri, "wt")', self.bridge)
+        self.assertIn('openOutputStream(uri, "w")', self.bridge)
+        self.assertIn("resolver.openOutputStream(uri)", self.bridge)
 
     def test_rhythm_timing_is_not_modified(self):
         forbidden = (
