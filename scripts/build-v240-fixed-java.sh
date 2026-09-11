@@ -10,6 +10,18 @@ ANDROID_JAR="${SDK}/platforms/${PLATFORM}/android.jar"
 D8="${SDK}/build-tools/${BUILD_TOOLS}/d8"
 test -f "${ANDROID_JAR}"
 test -x "${D8}"
+
+WINDOW_COMPAT="${ROOT}/android/v240-fixed-runtime/java/com/unity3d/player/V240WindowCompat.java"
+BOOTSTRAP="${ROOT}/android/v240-fixed-runtime/java/com/unity3d/player/V240Bootstrap.java"
+grep -Fq 'LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER' "${WINDOW_COMPAT}"
+grep -Fq 'SOFT_INPUT_ADJUST_RESIZE' "${WINDOW_COMPAT}"
+grep -Fq 'setSystemGestureExclusionRects' "${WINDOW_COMPAT}"
+grep -Fq 'height * 0.30f' "${WINDOW_COMPAT}"
+grep -Fq 'height * 0.70f' "${WINDOW_COMPAT}"
+grep -Fq 'V240WindowCompat.apply();' "${BOOTSTRAP}"
+grep -Fq 'main.postDelayed(forceRebind, 500L);' "${BOOTSTRAP}"
+grep -Fq 'main.postDelayed(forceRebind, 1500L);' "${BOOTSTRAP}"
+
 rm -rf "${OUT}"
 mkdir -p "${OUT}/classes" "${OUT}/dex"
 mapfile -t SRC < <(find "${ROOT}/android/v240-fixed-runtime/java" -name '*.java' -print | sort)
