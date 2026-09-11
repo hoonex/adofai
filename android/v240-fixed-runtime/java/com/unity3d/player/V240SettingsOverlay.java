@@ -38,6 +38,7 @@ public final class V240SettingsOverlay {
             "화면 최대 Hz (권장)", "60 FPS", "90 FPS", "120 FPS", "144 FPS", "165 FPS", "240 FPS"
     };
     private static Activity activity;
+    private static volatile boolean installed;
 
     private V240SettingsOverlay() {}
 
@@ -50,17 +51,25 @@ public final class V240SettingsOverlay {
             boolean unlockFps,
             boolean lowLatency);
 
+    public static boolean isInstalled() {
+        return installed;
+    }
+
     public static void install() {
+        if (installed) return;
         final Activity owner = currentActivity();
         if (owner == null || owner.isFinishing()) return;
         activity = owner;
-        pushNative(owner, owner.getSharedPreferences(PREFS, Context.MODE_PRIVATE));
         owner.runOnUiThread(new Runnable() {
             @Override public void run() {
+                if (installed) return;
                 View decor = owner.getWindow().getDecorView();
                 if (!(decor instanceof ViewGroup)) return;
                 ViewGroup root = (ViewGroup) decor;
-                if (root.findViewWithTag(TAG) != null) return;
+                if (root.findViewWithTag(TAG) != null) {
+                    installed = true;
+                    return;
+                }
 
                 final Button gear = new Button(owner);
                 gear.setTag(TAG);
@@ -97,6 +106,8 @@ public final class V240SettingsOverlay {
                     }
                 });
                 gear.requestApplyInsets();
+                pushNative(owner, owner.getSharedPreferences(PREFS, Context.MODE_PRIVATE));
+                installed = true;
             }
         });
     }
