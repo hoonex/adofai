@@ -153,11 +153,12 @@ public final class V240SettingsOverlay {
             final int requestedFps = prefs.getInt("fps_mode", DEFAULT_FPS_MODE);
             final Display.Mode mode = unlock ? selectPreferredMode(owner, requestedFps) : null;
             final int targetFps = unlock ? effectiveTargetFps(owner, mode, requestedFps) : 0;
-            if (unlock && mode != null) {
-                owner.runOnUiThread(new Runnable() {
-                    @Override public void run() { requestDisplayMode(owner, mode); }
-                });
-            }
+            owner.runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (unlock && mode != null) requestDisplayMode(owner, mode);
+                    else if (!unlock) clearDisplayModePreference(owner);
+                }
+            });
             nativeApply(
                     prefs.getFloat("ui_scale", DEFAULT_UI_SCALE),
                     prefs.getFloat("touch_scale", DEFAULT_TOUCH_SCALE),
@@ -225,8 +226,21 @@ public final class V240SettingsOverlay {
     private static void requestDisplayMode(Activity owner, Display.Mode mode) {
         try {
             WindowManager.LayoutParams params = owner.getWindow().getAttributes();
-            if (params.preferredDisplayModeId == mode.getModeId()) return;
+            if (params.preferredDisplayModeId == mode.getModeId()
+                    && Math.abs(params.preferredRefreshRate - mode.getRefreshRate()) < 0.5f) return;
             params.preferredDisplayModeId = mode.getModeId();
+            params.preferredRefreshRate = mode.getRefreshRate();
+            owner.getWindow().setAttributes(params);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void clearDisplayModePreference(Activity owner) {
+        try {
+            WindowManager.LayoutParams params = owner.getWindow().getAttributes();
+            if (params.preferredDisplayModeId == 0 && params.preferredRefreshRate == 0f) return;
+            params.preferredDisplayModeId = 0;
+            params.preferredRefreshRate = 0f;
             owner.getWindow().setAttributes(params);
         } catch (Throwable ignored) {
         }
