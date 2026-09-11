@@ -20,15 +20,6 @@ public final class FileSelector {
 
     /** Exact SFB ABI: preserve caller filters and multiselect intent. */
     public static void selectFile(String extensions, boolean multiselect) {
-        // ADOFAI levels reference song/image files by paths relative to the chart. Android
-        // ACTION_OPEN_DOCUMENT grants only the selected document and cannot safely enumerate
-        // sibling files. For a single level open, use a tree grant and mirror the whole map
-        // folder so those relative assets continue to resolve. Generic/media/ZIP opens keep
-        // normal file-picker semantics, and multi-select remains document based.
-        if (!multiselect && isSingleLevelExtension(extensions)) {
-            start(V240AndroidBridge.beginOpenLevelFolder(), false);
-            return;
-        }
         String[] mimeTypes = mimeTypesForExtensions(extensions);
         String primaryMime = mimeTypes != null && mimeTypes.length == 1 ? mimeTypes[0] : "*/*";
         start(V240AndroidBridge.beginOpen(primaryMime, mimeTypes, multiselect), false);
@@ -80,16 +71,6 @@ public final class FileSelector {
         }, folder ? "adofai-v240-folder" : "adofai-v240-file");
         waiter.setDaemon(true);
         waiter.start();
-    }
-
-    private static boolean isSingleLevelExtension(String raw) {
-        if (raw == null) return false;
-        String value = raw.trim();
-        if (value.indexOf(',') >= 0 || value.indexOf(';') >= 0 || value.indexOf('|') >= 0 ||
-                value.indexOf(' ') >= 0 || value.indexOf('\t') >= 0 || value.indexOf('\n') >= 0) {
-            return false;
-        }
-        return "adofai".equals(normalizeExtension(value));
     }
 
     private static String mimeForFilename(String name) {
