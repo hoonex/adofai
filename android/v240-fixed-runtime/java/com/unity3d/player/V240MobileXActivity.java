@@ -87,8 +87,9 @@ public final class V240MobileXActivity extends UnityPlayerActivity {
                 int mode = intent.getIntExtra(V240AndroidBridge.EXTRA_MODE, 0);
                 String title = intent.getStringExtra(V240AndroidBridge.EXTRA_TITLE);
                 String mime = intent.getStringExtra(V240AndroidBridge.EXTRA_MIME);
+                String[] mimeTypes = intent.getStringArrayExtra(V240AndroidBridge.EXTRA_MIME_TYPES);
                 boolean multi = intent.getBooleanExtra(V240AndroidBridge.EXTRA_MULTI, false);
-                launchPicker(id, mode, title, mime, multi);
+                launchPicker(id, mode, title, mime, mimeTypes, multi);
                 return;
             }
         } catch (Throwable error) {
@@ -98,7 +99,7 @@ public final class V240MobileXActivity extends UnityPlayerActivity {
     }
 
     void launchPicker(final int requestId, final int mode, final String title,
-                      final String mime, final boolean multiselect) {
+                      final String mime, final String[] mimeTypes, final boolean multiselect) {
         runOnUiThread(new Runnable() {
             @Override public void run() {
                 if (requestId <= 0) return;
@@ -113,6 +114,9 @@ public final class V240MobileXActivity extends UnityPlayerActivity {
                         intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                         intent.addCategory(Intent.CATEGORY_OPENABLE);
                         intent.setType(empty(mime) ? "*/*" : mime);
+                        if (mimeTypes != null && mimeTypes.length > 0) {
+                            intent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes);
+                        }
                         intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, multiselect);
                     } else if (mode == V240AndroidBridge.MODE_SAVE) {
                         intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
