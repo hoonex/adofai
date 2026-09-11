@@ -34,9 +34,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  * The old editor expects ordinary filesystem paths. Android document providers return
  * content:// URIs, so this bridge mirrors selected documents into app-private working
  * files and keeps writable Open / Save-As destinations synchronized back to the provider.
- *
- * Native IL2CPP hooks interact with this class through request ids. FileSelector waits
- * on a completion signal while the legacy native facade still polls only FileSelector.
  */
 public final class V240AndroidBridge {
     public static final String TAG = "ADOFAI.V240Bridge";
@@ -53,6 +50,7 @@ public final class V240AndroidBridge {
     private static final int MAX_TREE_DEPTH = 64;
     private static final long MAX_TREE_BYTES = 512L * 1024L * 1024L;
     private static final int COPY_BUFFER_BYTES = 256 * 1024;
+    private static final long MODIFY_DEBOUNCE_MS = 180L;
 
     private static final AtomicInteger NEXT_ID = new AtomicInteger(24000);
     private static final Map<Integer, Result> RESULTS = new ConcurrentHashMap<Integer, Result>();
@@ -96,19 +94,21 @@ public final class V240AndroidBridge {
             this.file = file;
             this.syncTask = new Runnable() {
                 @Override public void run() {
-                    if (!SaveBinding.this.active) return;
-                    try {
-                        syncNow(SaveBinding.this);
-                    } catch (Throwable error) {
-                        Log.e(TAG, "background save sync failed: " + SaveBinding.this.file, error);
+                    synchronized (SaveBinding.this) {
+                        if (!SaveBinding.this.active) return;
+                        try {
+                            syncNow(SaveBinding.this);
+                        } catch (Throwable error) {
+                            Log.e(TAG, "background save sync failed: " + SaveBinding.this.file, error);
+                        }
                     }
                 }
             };
 
-            // Watch the parent directory, not the original inode. Editors commonly save by
-            // writing a temporary file and atomically renaming it over the old one. Watching
-            // the file itself can silently detach in that case; directory MOVED_TO/CREATE
-            // continues to track the logical document name.
+            // Watch the parent directory instead of a single inode. Unity/editor code can
+            // save through a temporary file followed by an atomic rename, which detaches a
+            // file-only observer. CLOSE_WRITE/MOVED_TO/CREATE are terminal save signals and
+            // are pushed back immediately; noisy MODIFY events remain debounced.
             final File parent = file.getParentFile();
             final String watchedName = file.getName();
             this.observer = new FileObserver(parent.getAbsolutePath(),
@@ -116,7 +116,14 @@ public final class V240AndroidBridge {
                             FileObserver.MOVED_TO | FileObserver.CREATE) {
                 @Override public void onEvent(int event, String path) {
                     if (!SaveBinding.this.active) return;
-                    if (path == null || watchedName.equals(path)) scheduleSync(SaveBinding.this);
+                    if (path != null && !watchedName.equals(path)) return;
+                    int type = event & FileObserver.ALL_EVENTS;
+                    if ((type & (FileObserver.CLOSE_WRITE | FileObserver.MOVED_TO |
+                            FileObserver.CREATE)) != 0) {
+                        scheduleSync(SaveBinding.this, 0L);
+                    } else if ((type & FileObserver.MODIFY) != 0) {
+                        scheduleSync(SaveBinding.this, MODIFY_DEBOUNCE_MS);
+                    }
                 }
             };
         }
@@ -155,13 +162,6 @@ public final class V240AndroidBridge {
         }
     }
 
-    /**
-     * Poll format retained for diagnostics/compatibility:
-     * P                pending
-     * O:<filesystem>   success
-     * C:               cancelled
-     * E:<message>      failed
-     */
     public static String poll(int id) {
         Result result = RESULTS.get(id);
         if (result == null) return "E:unknown request";
@@ -262,9 +262,6 @@ public final class V240AndroidBridge {
                 copy(in, out, id, Long.MAX_VALUE);
             }
             ensurePending(id);
-            // ACTION_OPEN_DOCUMENT can grant write access. Bind writable documents so
-            // the editor's ordinary Save command updates the document the user opened,
-            // rather than only changing the app-private mirror.
             if ((grantFlags & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0) {
                 bindSave(context, uri, working);
                 bound = true;
@@ -344,6 +341,7 @@ public final class V240AndroidBridge {
         try {
             synchronized (binding) {
                 if (IO != null) IO.removeCallbacks(binding.syncTask);
+                if (!binding.active) return true;
                 syncNow(binding);
             }
             return true;
@@ -354,11 +352,12 @@ public final class V240AndroidBridge {
     }
 
     private static void bindSave(Context context, Uri uri, File file) {
-        // The editor has one active level document. Retire previous Open/Save-As observers so
-        // switching documents does not accumulate FileObservers and delayed tasks.
+        // Retire the previous document only after a final synchronous flush. This closes a
+        // real data-loss race where a pending MODIFY debounce could otherwise be cancelled
+        // by Open/Save-As before it reached the document provider.
         for (Map.Entry<String, SaveBinding> entry : SAVE_BINDINGS.entrySet()) {
             SaveBinding existing = entry.getValue();
-            if (SAVE_BINDINGS.remove(entry.getKey(), existing)) stopBinding(existing);
+            if (SAVE_BINDINGS.remove(entry.getKey(), existing)) stopBinding(existing, true);
         }
         SaveBinding binding = new SaveBinding(context, uri, file);
         SAVE_BINDINGS.put(file.getAbsolutePath(), binding);
@@ -367,14 +366,24 @@ public final class V240AndroidBridge {
 
     private static void removeSaveBinding(String localPath) {
         SaveBinding binding = SAVE_BINDINGS.remove(localPath);
-        if (binding != null) stopBinding(binding);
+        if (binding != null) stopBinding(binding, true);
     }
 
-    private static void stopBinding(SaveBinding binding) {
+    private static void stopBinding(SaveBinding binding, boolean finalFlush) {
         if (binding == null) return;
         synchronized (binding) {
-            binding.active = false;
+            if (!binding.active) return;
             if (IO != null) IO.removeCallbacks(binding.syncTask);
+            if (finalFlush && binding.file.isFile()) {
+                try {
+                    syncNow(binding);
+                } catch (Throwable error) {
+                    // Do not silently hide a failed final flush: the next document can still
+                    // open, but diagnostics clearly show that provider write-back failed.
+                    Log.e(TAG, "final save sync failed: " + binding.file, error);
+                }
+            }
+            binding.active = false;
             binding.observer.stopWatching();
         }
     }
@@ -395,13 +404,13 @@ public final class V240AndroidBridge {
         }
     }
 
-    private static void scheduleSync(final SaveBinding binding) {
+    private static void scheduleSync(final SaveBinding binding, long delayMs) {
         synchronized (binding) {
             if (!binding.active) return;
-            // True debounce: keep one delayed sync task instead of one Runnable per MODIFY event.
             Handler handler = io();
             handler.removeCallbacks(binding.syncTask);
-            handler.postDelayed(binding.syncTask, 180L);
+            if (delayMs <= 0L) handler.post(binding.syncTask);
+            else handler.postDelayed(binding.syncTask, delayMs);
         }
     }
 
@@ -539,7 +548,19 @@ public final class V240AndroidBridge {
     }
 
     private static OutputStream requireOutput(ContentResolver resolver, Uri uri) throws Exception {
-        OutputStream out = resolver.openOutputStream(uri, "wt");
+        OutputStream out = null;
+        try {
+            out = resolver.openOutputStream(uri, "wt");
+        } catch (Throwable ignored) {
+            // Not every DocumentsProvider implements truncate mode even when it supports write.
+        }
+        if (out == null) {
+            try {
+                out = resolver.openOutputStream(uri, "w");
+            } catch (Throwable ignored) {
+            }
+        }
+        if (out == null) out = resolver.openOutputStream(uri);
         if (out == null) throw new IllegalStateException("document provider returned no output stream");
         return out;
     }
