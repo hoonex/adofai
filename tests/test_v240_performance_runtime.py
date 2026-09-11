@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 JAVA = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java"
 BOOTSTRAP = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240Bootstrap.java"
 BRIDGE = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240AndroidBridge.java"
+PICKER = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240PickerActivity.java"
 NATIVE = ROOT / "android/v240-fixed-runtime/native/V240Fix.cpp"
 
 
@@ -14,6 +15,7 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         cls.java = JAVA.read_text(encoding="utf-8")
         cls.bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
         cls.bridge = BRIDGE.read_text(encoding="utf-8")
+        cls.picker = PICKER.read_text(encoding="utf-8")
         cls.native = NATIVE.read_text(encoding="utf-8")
 
     def test_android_refresh_policy_is_explicit_reversible_and_low_latency(self):
@@ -107,6 +109,17 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         self.assertNotIn("BufferedOutputStream", self.bridge)
         self.assertIn("InputStream in = requireInput", self.bridge)
         self.assertIn("OutputStream out = requireOutput", self.bridge)
+
+    def test_picker_result_io_leaves_activity_main_thread(self):
+        self.assertIn("static void handleResultAsync", self.bridge)
+        self.assertIn("io().post(new Runnable()", self.bridge)
+        self.assertIn(
+            "V240AndroidBridge.handleResultAsync(this, requestId, mode, uri, flags, title);",
+            self.picker,
+        )
+        self.assertNotIn("V240AndroidBridge.handleOpen(this", self.picker)
+        self.assertNotIn("V240AndroidBridge.handleSave(this", self.picker)
+        self.assertNotIn("V240AndroidBridge.handleFolder(this", self.picker)
 
     def test_explicit_flush_cancels_pending_background_write(self):
         self.assertIn("if (IO != null) IO.removeCallbacks(binding.syncTask);\n                syncNow(binding);", self.bridge)
