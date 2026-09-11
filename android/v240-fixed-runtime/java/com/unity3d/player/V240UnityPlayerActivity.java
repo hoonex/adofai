@@ -1,5 +1,6 @@
 package com.unity3d.player;
 
+import android.content.res.Configuration;
 import android.os.Bundle;
 import android.util.Log;
 
@@ -16,12 +17,25 @@ public final class V240UnityPlayerActivity extends UnityPlayerActivity {
         super.onCreate(state);
         ensureRuntime();
         V240SettingsOverlay.install();
+        V240SettingsOverlay.refresh();
     }
 
     @Override protected void onResume() {
         super.onResume();
         ensureRuntime();
         V240SettingsOverlay.install();
+        V240SettingsOverlay.refresh();
+    }
+
+    @Override public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        V240SettingsOverlay.install();
+        V240SettingsOverlay.refresh();
+    }
+
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) V240SettingsOverlay.refresh();
     }
 
     private static synchronized void ensureRuntime() {
