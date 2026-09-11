@@ -15,6 +15,7 @@ public final class V240PickerActivity extends Activity {
     private int mode;
     private String title;
     private String mime;
+    private String[] mimeTypes;
     private boolean multiselect;
     private boolean launched;
 
@@ -24,6 +25,7 @@ public final class V240PickerActivity extends Activity {
         mode = getIntent().getIntExtra(V240AndroidBridge.EXTRA_MODE, 0);
         title = getIntent().getStringExtra(V240AndroidBridge.EXTRA_TITLE);
         mime = getIntent().getStringExtra(V240AndroidBridge.EXTRA_MIME);
+        mimeTypes = getIntent().getStringArrayExtra(V240AndroidBridge.EXTRA_MIME_TYPES);
         multiselect = getIntent().getBooleanExtra(V240AndroidBridge.EXTRA_MULTI, false);
         if (state != null) launched = state.getBoolean("launched", false);
         if (!launched) launchPicker();
@@ -45,6 +47,9 @@ public final class V240PickerActivity extends Activity {
                 intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
                 intent.setType(mime == null || mime.length() == 0 ? "*/*" : mime);
+                if (mimeTypes != null && mimeTypes.length > 0) {
+                    intent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes);
+                }
                 intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, multiselect);
             } else if (mode == V240AndroidBridge.MODE_SAVE) {
                 intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
