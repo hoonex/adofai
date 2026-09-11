@@ -11,12 +11,14 @@ import android.view.Display;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -60,7 +62,7 @@ public final class V240SettingsOverlay {
                 ViewGroup root = (ViewGroup) decor;
                 if (root.findViewWithTag(TAG) != null) return;
 
-                Button gear = new Button(owner);
+                final Button gear = new Button(owner);
                 gear.setTag(TAG);
                 gear.setText("⚙");
                 gear.setContentDescription("ADOFAI 모바일 에디터 설정");
@@ -82,15 +84,32 @@ public final class V240SettingsOverlay {
                 lp.topMargin = dp(10);
                 lp.rightMargin = dp(10);
                 root.addView(gear, lp);
+                gear.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+                    @Override public WindowInsets onApplyWindowInsets(View view, WindowInsets insets) {
+                        ViewGroup.LayoutParams raw = view.getLayoutParams();
+                        if (raw instanceof ViewGroup.MarginLayoutParams) {
+                            ViewGroup.MarginLayoutParams margins = (ViewGroup.MarginLayoutParams) raw;
+                            margins.topMargin = dp(10) + insets.getSystemWindowInsetTop();
+                            margins.rightMargin = dp(10) + insets.getSystemWindowInsetRight();
+                            view.setLayoutParams(margins);
+                        }
+                        return insets;
+                    }
+                });
+                gear.requestApplyInsets();
             }
         });
     }
 
     private static void show(final Activity owner) {
         final SharedPreferences prefs = owner.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        ScrollView scroll = new ScrollView(owner);
+        scroll.setFillViewport(false);
         LinearLayout root = new LinearLayout(owner);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(8), dp(18), dp(8));
+        scroll.addView(root, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView note = new TextView(owner);
         note.setText("원본 게임 파일은 유지하고 런타임에서만 모바일 동작을 조정합니다. 높은 FPS는 발열과 배터리 사용량을 늘릴 수 있습니다.");
@@ -121,7 +140,7 @@ public final class V240SettingsOverlay {
 
         new AlertDialog.Builder(owner)
                 .setTitle("ADOFAI 2.4 모바일 설정")
-                .setView(root)
+                .setView(scroll)
                 .setPositiveButton("적용", new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface dialog, int which) {
                         int fpsIndex = Math.max(0, Math.min(FPS_VALUES.length - 1, fpsMode.getSelectedItemPosition()));
@@ -178,7 +197,7 @@ public final class V240SettingsOverlay {
             Display.Mode[] modes = display.getSupportedModes();
             if (current == null || modes == null || modes.length == 0) return null;
 
-            Display.Mode best = current;
+            Display.Mode best = null;
             float bestRate = 0f;
             int width = current.getPhysicalWidth();
             int height = current.getPhysicalHeight();
