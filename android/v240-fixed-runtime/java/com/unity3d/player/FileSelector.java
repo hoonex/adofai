@@ -2,12 +2,7 @@ package com.unity3d.player;
 
 import java.util.Locale;
 
-/**
- * Compatibility facade consumed by the native SFB hooks.
- *
- * The historical hook protocol polls isDone/getFilePath. Keep that native ABI small,
- * but let the Java waiter sleep on a bridge completion signal instead of polling SAF.
- */
+/** Compatibility facade consumed by the native SFB hooks. */
 public final class FileSelector {
     public static volatile boolean isDone = true;
     private static volatile String filePath = "";
@@ -17,8 +12,14 @@ public final class FileSelector {
 
     private FileSelector() {}
 
+    /** Legacy ABI retained for older native payloads. */
     public static void selectFile(String extensions) {
-        start(V240AndroidBridge.beginOpen(mimeForExtensions(extensions)), false);
+        selectFile(extensions, false);
+    }
+
+    /** Exact SFB ABI: preserve the caller's multiselect intent. */
+    public static void selectFile(String extensions, boolean multiselect) {
+        start(V240AndroidBridge.beginOpen(mimeForExtensions(extensions), multiselect), false);
     }
 
     public static void saveAs(String suggestedName) {
@@ -29,6 +30,10 @@ public final class FileSelector {
         start(V240AndroidBridge.beginFolder(), true);
     }
 
+    /**
+     * Open results are one absolute path or multiple paths joined with the bridge's
+     * control-character separator. Native code decodes it back to string[].
+     */
     public static String getFilePath() { return filePath; }
     public static String getFolderPath() { return folderPath; }
 
@@ -81,9 +86,6 @@ public final class FileSelector {
         String value = raw.trim().toLowerCase(Locale.US);
         if (value.startsWith("*.")) value = value.substring(2);
         else if (value.startsWith(".")) value = value.substring(1);
-        // An ExtensionFilter[] overload can contain several unrelated types. The native
-        // bridge deliberately serializes that as a comma-separated broad fallback; SAF
-        // cannot reliably filter custom .adofai plus media by extension, so keep */*.
         if (value.length() == 0 || value.indexOf(',') >= 0 || value.indexOf(';') >= 0 ||
                 value.indexOf('|') >= 0 || value.indexOf(' ') >= 0) return "*/*";
         if ("png".equals(value)) return "image/png";
@@ -93,8 +95,6 @@ public final class FileSelector {
         if ("wav".equals(value)) return "audio/wav";
         if ("zip".equals(value)) return "application/zip";
         if ("json".equals(value)) return "application/json";
-        // Custom .adofai files are reported as different MIME types by different SAF
-        // providers, so restricting them would hide valid levels on some devices.
         if ("adofai".equals(value)) return "*/*";
         return "*/*";
     }
