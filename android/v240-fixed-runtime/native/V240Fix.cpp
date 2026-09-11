@@ -68,6 +68,24 @@ int64_t SteadyNowNs() {
             std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
+bool MonoStringEqualsAscii(const String* value, const char* ascii, int length) {
+    if (!value || !ascii || value->length != length) return false;
+    for (int i = 0; i < length; ++i) {
+        const auto expected = static_cast<IL2CPP::Il2CppChar>(static_cast<unsigned char>(ascii[i]));
+        if (value->chars[i] != expected) return false;
+    }
+    return true;
+}
+
+bool MonoStringStartsWithAscii(const String* value, const char* ascii, int length) {
+    if (!value || !ascii || value->length < length) return false;
+    for (int i = 0; i < length; ++i) {
+        const auto expected = static_cast<IL2CPP::Il2CppChar>(static_cast<unsigned char>(ascii[i]));
+        if (value->chars[i] != expected) return false;
+    }
+    return true;
+}
+
 bool IsEditorScene() {
     const int64_t now = SteadyNowNs();
     const int64_t cachedAt = g_editorSceneCacheAtNs.load(std::memory_order_acquire);
@@ -77,11 +95,7 @@ bool IsEditorScene() {
 
     bool isEditor = false;
     if (g_getSceneName.IsValid()) {
-        String* name = g_getSceneName.Call();
-        if (name) {
-            const std::string value = name->str();
-            isEditor = value == "scnEditor" || value.rfind("scnEditor", 0) == 0;
-        }
+        isEditor = MonoStringStartsWithAscii(g_getSceneName.Call(), "scnEditor", 9);
     }
     g_editorSceneCacheValue.store(isEditor, std::memory_order_relaxed);
     g_editorSceneCacheAtNs.store(now, std::memory_order_release);
@@ -266,9 +280,9 @@ void HookCanvasSetScaleFactor(IL2CPP::Il2CppObject* self, float factor) {
 }
 
 bool IsDragAxis(String* axis) {
-    if (!axis) return false;
-    const std::string value = axis->str();
-    return value == "Mouse X" || value == "Mouse Y" || value == "Mouse ScrollWheel";
+    return MonoStringEqualsAscii(axis, "Mouse X", 7) ||
+           MonoStringEqualsAscii(axis, "Mouse Y", 7) ||
+           MonoStringEqualsAscii(axis, "Mouse ScrollWheel", 17);
 }
 float HookGetAxis(String* axis) {
     float value = g_oldGetAxis ? g_oldGetAxis(axis) : 0.f;
