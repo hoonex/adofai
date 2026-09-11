@@ -5,9 +5,11 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
+import android.util.DisplayMetrics;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.View;
@@ -57,18 +59,19 @@ public final class V240SettingsOverlay {
     }
 
     public static void install() {
-        if (installed) return;
         final Activity owner = currentActivity();
         if (owner == null || owner.isFinishing()) return;
         activity = owner;
         owner.runOnUiThread(new Runnable() {
             @Override public void run() {
-                if (installed) return;
                 View decor = owner.getWindow().getDecorView();
                 if (!(decor instanceof ViewGroup)) return;
                 ViewGroup root = (ViewGroup) decor;
-                if (root.findViewWithTag(TAG) != null) {
+                View existing = root.findViewWithTag(TAG);
+                if (existing != null) {
                     installed = true;
+                    existing.requestApplyInsets();
+                    pushNative(owner, owner.getSharedPreferences(PREFS, Context.MODE_PRIVATE));
                     return;
                 }
 
@@ -113,6 +116,14 @@ public final class V240SettingsOverlay {
         });
     }
 
+    /** Re-apply device-dependent values after resume, rotation, resize, or display-mode changes. */
+    public static void refresh() {
+        Activity owner = currentActivity();
+        if (owner == null || owner.isFinishing()) return;
+        activity = owner;
+        pushNative(owner, owner.getSharedPreferences(PREFS, Context.MODE_PRIVATE));
+    }
+
     private static void show(final Activity owner) {
         final SharedPreferences prefs = owner.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         ScrollView scroll = new ScrollView(owner);
@@ -124,7 +135,7 @@ public final class V240SettingsOverlay {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView note = new TextView(owner);
-        note.setText("원본 게임 파일은 유지하고 런타임에서만 모바일 동작을 조정합니다. 화면 Hz보다 높은 FPS는 내부 렌더링 부하와 발열을 늘릴 수 있습니다.");
+        note.setText("폰/태블릿의 화면 크기와 DPI를 자동 보정합니다. 원본 게임 파일은 유지하고 런타임에서만 모바일 동작을 조정합니다. 화면 Hz보다 높은 FPS는 내부 렌더링 부하와 발열을 늘릴 수 있습니다.");
         note.setTextSize(13f);
         note.setPadding(0, 0, 0, dp(10));
         root.addView(note);
@@ -185,20 +196,60 @@ public final class V240SettingsOverlay {
             final int requestedFps = prefs.getInt("fps_mode", DEFAULT_FPS_MODE);
             final Display.Mode mode = unlock ? selectPreferredMode(owner, requestedFps) : null;
             final int targetFps = unlock ? effectiveTargetFps(owner, mode, requestedFps) : 0;
+            final float uiScale = deviceAdjustedUiScale(owner,
+                    prefs.getFloat("ui_scale", DEFAULT_UI_SCALE));
+            final float touchScale = deviceAdjustedTouchScale(owner,
+                    prefs.getFloat("touch_scale", DEFAULT_TOUCH_SCALE));
             owner.runOnUiThread(new Runnable() {
                 @Override public void run() {
                     applyWindowPolicy(owner, unlock ? mode : null, lowLatency);
                 }
             });
             nativeApply(
-                    prefs.getFloat("ui_scale", DEFAULT_UI_SCALE),
-                    prefs.getFloat("touch_scale", DEFAULT_TOUCH_SCALE),
+                    uiScale,
+                    touchScale,
                     prefs.getFloat("drag_scale", DEFAULT_DRAG_SCALE),
                     prefs.getBoolean("touch_assist", true),
                     targetFps,
                     unlock,
                     lowLatency);
         } catch (Throwable ignored) {
+        }
+    }
+
+    private static float deviceAdjustedUiScale(Context context, float requestedScale) {
+        int smallest = smallestWidthDp(context);
+        float boost;
+        if (smallest <= 360) boost = 1.18f;
+        else if (smallest <= 400) boost = 1.12f;
+        else if (smallest <= 480) boost = 1.07f;
+        else if (smallest < 600) boost = 1.03f;
+        else boost = 1.00f;
+        return clamp(requestedScale * boost, 0.70f, 1.60f);
+    }
+
+    private static float deviceAdjustedTouchScale(Context context, float requestedScale) {
+        DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+        float density = metrics != null ? metrics.density : 1.0f;
+        density = clamp(density, 1.0f, 3.25f);
+        float extra = Math.max(0f, requestedScale - 1.0f);
+        // Native expands by 40 px per +1.0 scale. Multiplying the extra by density
+        // converts the setting into an approximately dp-stable physical hit margin.
+        return clamp(1.0f + extra * density, 1.0f, 2.0f);
+    }
+
+    private static int smallestWidthDp(Context context) {
+        try {
+            Configuration config = context.getResources().getConfiguration();
+            if (config.smallestScreenWidthDp > 0) return config.smallestScreenWidthDp;
+            int widthDp = config.screenWidthDp;
+            int heightDp = config.screenHeightDp;
+            if (widthDp > 0 && heightDp > 0) return Math.min(widthDp, heightDp);
+            DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+            float density = Math.max(0.5f, metrics.density);
+            return Math.round(Math.min(metrics.widthPixels, metrics.heightPixels) / density);
+        } catch (Throwable ignored) {
+            return 411;
         }
     }
 
@@ -328,6 +379,10 @@ public final class V240SettingsOverlay {
     }
 
     private static int percent(float value) { return Math.round(value * 100f); }
+
+    private static float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
+    }
 
     private static Activity currentActivity() {
         try {
