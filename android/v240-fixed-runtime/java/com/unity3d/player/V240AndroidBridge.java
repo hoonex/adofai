@@ -17,6 +17,7 @@ import android.util.Log;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
@@ -49,6 +50,7 @@ public final class V240AndroidBridge {
     public static final int MODE_FOLDER = 3;
 
     private static final int MAX_TREE_FILES = 4096;
+    private static final int MAX_TREE_DEPTH = 64;
     private static final long MAX_TREE_BYTES = 512L * 1024L * 1024L;
     private static final int COPY_BUFFER_BYTES = 256 * 1024;
 
@@ -74,6 +76,10 @@ public final class V240AndroidBridge {
         final CountDownLatch done = new CountDownLatch(1);
         volatile int state = PENDING;
         volatile String value = "";
+    }
+
+    private static final class RequestCancelledException extends IOException {
+        RequestCancelledException() { super("picker request cancelled"); }
     }
 
     private static final class SaveBinding {
@@ -192,17 +198,25 @@ public final class V240AndroidBridge {
         complete(id, Result.ERROR, safeMessage(error));
     }
 
-    private static void complete(int id, int state, String value) {
+    private static boolean complete(int id, int state, String value) {
         Result result = RESULTS.get(id);
-        if (result == null) return;
-        boolean signal = false;
+        if (result == null) return false;
         synchronized (result) {
-            if (result.state != Result.PENDING) return;
+            if (result.state != Result.PENDING) return false;
             result.value = value == null ? "" : value;
             result.state = state;
-            signal = true;
         }
-        if (signal) result.done.countDown();
+        result.done.countDown();
+        return true;
+    }
+
+    private static boolean isPending(int id) {
+        Result result = RESULTS.get(id);
+        return result != null && result.state == Result.PENDING;
+    }
+
+    private static void ensurePending(int id) throws RequestCancelledException {
+        if (!isPending(id)) throw new RequestCancelledException();
     }
 
     static void handleResultAsync(final Context context, final int id, final int mode,
@@ -210,6 +224,7 @@ public final class V240AndroidBridge {
         final Context appContext = context.getApplicationContext();
         io().post(new Runnable() {
             @Override public void run() {
+                if (!isPending(id)) return;
                 if (mode == MODE_OPEN) {
                     handleOpen(appContext, id, uri, grantFlags);
                 } else if (mode == MODE_SAVE) {
@@ -224,48 +239,81 @@ public final class V240AndroidBridge {
     }
 
     static void handleOpen(Context context, int id, Uri uri, int grantFlags) {
+        File working = null;
+        boolean success = false;
         try {
+            ensurePending(id);
             persist(context, uri, grantFlags);
-            File working = makeWorkingFile(context, displayName(context.getContentResolver(), uri, "level.adofai"));
+            ensurePending(id);
+            working = makeWorkingFile(context,
+                    displayName(context.getContentResolver(), uri, "level.adofai"));
             try (InputStream in = requireInput(context.getContentResolver(), uri);
                  OutputStream out = new FileOutputStream(working)) {
-                copy(in, out);
+                copy(in, out, id, Long.MAX_VALUE);
             }
-            complete(id, Result.OK, working.getAbsolutePath());
+            ensurePending(id);
+            success = complete(id, Result.OK, working.getAbsolutePath());
+        } catch (RequestCancelledException ignored) {
+            // Cancellation already owns the terminal result.
         } catch (Throwable error) {
-            fail(id, error);
+            if (isPending(id)) fail(id, error);
+        } finally {
+            if (!success && working != null) deleteRecursively(working.getParentFile());
         }
     }
 
     static void handleSave(Context context, int id, Uri uri, int grantFlags, String suggestedName) {
+        File working = null;
+        boolean bound = false;
+        boolean success = false;
         try {
+            ensurePending(id);
             persist(context, uri, grantFlags);
+            ensurePending(id);
             String name = displayName(context.getContentResolver(), uri,
                     emptyToDefault(suggestedName, "level.adofai"));
-            File working = makeWorkingFile(context, name);
+            working = makeWorkingFile(context, name);
             if (!working.createNewFile() && !working.isFile()) {
                 throw new IllegalStateException("working save file could not be created");
             }
+            ensurePending(id);
             bindSave(context, uri, working);
-            complete(id, Result.OK, working.getAbsolutePath());
+            bound = true;
+            success = complete(id, Result.OK, working.getAbsolutePath());
+        } catch (RequestCancelledException ignored) {
+            // Cancellation already owns the terminal result.
         } catch (Throwable error) {
-            fail(id, error);
+            if (isPending(id)) fail(id, error);
+        } finally {
+            if (!success && working != null) {
+                if (bound) removeSaveBinding(working.getAbsolutePath());
+                deleteRecursively(working.getParentFile());
+            }
         }
     }
 
     static void handleFolder(Context context, int id, Uri treeUri, int grantFlags) {
+        File mirror = null;
+        boolean success = false;
         try {
+            ensurePending(id);
             persist(context, treeUri, grantFlags);
-            File mirror = new File(context.getFilesDir(), "v240-working/tree-" + UUID.randomUUID());
+            ensurePending(id);
+            mirror = new File(context.getFilesDir(), "v240-working/tree-" + UUID.randomUUID());
             if (!mirror.mkdirs() && !mirror.isDirectory()) {
                 throw new IllegalStateException("tree mirror directory could not be created");
             }
             TreeBudget budget = new TreeBudget();
             String rootId = DocumentsContract.getTreeDocumentId(treeUri);
-            mirrorChildren(context.getContentResolver(), treeUri, rootId, mirror, budget);
-            complete(id, Result.OK, mirror.getAbsolutePath());
+            mirrorChildren(context.getContentResolver(), treeUri, rootId, mirror, budget, id, 0);
+            ensurePending(id);
+            success = complete(id, Result.OK, mirror.getAbsolutePath());
+        } catch (RequestCancelledException ignored) {
+            // Cancellation already owns the terminal result.
         } catch (Throwable error) {
-            fail(id, error);
+            if (isPending(id)) fail(id, error);
+        } finally {
+            if (!success && mirror != null) deleteRecursively(mirror);
         }
     }
 
@@ -295,6 +343,11 @@ public final class V240AndroidBridge {
         SaveBinding binding = new SaveBinding(context, uri, file);
         SAVE_BINDINGS.put(file.getAbsolutePath(), binding);
         binding.observer.startWatching();
+    }
+
+    private static void removeSaveBinding(String localPath) {
+        SaveBinding binding = SAVE_BINDINGS.remove(localPath);
+        if (binding != null) stopBinding(binding);
     }
 
     private static void stopBinding(SaveBinding binding) {
@@ -347,7 +400,12 @@ public final class V240AndroidBridge {
     }
 
     private static void mirrorChildren(ContentResolver resolver, Uri treeUri, String parentId,
-                                       File localParent, TreeBudget budget) throws Exception {
+                                       File localParent, TreeBudget budget, int requestId, int depth)
+            throws Exception {
+        ensurePending(requestId);
+        if (depth > MAX_TREE_DEPTH) {
+            throw new IllegalStateException("selected folder is nested too deeply");
+        }
         Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId);
         Cursor cursor = null;
         try {
@@ -358,24 +416,34 @@ public final class V240AndroidBridge {
                             DocumentsContract.Document.COLUMN_SIZE}, null, null, null);
             if (cursor == null) throw new IllegalStateException("tree provider returned no cursor");
             while (cursor.moveToNext()) {
+                ensurePending(requestId);
                 String documentId = cursor.getString(0);
                 String displayName = sanitizeName(cursor.getString(1));
                 String mime = cursor.getString(2);
-                long size = cursor.isNull(3) ? 0L : Math.max(0L, cursor.getLong(3));
+                long declaredSize = cursor.isNull(3) ? -1L : Math.max(0L, cursor.getLong(3));
                 if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
                     File dir = uniqueChild(localParent, displayName.length() == 0 ? "folder" : displayName);
-                    if (!dir.mkdirs() && !dir.isDirectory()) throw new IllegalStateException("mirror mkdir failed");
-                    mirrorChildren(resolver, treeUri, documentId, dir, budget);
+                    if (!dir.mkdirs() && !dir.isDirectory()) {
+                        throw new IllegalStateException("mirror mkdir failed");
+                    }
+                    mirrorChildren(resolver, treeUri, documentId, dir, budget, requestId, depth + 1);
                     continue;
                 }
-                if (++budget.files > MAX_TREE_FILES || (budget.bytes += size) > MAX_TREE_BYTES) {
+                if (++budget.files > MAX_TREE_FILES) {
+                    throw new IllegalStateException("selected folder has too many files to mirror safely");
+                }
+                long remaining = MAX_TREE_BYTES - budget.bytes;
+                if (remaining < 0 || (declaredSize >= 0 && declaredSize > remaining)) {
                     throw new IllegalStateException("selected folder is too large to mirror safely");
                 }
                 File target = uniqueChild(localParent, displayName.length() == 0 ? "file" : displayName);
                 Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId);
                 try (InputStream in = requireInput(resolver, documentUri);
                      OutputStream out = new FileOutputStream(target)) {
-                    copy(in, out);
+                    budget.bytes += copy(in, out, requestId, remaining);
+                } catch (Throwable error) {
+                    if (target.exists() && !target.delete()) target.deleteOnExit();
+                    throw error;
                 }
             }
         } finally {
@@ -398,7 +466,9 @@ public final class V240AndroidBridge {
 
     private static File makeWorkingFile(Context context, String displayName) {
         File dir = new File(context.getFilesDir(), "v240-working/doc-" + UUID.randomUUID());
-        if (!dir.mkdirs() && !dir.isDirectory()) throw new IllegalStateException("working directory could not be created");
+        if (!dir.mkdirs() && !dir.isDirectory()) {
+            throw new IllegalStateException("working directory could not be created");
+        }
         return new File(dir, sanitizeName(displayName));
     }
 
@@ -455,10 +525,36 @@ public final class V240AndroidBridge {
     }
 
     private static void copy(InputStream in, OutputStream out) throws Exception {
+        copy(in, out, -1, Long.MAX_VALUE);
+    }
+
+    private static long copy(InputStream in, OutputStream out, int requestId, long maxBytes)
+            throws Exception {
         byte[] buffer = COPY_BUFFER.get();
+        long total = 0L;
         int count;
-        while ((count = in.read(buffer)) != -1) out.write(buffer, 0, count);
+        while ((count = in.read(buffer)) != -1) {
+            if (requestId > 0) ensurePending(requestId);
+            total += count;
+            if (total > maxBytes) {
+                throw new IllegalStateException("selected folder is too large to mirror safely");
+            }
+            out.write(buffer, 0, count);
+        }
+        if (requestId > 0) ensurePending(requestId);
         out.flush();
+        return total;
+    }
+
+    private static void deleteRecursively(File file) {
+        if (file == null || !file.exists()) return;
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File child : children) deleteRecursively(child);
+            }
+        }
+        if (!file.delete()) file.deleteOnExit();
     }
 
     private static String sanitizeName(String raw) {
