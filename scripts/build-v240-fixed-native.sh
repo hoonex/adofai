@@ -24,6 +24,7 @@ git -C "${UPSTREAM}" clean -fdx
 
 JNI="${UPSTREAM}/app/src/main/jni"
 cp "${ROOT}/android/v240-fixed-runtime/native/V240Fix.cpp" "${JNI}/V240Fix.cpp"
+cp "${ROOT}/android/v240-fixed-runtime/native/V240TouchAssist.cpp" "${JNI}/V240TouchAssist.cpp"
 
 # The source snapshot was configured for a later Unity build. The user's audited APK
 # is Unity 2021.3.10f1, so make BNM's IL2CPP layout match that exact runtime family.
@@ -75,6 +76,7 @@ LOCAL_SRC_FILES := BNM/src/Class.cpp \
     BNM/src/UnityStructures.cpp \
     BNM/src/Utils.cpp \
     V240Fix.cpp \
+    V240TouchAssist.cpp \
     Logger.cpp
 LOCAL_CPPFLAGS := -std=c++20 -fexceptions -O2
 LOCAL_LDLIBS := -llog -ldl
@@ -91,4 +93,5 @@ cp "${LIB}" "${OUT}/libv240fix.so"
 readelf -h "${OUT}/libv240fix.so" | grep -q 'AArch64'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'JNI_OnLoad'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240SettingsOverlay_nativeApply'
+readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240SettingsOverlay_nativeApplyTouchAssist'
 sha256sum "${OUT}/libv240fix.so" | tee "${OUT}/SHA256SUMS.txt"
