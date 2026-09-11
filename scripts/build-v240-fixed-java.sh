@@ -44,6 +44,10 @@ for marker in \
   'Lcom/unity3d/player/V240PickerActivity;' \
   'Lcom/unity3d/player/V240SettingsOverlay;' \
   'Lcom/unity3d/player/V240WindowCompat;' \
+  'Lcom/unity3d/player/V240LevelFolderBridge;' \
+  'Lcom/unity3d/player/V240ArchiveOpenBridge;' \
+  'Lcom/unity3d/player/V240ZipLevelImporter;' \
+  'Lcom/unity3d/player/V240MapCompatibility;' \
   'Lcom/unity3d/player/FileSelector;'; do
   strings "${OUT}/v240-fixed-runtime.dex" | grep -Fq "${marker}" || { echo "missing payload class: ${marker}" >&2; exit 3; }
 done
