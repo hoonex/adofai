@@ -7,6 +7,7 @@ import android.content.DialogInterface;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.View;
@@ -180,13 +181,13 @@ public final class V240SettingsOverlay {
     private static void pushNative(final Activity owner, SharedPreferences prefs) {
         try {
             final boolean unlock = prefs.getBoolean("fps_unlock", true);
+            final boolean lowLatency = prefs.getBoolean("low_latency", true);
             final int requestedFps = prefs.getInt("fps_mode", DEFAULT_FPS_MODE);
             final Display.Mode mode = unlock ? selectPreferredMode(owner, requestedFps) : null;
             final int targetFps = unlock ? effectiveTargetFps(owner, mode, requestedFps) : 0;
             owner.runOnUiThread(new Runnable() {
                 @Override public void run() {
-                    if (unlock && mode != null) requestDisplayMode(owner, mode);
-                    else if (!unlock) clearDisplayModePreference(owner);
+                    applyWindowPolicy(owner, unlock ? mode : null, lowLatency);
                 }
             });
             nativeApply(
@@ -196,7 +197,7 @@ public final class V240SettingsOverlay {
                     prefs.getBoolean("touch_assist", true),
                     targetFps,
                     unlock,
-                    prefs.getBoolean("low_latency", true));
+                    lowLatency);
         } catch (Throwable ignored) {
         }
     }
@@ -253,25 +254,27 @@ public final class V240SettingsOverlay {
         }
     }
 
-    private static void requestDisplayMode(Activity owner, Display.Mode mode) {
+    private static void applyWindowPolicy(Activity owner, Display.Mode mode, boolean lowLatency) {
         try {
             WindowManager.LayoutParams params = owner.getWindow().getAttributes();
-            if (params.preferredDisplayModeId == mode.getModeId()
-                    && Math.abs(params.preferredRefreshRate - mode.getRefreshRate()) < 0.5f) return;
-            params.preferredDisplayModeId = mode.getModeId();
-            params.preferredRefreshRate = mode.getRefreshRate();
-            owner.getWindow().setAttributes(params);
-        } catch (Throwable ignored) {
-        }
-    }
+            int targetModeId = mode != null ? mode.getModeId() : 0;
+            float targetRefreshRate = mode != null ? mode.getRefreshRate() : 0f;
+            boolean changed = false;
 
-    private static void clearDisplayModePreference(Activity owner) {
-        try {
-            WindowManager.LayoutParams params = owner.getWindow().getAttributes();
-            if (params.preferredDisplayModeId == 0 && params.preferredRefreshRate == 0f) return;
-            params.preferredDisplayModeId = 0;
-            params.preferredRefreshRate = 0f;
-            owner.getWindow().setAttributes(params);
+            if (params.preferredDisplayModeId != targetModeId) {
+                params.preferredDisplayModeId = targetModeId;
+                changed = true;
+            }
+            if (Math.abs(params.preferredRefreshRate - targetRefreshRate) >= 0.5f) {
+                params.preferredRefreshRate = targetRefreshRate;
+                changed = true;
+            }
+            if (Build.VERSION.SDK_INT >= 30
+                    && params.preferMinimalPostProcessing != lowLatency) {
+                params.preferMinimalPostProcessing = lowLatency;
+                changed = true;
+            }
+            if (changed) owner.getWindow().setAttributes(params);
         } catch (Throwable ignored) {
         }
     }
