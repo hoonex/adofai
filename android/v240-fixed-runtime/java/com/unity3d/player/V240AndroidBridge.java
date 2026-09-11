@@ -33,7 +33,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * The old editor expects ordinary filesystem paths. Android document providers return
  * content:// URIs, so this bridge mirrors selected documents into app-private working
- * files and keeps Save-As destinations synchronized back to the provider.
+ * files and keeps writable Open / Save-As destinations synchronized back to the provider.
  *
  * Native IL2CPP hooks interact with this class through request ids. FileSelector waits
  * on a completion signal while the legacy native facade still polls only FileSelector.
@@ -104,10 +104,19 @@ public final class V240AndroidBridge {
                     }
                 }
             };
-            this.observer = new FileObserver(file.getAbsolutePath(),
-                    FileObserver.CLOSE_WRITE | FileObserver.MODIFY | FileObserver.MOVED_TO) {
+
+            // Watch the parent directory, not the original inode. Editors commonly save by
+            // writing a temporary file and atomically renaming it over the old one. Watching
+            // the file itself can silently detach in that case; directory MOVED_TO/CREATE
+            // continues to track the logical document name.
+            final File parent = file.getParentFile();
+            final String watchedName = file.getName();
+            this.observer = new FileObserver(parent.getAbsolutePath(),
+                    FileObserver.CLOSE_WRITE | FileObserver.MODIFY |
+                            FileObserver.MOVED_TO | FileObserver.CREATE) {
                 @Override public void onEvent(int event, String path) {
-                    scheduleSync(SaveBinding.this);
+                    if (!SaveBinding.this.active) return;
+                    if (path == null || watchedName.equals(path)) scheduleSync(SaveBinding.this);
                 }
             };
         }
@@ -240,6 +249,7 @@ public final class V240AndroidBridge {
 
     static void handleOpen(Context context, int id, Uri uri, int grantFlags) {
         File working = null;
+        boolean bound = false;
         boolean success = false;
         try {
             ensurePending(id);
@@ -252,13 +262,23 @@ public final class V240AndroidBridge {
                 copy(in, out, id, Long.MAX_VALUE);
             }
             ensurePending(id);
+            // ACTION_OPEN_DOCUMENT can grant write access. Bind writable documents so
+            // the editor's ordinary Save command updates the document the user opened,
+            // rather than only changing the app-private mirror.
+            if ((grantFlags & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0) {
+                bindSave(context, uri, working);
+                bound = true;
+            }
             success = complete(id, Result.OK, working.getAbsolutePath());
         } catch (RequestCancelledException ignored) {
             // Cancellation already owns the terminal result.
         } catch (Throwable error) {
             if (isPending(id)) fail(id, error);
         } finally {
-            if (!success && working != null) deleteRecursively(working.getParentFile());
+            if (!success && working != null) {
+                if (bound) removeSaveBinding(working.getAbsolutePath());
+                deleteRecursively(working.getParentFile());
+            }
         }
     }
 
@@ -334,8 +354,8 @@ public final class V240AndroidBridge {
     }
 
     private static void bindSave(Context context, Uri uri, File file) {
-        // The editor has one active level document. Retire previous Save-As observers so
-        // repeated Save-As operations do not accumulate FileObservers and delayed tasks.
+        // The editor has one active level document. Retire previous Open/Save-As observers so
+        // switching documents does not accumulate FileObservers and delayed tasks.
         for (Map.Entry<String, SaveBinding> entry : SAVE_BINDINGS.entrySet()) {
             SaveBinding existing = entry.getValue();
             if (SAVE_BINDINGS.remove(entry.getKey(), existing)) stopBinding(existing);
