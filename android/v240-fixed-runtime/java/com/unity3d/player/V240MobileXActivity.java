@@ -1,5 +1,6 @@
 package com.unity3d.player;
 
+import android.content.ClipData;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.net.Uri;
@@ -8,19 +9,9 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.WindowManager;
 
-/**
- * Launcher activity for the historical 2.4 APK.
- *
- * Its fully-qualified name is intentionally the same UTF-16 length as
- * com.unity3d.player.UnityPlayerActivity. The final APK patch can therefore replace
- * the binary AndroidManifest.xml string-pool entry in place without rebuilding the
- * whole resource table.
- *
- * The activity also owns SAF results directly, so no extra Activity declaration is
- * required in the legacy binary manifest. V240AndroidBridge still asks Android to
- * start V240PickerActivity; startActivity intercepts that one internal intent and
- * launches the SAF picker here instead.
- */
+import java.util.ArrayList;
+
+/** Launcher activity used by the legacy manifest-replacement patch path. */
 public final class V240MobileXActivity extends UnityPlayerActivity {
     private static final String TAG = "ADOFAI.V240Mobile";
     private static final int PICK_BASE = 7240;
@@ -29,12 +20,14 @@ public final class V240MobileXActivity extends UnityPlayerActivity {
     private static final String STATE_REQUEST_ID = "v240.pendingRequestId";
     private static final String STATE_MODE = "v240.pendingMode";
     private static final String STATE_TITLE = "v240.pendingTitle";
+    private static final String STATE_MULTI = "v240.pendingMulti";
     private static volatile boolean nativeLoaded;
 
     private int nextPickerCode = PICK_BASE;
     private int pendingRequestId = -1;
     private int pendingMode;
     private String pendingTitle = "";
+    private boolean pendingMulti;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -43,6 +36,7 @@ public final class V240MobileXActivity extends UnityPlayerActivity {
             pendingRequestId = state.getInt(STATE_REQUEST_ID, -1);
             pendingMode = state.getInt(STATE_MODE, 0);
             pendingTitle = state.getString(STATE_TITLE, "");
+            pendingMulti = state.getBoolean(STATE_MULTI, false);
             if (nextPickerCode < PICK_BASE || nextPickerCode >= PICK_BASE + PICK_SPAN) {
                 nextPickerCode = PICK_BASE;
             }
@@ -81,6 +75,7 @@ public final class V240MobileXActivity extends UnityPlayerActivity {
         outState.putInt(STATE_REQUEST_ID, pendingRequestId);
         outState.putInt(STATE_MODE, pendingMode);
         outState.putString(STATE_TITLE, pendingTitle == null ? "" : pendingTitle);
+        outState.putBoolean(STATE_MULTI, pendingMulti);
         super.onSaveInstanceState(outState);
     }
 
@@ -92,7 +87,8 @@ public final class V240MobileXActivity extends UnityPlayerActivity {
                 int mode = intent.getIntExtra(V240AndroidBridge.EXTRA_MODE, 0);
                 String title = intent.getStringExtra(V240AndroidBridge.EXTRA_TITLE);
                 String mime = intent.getStringExtra(V240AndroidBridge.EXTRA_MIME);
-                launchPicker(id, mode, title, mime);
+                boolean multi = intent.getBooleanExtra(V240AndroidBridge.EXTRA_MULTI, false);
+                launchPicker(id, mode, title, mime, multi);
                 return;
             }
         } catch (Throwable error) {
@@ -101,7 +97,8 @@ public final class V240MobileXActivity extends UnityPlayerActivity {
         super.startActivity(intent);
     }
 
-    void launchPicker(final int requestId, final int mode, final String title, final String mime) {
+    void launchPicker(final int requestId, final int mode, final String title,
+                      final String mime, final boolean multiselect) {
         runOnUiThread(new Runnable() {
             @Override public void run() {
                 if (requestId <= 0) return;
@@ -116,6 +113,7 @@ public final class V240MobileXActivity extends UnityPlayerActivity {
                         intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                         intent.addCategory(Intent.CATEGORY_OPENABLE);
                         intent.setType(empty(mime) ? "*/*" : mime);
+                        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, multiselect);
                     } else if (mode == V240AndroidBridge.MODE_SAVE) {
                         intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -134,6 +132,7 @@ public final class V240MobileXActivity extends UnityPlayerActivity {
                     pendingRequestId = requestId;
                     pendingMode = mode;
                     pendingTitle = title == null ? "" : title;
+                    pendingMulti = multiselect;
                     int code = nextPickerCode++;
                     if (nextPickerCode >= PICK_BASE + PICK_SPAN) nextPickerCode = PICK_BASE;
                     startActivityForResult(intent, code);
@@ -152,13 +151,31 @@ public final class V240MobileXActivity extends UnityPlayerActivity {
             String title = pendingTitle;
             clearPending();
 
-            if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+            if (resultCode != RESULT_OK || data == null) {
                 V240AndroidBridge.cancel(id);
                 return;
             }
-            Uri uri = data.getData();
             int flags = data.getFlags();
-            V240AndroidBridge.handleResultAsync(this, id, mode, uri, flags, title);
+            if (mode == V240AndroidBridge.MODE_OPEN) {
+                ArrayList<Uri> uris = new ArrayList<Uri>();
+                ClipData clip = data.getClipData();
+                if (clip != null) {
+                    for (int i = 0; i < clip.getItemCount(); i++) {
+                        Uri uri = clip.getItemAt(i).getUri();
+                        if (uri != null) uris.add(uri);
+                    }
+                }
+                if (uris.isEmpty() && data.getData() != null) uris.add(data.getData());
+                if (uris.isEmpty()) V240AndroidBridge.cancel(id);
+                else V240AndroidBridge.handleOpenResultsAsync(
+                        this, id, uris.toArray(new Uri[uris.size()]), flags);
+                return;
+            }
+            if (data.getData() == null) {
+                V240AndroidBridge.cancel(id);
+                return;
+            }
+            V240AndroidBridge.handleResultAsync(this, id, mode, data.getData(), flags, title);
             return;
         }
         super.onActivityResult(requestCode, resultCode, data);
@@ -177,6 +194,7 @@ public final class V240MobileXActivity extends UnityPlayerActivity {
         pendingRequestId = -1;
         pendingMode = 0;
         pendingTitle = "";
+        pendingMulti = false;
     }
 
     private static synchronized void ensureRuntime() {
