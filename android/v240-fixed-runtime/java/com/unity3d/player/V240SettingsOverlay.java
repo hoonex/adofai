@@ -124,7 +124,7 @@ public final class V240SettingsOverlay {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView note = new TextView(owner);
-        note.setText("원본 게임 파일은 유지하고 런타임에서만 모바일 동작을 조정합니다. 높은 FPS는 발열과 배터리 사용량을 늘릴 수 있습니다.");
+        note.setText("원본 게임 파일은 유지하고 런타임에서만 모바일 동작을 조정합니다. 화면 Hz보다 높은 FPS는 내부 렌더링 부하와 발열을 늘릴 수 있습니다.");
         note.setTextSize(13f);
         note.setPadding(0, 0, 0, dp(10));
         root.addView(note);
@@ -209,29 +209,35 @@ public final class V240SettingsOverlay {
             Display.Mode[] modes = display.getSupportedModes();
             if (current == null || modes == null || modes.length == 0) return null;
 
-            Display.Mode best = null;
-            float bestRate = 0f;
+            Display.Mode highest = null;
+            float highestRate = 0f;
+            Display.Mode atLeastRequested = null;
+            float atLeastRequestedRate = Float.MAX_VALUE;
             int width = current.getPhysicalWidth();
             int height = current.getPhysicalHeight();
-            float ceiling = requestedFps > 0 ? requestedFps + 1.0f : Float.MAX_VALUE;
             for (Display.Mode mode : modes) {
                 if (mode.getPhysicalWidth() != width || mode.getPhysicalHeight() != height) continue;
                 float rate = mode.getRefreshRate();
-                if (rate <= ceiling && rate > bestRate) {
-                    best = mode;
-                    bestRate = rate;
+                if (rate > highestRate) {
+                    highest = mode;
+                    highestRate = rate;
+                }
+                if (requestedFps > 0 && rate + 1.0f >= requestedFps && rate < atLeastRequestedRate) {
+                    atLeastRequested = mode;
+                    atLeastRequestedRate = rate;
                 }
             }
-            return best;
+            if (requestedFps <= 0) return highest;
+            return atLeastRequested != null ? atLeastRequested : highest;
         } catch (Throwable ignored) {
             return null;
         }
     }
 
     private static int effectiveTargetFps(Activity owner, Display.Mode mode, int requestedFps) {
+        if (requestedFps > 0) return Math.max(30, Math.min(240, requestedFps));
         if (mode != null) return Math.max(30, Math.round(mode.getRefreshRate()));
-        int max = Math.max(30, Math.round(maxDisplayRefreshRate(owner)));
-        return requestedFps > 0 ? Math.min(requestedFps, max) : max;
+        return Math.max(30, Math.round(maxDisplayRefreshRate(owner)));
     }
 
     private static float maxDisplayRefreshRate(Activity owner) {
