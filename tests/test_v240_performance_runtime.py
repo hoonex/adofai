@@ -74,14 +74,32 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
 
     def test_save_sync_uses_single_debounced_task(self):
         self.assertIn("final Runnable syncTask", self.bridge)
-        self.assertIn("IO.removeCallbacks(binding.syncTask)", self.bridge)
-        self.assertIn("IO.postDelayed(binding.syncTask, 180L)", self.bridge)
+        self.assertIn("handler.removeCallbacks(binding.syncTask)", self.bridge)
+        self.assertIn("handler.postDelayed(binding.syncTask, 180L)", self.bridge)
         self.assertIn("stopBinding(existing)", self.bridge)
         self.assertIn("binding.observer.stopWatching()", self.bridge)
         self.assertNotIn("volatile long generation", self.bridge)
 
+    def test_storage_worker_is_lazy(self):
+        self.assertIn("private static volatile HandlerThread IO_THREAD", self.bridge)
+        self.assertIn("private static volatile Handler IO", self.bridge)
+        self.assertIn("private static Handler io()", self.bridge)
+        self.assertIn('HandlerThread thread = new HandlerThread("adofai-v240-storage")', self.bridge)
+        self.assertNotIn(
+            'private static final HandlerThread IO_THREAD = new HandlerThread("adofai-v240-storage")',
+            self.bridge,
+        )
+        self.assertNotIn("static {\n        IO_THREAD.start();", self.bridge)
+
+    def test_storage_copy_buffer_is_reused_per_thread(self):
+        self.assertIn("private static final ThreadLocal<byte[]> COPY_BUFFER", self.bridge)
+        self.assertIn("return new byte[COPY_BUFFER_BYTES]", self.bridge)
+        self.assertIn("byte[] buffer = COPY_BUFFER.get()", self.bridge)
+        self.assertEqual(self.bridge.count("new byte[COPY_BUFFER_BYTES]"), 1)
+        self.assertNotIn("new byte[256 * 1024]", self.bridge)
+
     def test_explicit_flush_cancels_pending_background_write(self):
-        self.assertIn("IO.removeCallbacks(binding.syncTask);\n                syncNow(binding);", self.bridge)
+        self.assertIn("if (IO != null) IO.removeCallbacks(binding.syncTask);\n                syncNow(binding);", self.bridge)
 
     def test_rhythm_timing_is_not_modified(self):
         forbidden = (
