@@ -23,6 +23,8 @@ import java.lang.reflect.Field;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -32,9 +34,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * content:// URIs, so this bridge mirrors selected documents into app-private working
  * files and keeps Save-As destinations synchronized back to the provider.
  *
- * Native IL2CPP hooks interact with this class through request ids and polling. That
- * keeps Android Activity lifecycle work out of the game thread and guarantees that a
- * cancelled picker still reaches a terminal state.
+ * Native IL2CPP hooks interact with this class through request ids. FileSelector waits
+ * on a completion signal while the legacy native facade still polls only FileSelector.
  */
 public final class V240AndroidBridge {
     public static final String TAG = "ADOFAI.V240Bridge";
@@ -70,6 +71,7 @@ public final class V240AndroidBridge {
         static final int OK = 1;
         static final int CANCEL = 2;
         static final int ERROR = 3;
+        final CountDownLatch done = new CountDownLatch(1);
         volatile int state = PENDING;
         volatile String value = "";
     }
@@ -139,7 +141,7 @@ public final class V240AndroidBridge {
     }
 
     /**
-     * Poll format used by native runtime:
+     * Poll format retained for diagnostics/compatibility:
      * P                pending
      * O:<filesystem>   success
      * C:               cancelled
@@ -148,11 +150,37 @@ public final class V240AndroidBridge {
     public static String poll(int id) {
         Result result = RESULTS.get(id);
         if (result == null) return "E:unknown request";
-        if (result.state == Result.PENDING) return "P";
-        RESULTS.remove(id);
-        if (result.state == Result.OK) return "O:" + result.value;
-        if (result.state == Result.CANCEL) return "C:";
-        return "E:" + result.value;
+        return consumeResult(id, result);
+    }
+
+    /** Blocks only the FileSelector daemon waiter, never the Android main thread. */
+    static String await(int id, long timeoutMs) {
+        Result result = RESULTS.get(id);
+        if (result == null) return "E:unknown request";
+        try {
+            long waitMs = Math.max(1L, timeoutMs);
+            if (!result.done.await(waitMs, TimeUnit.MILLISECONDS)) {
+                complete(id, Result.ERROR, "picker timeout");
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            complete(id, Result.ERROR, "picker interrupted");
+        }
+        return consumeResult(id, result);
+    }
+
+    private static String consumeResult(int id, Result result) {
+        int state;
+        String value;
+        synchronized (result) {
+            state = result.state;
+            value = result.value;
+        }
+        if (state == Result.PENDING) return "P";
+        RESULTS.remove(id, result);
+        if (state == Result.OK) return "O:" + value;
+        if (state == Result.CANCEL) return "C:";
+        return "E:" + value;
     }
 
     static void cancel(int id) {
@@ -167,8 +195,14 @@ public final class V240AndroidBridge {
     private static void complete(int id, int state, String value) {
         Result result = RESULTS.get(id);
         if (result == null) return;
-        result.value = value == null ? "" : value;
-        result.state = state;
+        boolean signal = false;
+        synchronized (result) {
+            if (result.state != Result.PENDING) return;
+            result.value = value == null ? "" : value;
+            result.state = state;
+            signal = true;
+        }
+        if (signal) result.done.countDown();
     }
 
     static void handleResultAsync(final Context context, final int id, final int mode,
