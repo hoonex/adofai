@@ -1,6 +1,7 @@
 package com.unity3d.player;
 
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -24,6 +25,10 @@ public final class V240MobileXActivity extends UnityPlayerActivity {
     private static final String TAG = "ADOFAI.V240Mobile";
     private static final int PICK_BASE = 7240;
     private static final int PICK_SPAN = 20000;
+    private static final String STATE_NEXT_PICKER = "v240.nextPickerCode";
+    private static final String STATE_REQUEST_ID = "v240.pendingRequestId";
+    private static final String STATE_MODE = "v240.pendingMode";
+    private static final String STATE_TITLE = "v240.pendingTitle";
     private static volatile boolean nativeLoaded;
 
     private int nextPickerCode = PICK_BASE;
@@ -33,9 +38,19 @@ public final class V240MobileXActivity extends UnityPlayerActivity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        if (state != null) {
+            nextPickerCode = state.getInt(STATE_NEXT_PICKER, PICK_BASE);
+            pendingRequestId = state.getInt(STATE_REQUEST_ID, -1);
+            pendingMode = state.getInt(STATE_MODE, 0);
+            pendingTitle = state.getString(STATE_TITLE, "");
+            if (nextPickerCode < PICK_BASE || nextPickerCode >= PICK_BASE + PICK_SPAN) {
+                nextPickerCode = PICK_BASE;
+            }
+        }
         ensureRuntime();
         applyWindowPolicy();
         V240SettingsOverlay.install();
+        V240SettingsOverlay.refresh();
     }
 
     @Override protected void onResume() {
@@ -43,6 +58,30 @@ public final class V240MobileXActivity extends UnityPlayerActivity {
         ensureRuntime();
         applyWindowPolicy();
         V240SettingsOverlay.install();
+        V240SettingsOverlay.refresh();
+    }
+
+    @Override public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        applyWindowPolicy();
+        V240SettingsOverlay.install();
+        V240SettingsOverlay.refresh();
+    }
+
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            applyWindowPolicy();
+            V240SettingsOverlay.refresh();
+        }
+    }
+
+    @Override protected void onSaveInstanceState(Bundle outState) {
+        outState.putInt(STATE_NEXT_PICKER, nextPickerCode);
+        outState.putInt(STATE_REQUEST_ID, pendingRequestId);
+        outState.putInt(STATE_MODE, pendingMode);
+        outState.putString(STATE_TITLE, pendingTitle == null ? "" : pendingTitle);
+        super.onSaveInstanceState(outState);
     }
 
     @Override public void startActivity(Intent intent) {
@@ -119,18 +158,19 @@ public final class V240MobileXActivity extends UnityPlayerActivity {
             }
             Uri uri = data.getData();
             int flags = data.getFlags();
-            if (mode == V240AndroidBridge.MODE_OPEN) {
-                V240AndroidBridge.handleOpen(this, id, uri, flags);
-            } else if (mode == V240AndroidBridge.MODE_SAVE) {
-                V240AndroidBridge.handleSave(this, id, uri, flags, title);
-            } else if (mode == V240AndroidBridge.MODE_FOLDER) {
-                V240AndroidBridge.handleFolder(this, id, uri, flags);
-            } else {
-                V240AndroidBridge.fail(id, new IllegalStateException("lost picker mode"));
-            }
+            V240AndroidBridge.handleResultAsync(this, id, mode, uri, flags, title);
             return;
         }
         super.onActivityResult(requestCode, resultCode, data);
+    }
+
+    @Override protected void onDestroy() {
+        if (isFinishing() && pendingRequestId > 0) {
+            int id = pendingRequestId;
+            clearPending();
+            V240AndroidBridge.cancel(id);
+        }
+        super.onDestroy();
     }
 
     private void clearPending() {
