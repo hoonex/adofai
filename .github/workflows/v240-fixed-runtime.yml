@@ -6,6 +6,7 @@ on:
     paths:
       - 'android/v240-fixed-runtime/**'
       - 'scripts/build-v240-fixed-java.sh'
+      - 'tests/test_v240_performance_runtime.py'
       - '.github/workflows/v240-fixed-runtime.yml'
   workflow_dispatch:
 
@@ -25,6 +26,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Verify high-refresh safety contract
+        run: python3 -m unittest discover -s tests -p 'test_v240_performance_runtime.py'
       - uses: android-actions/setup-android@v3
       - name: Install Android toolchain
         run: |
@@ -41,6 +44,9 @@ jobs:
           grep -q 'ACTION_OPEN_DOCUMENT_TREE' android/v240-fixed-runtime/java/com/unity3d/player/V240PickerActivity.java
           grep -q 'FileObserver' android/v240-fixed-runtime/java/com/unity3d/player/V240AndroidBridge.java
           grep -q 'V240SettingsOverlay' android/v240-fixed-runtime/java/com/unity3d/player/V240Bootstrap.java
+          grep -q 'preferredDisplayModeId' android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java
+          grep -q 'preferredRefreshRate' android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java
+          grep -q 'fps_unlock' android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java
           ! grep -R -q 'libOctober\|Companion\|OfficialGameBridge' android/v240-fixed-runtime
       - uses: actions/upload-artifact@v4
         with:
