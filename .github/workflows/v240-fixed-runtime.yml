@@ -43,6 +43,11 @@ jobs:
           grep -q 'ACTION_CREATE_DOCUMENT' android/v240-fixed-runtime/java/com/unity3d/player/V240PickerActivity.java
           grep -q 'ACTION_OPEN_DOCUMENT_TREE' android/v240-fixed-runtime/java/com/unity3d/player/V240PickerActivity.java
           grep -q 'FileObserver' android/v240-fixed-runtime/java/com/unity3d/player/V240AndroidBridge.java
+          grep -q 'stopBinding(existing, true)' android/v240-fixed-runtime/java/com/unity3d/player/V240AndroidBridge.java
+          grep -q 'MODIFY_DEBOUNCE_MS' android/v240-fixed-runtime/java/com/unity3d/player/V240AndroidBridge.java
+          grep -q 'scheduleSync(SaveBinding.this, 0L)' android/v240-fixed-runtime/java/com/unity3d/player/V240AndroidBridge.java
+          grep -q 'openOutputStream(uri, "wt")' android/v240-fixed-runtime/java/com/unity3d/player/V240AndroidBridge.java
+          grep -q 'openOutputStream(uri, "w")' android/v240-fixed-runtime/java/com/unity3d/player/V240AndroidBridge.java
           grep -q 'V240SettingsOverlay' android/v240-fixed-runtime/java/com/unity3d/player/V240Bootstrap.java
           grep -q 'preferredDisplayModeId' android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java
           grep -q 'preferredRefreshRate' android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java
