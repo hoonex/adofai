@@ -79,12 +79,23 @@ public final class V240AndroidBridge {
         final Uri uri;
         final File file;
         final FileObserver observer;
-        volatile long generation;
+        final Runnable syncTask;
+        volatile boolean active = true;
 
         SaveBinding(final Context context, final Uri uri, final File file) {
             this.context = context.getApplicationContext();
             this.uri = uri;
             this.file = file;
+            this.syncTask = new Runnable() {
+                @Override public void run() {
+                    if (!SaveBinding.this.active) return;
+                    try {
+                        syncNow(SaveBinding.this);
+                    } catch (Throwable error) {
+                        Log.e(TAG, "background save sync failed: " + SaveBinding.this.file, error);
+                    }
+                }
+            };
             this.observer = new FileObserver(file.getAbsolutePath(),
                     FileObserver.CLOSE_WRITE | FileObserver.MODIFY | FileObserver.MOVED_TO) {
                 @Override public void onEvent(int event, String path) {
@@ -211,7 +222,10 @@ public final class V240AndroidBridge {
         SaveBinding binding = SAVE_BINDINGS.get(localPath);
         if (binding == null) return true;
         try {
-            syncNow(binding);
+            synchronized (binding) {
+                IO.removeCallbacks(binding.syncTask);
+                syncNow(binding);
+            }
             return true;
         } catch (Throwable error) {
             Log.e(TAG, "explicit save flush failed", error);
@@ -220,25 +234,33 @@ public final class V240AndroidBridge {
     }
 
     private static void bindSave(Context context, Uri uri, File file) {
-        SaveBinding old = SAVE_BINDINGS.remove(file.getAbsolutePath());
-        if (old != null) old.observer.stopWatching();
+        // The editor has one active level document. Retire previous Save-As observers so
+        // repeated Save-As operations do not accumulate FileObservers and delayed tasks.
+        for (Map.Entry<String, SaveBinding> entry : SAVE_BINDINGS.entrySet()) {
+            SaveBinding existing = entry.getValue();
+            if (SAVE_BINDINGS.remove(entry.getKey(), existing)) stopBinding(existing);
+        }
         SaveBinding binding = new SaveBinding(context, uri, file);
         SAVE_BINDINGS.put(file.getAbsolutePath(), binding);
         binding.observer.startWatching();
     }
 
+    private static void stopBinding(SaveBinding binding) {
+        if (binding == null) return;
+        synchronized (binding) {
+            binding.active = false;
+            IO.removeCallbacks(binding.syncTask);
+            binding.observer.stopWatching();
+        }
+    }
+
     private static void scheduleSync(final SaveBinding binding) {
-        final long expected = ++binding.generation;
-        IO.postDelayed(new Runnable() {
-            @Override public void run() {
-                if (binding.generation != expected) return;
-                try {
-                    syncNow(binding);
-                } catch (Throwable error) {
-                    Log.e(TAG, "background save sync failed: " + binding.file, error);
-                }
-            }
-        }, 180L);
+        synchronized (binding) {
+            if (!binding.active) return;
+            // True debounce: keep one delayed sync task instead of one Runnable per MODIFY event.
+            IO.removeCallbacks(binding.syncTask);
+            IO.postDelayed(binding.syncTask, 180L);
+        }
     }
 
     private static void syncNow(SaveBinding binding) throws Exception {
