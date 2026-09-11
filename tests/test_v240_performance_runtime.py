@@ -3,6 +3,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 JAVA = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java"
+BRIDGE = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240AndroidBridge.java"
 NATIVE = ROOT / "android/v240-fixed-runtime/native/V240Fix.cpp"
 
 
@@ -10,6 +11,7 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.java = JAVA.read_text(encoding="utf-8")
+        cls.bridge = BRIDGE.read_text(encoding="utf-8")
         cls.native = NATIVE.read_text(encoding="utf-8")
 
     def test_android_refresh_policy_is_explicit_and_reversible(self):
@@ -36,6 +38,17 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         self.assertIn("kEditorSceneCacheNs", self.native)
         self.assertIn("g_editorSceneCacheAtNs", self.native)
         self.assertIn("IsDragAxis(axis) && IsEditorScene()", self.native)
+
+    def test_save_sync_uses_single_debounced_task(self):
+        self.assertIn("final Runnable syncTask", self.bridge)
+        self.assertIn("IO.removeCallbacks(binding.syncTask)", self.bridge)
+        self.assertIn("IO.postDelayed(binding.syncTask, 180L)", self.bridge)
+        self.assertIn("stopBinding(existing)", self.bridge)
+        self.assertIn("binding.observer.stopWatching()", self.bridge)
+        self.assertNotIn("volatile long generation", self.bridge)
+
+    def test_explicit_flush_cancels_pending_background_write(self):
+        self.assertIn("IO.removeCallbacks(binding.syncTask);\n                syncNow(binding);", self.bridge)
 
     def test_rhythm_timing_is_not_modified(self):
         forbidden = (
