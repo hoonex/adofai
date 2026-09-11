@@ -32,12 +32,12 @@ public final class V240Bootstrap {
                 attempts++;
                 try {
                     V240SettingsOverlay.install();
+                    if (V240SettingsOverlay.isInstalled()) return;
                 } catch (Throwable error) {
                     Log.w(TAG, "mobile settings overlay install attempt failed", error);
                 }
                 // init() can be injected at the first onCreate instruction. UnityPlayer.currentActivity
-                // may not exist yet, so keep retrying during the short startup window. install() is
-                // idempotent and refuses to add a duplicate button once it succeeds.
+                // may not exist yet, so retry only until the overlay is actually installed.
                 if (attempts < 24) main.postDelayed(this, 250L);
             }
         });
