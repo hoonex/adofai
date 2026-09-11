@@ -38,6 +38,7 @@ public final class V240AndroidBridge {
     public static final String EXTRA_MODE = "dev.hoonex.adofai.v240.MODE";
     public static final String EXTRA_TITLE = "dev.hoonex.adofai.v240.TITLE";
     public static final String EXTRA_MIME = "dev.hoonex.adofai.v240.MIME";
+    public static final String EXTRA_MIME_TYPES = "dev.hoonex.adofai.v240.MIME_TYPES";
     public static final String EXTRA_MULTI = "dev.hoonex.adofai.v240.MULTI";
 
     public static final int MODE_OPEN = 1;
@@ -124,23 +125,28 @@ public final class V240AndroidBridge {
     }
 
     public static int beginOpen(String mime) {
-        return beginOpen(mime, false);
+        return beginOpen(mime, null, false);
     }
 
     public static int beginOpen(String mime, boolean multiselect) {
-        return begin(MODE_OPEN, "", emptyToDefault(mime, "*/*"), multiselect);
+        return beginOpen(mime, null, multiselect);
+    }
+
+    public static int beginOpen(String mime, String[] mimeTypes, boolean multiselect) {
+        return begin(MODE_OPEN, "", emptyToDefault(mime, "*/*"), mimeTypes, multiselect);
     }
 
     public static int beginSave(String suggestedName, String mime) {
         return begin(MODE_SAVE, sanitizeName(emptyToDefault(suggestedName, "level.adofai")),
-                emptyToDefault(mime, "application/octet-stream"), false);
+                emptyToDefault(mime, "application/octet-stream"), null, false);
     }
 
     public static int beginFolder() {
-        return begin(MODE_FOLDER, "", "", false);
+        return begin(MODE_FOLDER, "", "", null, false);
     }
 
-    private static int begin(int mode, String title, String mime, boolean multiselect) {
+    private static int begin(int mode, String title, String mime,
+                             String[] mimeTypes, boolean multiselect) {
         Activity activity = currentActivity();
         if (activity == null || activity.isFinishing()) return -1;
         int id = NEXT_ID.incrementAndGet();
@@ -150,6 +156,9 @@ public final class V240AndroidBridge {
         proxy.putExtra(EXTRA_MODE, mode);
         proxy.putExtra(EXTRA_TITLE, title);
         proxy.putExtra(EXTRA_MIME, mime);
+        if (mimeTypes != null && mimeTypes.length > 0) {
+            proxy.putExtra(EXTRA_MIME_TYPES, mimeTypes.clone());
+        }
         proxy.putExtra(EXTRA_MULTI, multiselect);
         try {
             activity.startActivity(proxy);
