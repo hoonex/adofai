@@ -72,13 +72,7 @@ public final class V240PickerActivity extends Activity {
         }
         Uri uri = data.getData();
         int flags = data.getFlags();
-        if (mode == V240AndroidBridge.MODE_OPEN) {
-            V240AndroidBridge.handleOpen(this, requestId, uri, flags);
-        } else if (mode == V240AndroidBridge.MODE_SAVE) {
-            V240AndroidBridge.handleSave(this, requestId, uri, flags, title);
-        } else {
-            V240AndroidBridge.handleFolder(this, requestId, uri, flags);
-        }
+        V240AndroidBridge.handleResultAsync(this, requestId, mode, uri, flags, title);
         finish();
     }
 
