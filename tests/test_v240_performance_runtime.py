@@ -9,6 +9,8 @@ PICKER = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240PickerAc
 MOBILE_ACTIVITY = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240MobileXActivity.java"
 SELECTOR = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/FileSelector.java"
 NATIVE = ROOT / "android/v240-fixed-runtime/native/V240Fix.cpp"
+TOUCH_NATIVE = ROOT / "android/v240-fixed-runtime/native/V240TouchAssist.cpp"
+NATIVE_BUILD = ROOT / "scripts/build-v240-fixed-native.sh"
 
 
 class V240PerformanceRuntimeContract(unittest.TestCase):
@@ -21,6 +23,8 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         cls.mobile_activity = MOBILE_ACTIVITY.read_text(encoding="utf-8")
         cls.selector = SELECTOR.read_text(encoding="utf-8")
         cls.native = NATIVE.read_text(encoding="utf-8")
+        cls.touch_native = TOUCH_NATIVE.read_text(encoding="utf-8")
+        cls.native_build = NATIVE_BUILD.read_text(encoding="utf-8")
 
     def test_android_refresh_policy_is_explicit_reversible_and_low_latency(self):
         self.assertIn("private static void applyWindowPolicy", self.java)
@@ -56,12 +60,27 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
     def test_phone_and_tablet_ui_touch_scaling_is_device_adaptive(self):
         self.assertIn("deviceAdjustedUiScale", self.java)
         self.assertIn("deviceAdjustedTouchScale", self.java)
+        self.assertIn("deviceTouchRadiusPx", self.java)
         self.assertIn("smallestWidthDp", self.java)
         self.assertIn("metrics.density", self.java)
         self.assertIn("extra * density", self.java)
         self.assertIn("if (smallest <= 360) boost = 1.18f", self.java)
         self.assertIn("else if (smallest < 600) boost = 1.03f", self.java)
         self.assertIn("else boost = 1.00f", self.java)
+
+    def test_enhanced_touch_hook_expands_actual_eventsystem_hit_test_with_safe_fallback(self):
+        self.assertIn("nativeApplyTouchAssist(boolean enabled, float radiusPx)", self.java)
+        self.assertIn("enhancedTouch ? 1.0f : legacyTouchScale", self.java)
+        self.assertIn('Class eventSystem("UnityEngine.EventSystems", "EventSystem")', self.touch_native)
+        self.assertIn('eventSystem.GetMethod("RaycastAll")', self.touch_native)
+        self.assertIn('input.GetMethod("get_touchCount", 0)', self.touch_native)
+        self.assertIn("g_listCount[results].Get() == 0", self.touch_native)
+        self.assertIn("HasActiveTouch()", self.touch_native)
+        self.assertIn("IsEditorScene()", self.touch_native)
+        self.assertIn("RaycastAt", self.touch_native)
+        self.assertIn("g_pointerPosition[eventData].Set(original)", self.touch_native)
+        self.assertIn("V240TouchAssist.cpp", self.native_build)
+        self.assertIn("nativeApplyTouchAssist'", self.native_build)
 
     def test_native_fps_policy_intercepts_only_render_pacing(self):
         self.assertIn('Class application("UnityEngine", "Application")', self.native)
@@ -192,6 +211,7 @@ class V240PerformanceRuntimeContract(unittest.TestCase):
         )
         for marker in forbidden:
             self.assertNotIn(marker, self.native, marker)
+            self.assertNotIn(marker, self.touch_native, marker)
 
 
 if __name__ == "__main__":
