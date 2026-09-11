@@ -57,6 +57,7 @@ Class g_pointerEventDataClass;
 Class g_raycastResultClass;
 Class g_listRaycastResultClass;
 Method<void> g_raycastAll;
+Method<void> g_listClear;
 Property<Vector2> g_pointerPosition;
 Property<int> g_listCount;
 
@@ -280,31 +281,42 @@ float HookGetAxisRaw(String* axis) {
     return value;
 }
 
-bool RaycastUi(Vector2 point) {
+bool RaycastUiWithContext(IL2CPP::Il2CppObject* eventSystem,
+                          IL2CPP::Il2CppObject* eventData,
+                          IL2CPP::Il2CppObject* results,
+                          Vector2 point,
+                          bool clearResults) {
+    if (clearResults) g_listClear[results].Call();
+    g_pointerPosition[eventData].Set(point);
+    g_raycastAll[eventSystem].Call(eventData, results);
+    return g_listCount[results].Get() > 0;
+}
+
+bool ExpandedUiHit(Vector2 point, float radius) {
     if (!g_eventSystemCurrent.IsValid() || !g_pointerEventDataClass || !g_listRaycastResultClass ||
-        !g_raycastAll.IsValid() || !g_pointerPosition.IsValid() || !g_listCount.IsValid()) return false;
+        !g_raycastAll.IsValid() || !g_listClear.IsValid() ||
+        !g_pointerPosition.IsValid() || !g_listCount.IsValid()) return false;
     IL2CPP::Il2CppObject* eventSystem = g_eventSystemCurrent.Get();
     if (!eventSystem) return false;
     IL2CPP::Il2CppObject* eventData = g_pointerEventDataClass.CreateNewObjectParameters(eventSystem);
     if (!eventData) return false;
-    g_pointerPosition[eventData].Set(point);
     IL2CPP::Il2CppObject* results = g_listRaycastResultClass.CreateNewObjectParameters();
     if (!results) return false;
-    g_raycastAll[eventSystem].Call(eventData, results);
-    return g_listCount[results].Get() > 0;
+
+    if (RaycastUiWithContext(eventSystem, eventData, results, point, false)) return true;
+    if (radius < 1.0f) return false;
+    return RaycastUiWithContext(eventSystem, eventData, results, Vector2(point.x + radius, point.y), true) ||
+           RaycastUiWithContext(eventSystem, eventData, results, Vector2(point.x - radius, point.y), true) ||
+           RaycastUiWithContext(eventSystem, eventData, results, Vector2(point.x, point.y + radius), true) ||
+           RaycastUiWithContext(eventSystem, eventData, results, Vector2(point.x, point.y - radius), true);
 }
 
 bool HookInsideUI(IL2CPP::Il2CppObject* self, Vector2 point) {
     if (g_oldInsideUI && g_oldInsideUI(self, point)) return true;
     if (!g_touchAssist.load(std::memory_order_relaxed) || !IsEditorScene()) return false;
-    if (RaycastUi(point)) return true;
     float scale = std::max(1.0f, g_touchScale.load(std::memory_order_relaxed));
     float radius = (scale - 1.0f) * 40.0f;
-    if (radius < 1.0f) return false;
-    return RaycastUi(Vector2(point.x + radius, point.y)) ||
-           RaycastUi(Vector2(point.x - radius, point.y)) ||
-           RaycastUi(Vector2(point.x, point.y + radius)) ||
-           RaycastUi(Vector2(point.x, point.y - radius));
+    return ExpandedUiHit(point, radius);
 }
 
 void HookSetTargetFrameRate(int fps) {
@@ -412,7 +424,10 @@ void InstallMobileHooks() {
     if (g_raycastResultClass) g_listRaycastResultClass = list.GetGeneric({g_raycastResultClass.GetCompileTimeClass()});
     g_raycastAll = eventSystem.GetMethod("RaycastAll");
     g_pointerPosition = g_pointerEventDataClass.GetProperty("position");
-    if (g_listRaycastResultClass) g_listCount = g_listRaycastResultClass.GetProperty("Count");
+    if (g_listRaycastResultClass) {
+        g_listCount = g_listRaycastResultClass.GetProperty("Count");
+        g_listClear = g_listRaycastResultClass.GetMethod("Clear", 0);
+    }
 
     Class application("UnityEngine", "Application");
     auto setTargetFrameRate = application.GetMethod("set_targetFrameRate", 1);
