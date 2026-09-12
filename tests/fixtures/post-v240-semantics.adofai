@@ -1,0 +1,62 @@
+{
+    "angleData": [0, 90, 180, 270],
+    "settings": {
+        "version": 15,
+        "artist": "Compatibility Fixture",
+        "song": "Post-v2.4 Semantics",
+        "futureSetting": {
+            "mustSurvive": true
+        }
+    },
+    "actions": [
+        {
+            "floor": 0,
+            "eventType": "MoveCamera",
+            "position": [10, null],
+            "futureAxisSemantics": "preserve"
+        },
+        {
+            "floor": 1,
+            "eventType": "SetFrameRate",
+            "frameRate": 144,
+            "editorOnly": true,
+            "angleOffset": 0
+        },
+        {
+            "floor": 2,
+            "eventType": "SetInputEvent",
+            "inputAction": "FixtureAction",
+            "inputEventState": "Subscribe",
+            "inputEventTarget": "Pressed",
+            "editorOnly": true,
+            "angleOffset": 0
+        },
+        {
+            "floor": 2,
+            "eventType": "RepeatEvents",
+            "eventTag": "fixture-repeat",
+            "gapLength": 2,
+            "futureRepeatField": "preserve"
+        },
+        {
+            "floor": 3,
+            "eventType": "RecolorTrack",
+            "trackColor": "ff00ff",
+            "texture": "fixture.png",
+            "futureRecolorField": [1, 2, 3]
+        }
+    ],
+    "decorations": [
+        {
+            "floor": 0,
+            "eventType": "AddParticle",
+            "particle": "fixture",
+            "futureParticleField": {
+                "x": 1
+            }
+        }
+    ],
+    "futureTopLevel": {
+        "mustSurvive": true
+    }
+}
