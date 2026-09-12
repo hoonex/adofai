@@ -83,6 +83,27 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
         for marker in expected:
             self.assertIn(marker, self.event_source)
 
+    def test_tile_dimensions_probe_requires_exact_float_floor_fields(self):
+        expected = (
+            'Class scrFloor("", "scrFloor")',
+            'scrFloor.GetField("lengthMult")',
+            'scrFloor.GetField("widthMult")',
+            'const Class floatClass = Defaults::Get<float>().ToClass();',
+            'SameManagedType(floorLengthMult.GetType(), floatClass)',
+            'SameManagedType(floorWidthMult.GetType(), floatClass)',
+            'tileDimensionsSurface = scrFloor',
+            'V240: TileDimensions ABI scrFloor=%d lengthMultFloat=%d widthMultFloat=%d compatible=%d',
+        )
+        for marker in expected:
+            self.assertIn(marker, self.event_source)
+
+        start = self.event_source.index('auto floorLengthMult =')
+        end = self.event_source.index('LOGD("V240: TileDimensions ABI', start)
+        probe = self.event_source[start:end]
+        self.assertNotIn(".Set(", probe)
+        self.assertNotIn("BasicHook", probe)
+        self.assertNotIn("CreateNewObject", probe)
+
     def test_marker_is_deliberately_not_a_valid_call_method_expression(self):
         prefix = '__V240_SET_FRAME_RATE__:'
         self.assertIn(prefix, self.event_source)
@@ -165,6 +186,7 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
         self.assertIn("V240: compatibility surface LevelData=%d", self.probe)
         self.assertIn("scrCamera.SetCustomFrameRate=%d", self.probe)
         self.assertIn("V240: event compat probe ffxCallMethod=%d", self.event_source)
+        self.assertIn("V240: TileDimensions ABI scrFloor=%d", self.event_source)
         self.assertIn("SetFrameRate execution backport ready", self.event_source)
         self.assertIn("opaque preserve-only mode retained", self.event_source)
 
