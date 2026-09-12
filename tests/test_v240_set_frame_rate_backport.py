@@ -31,6 +31,9 @@ class V240SetFrameRateBackportContract(unittest.TestCase):
     def test_execution_subset_is_deliberately_conservative(self):
         self.assertIn('findTopLevelBoolean(eventObject, "active")', self.backport)
         self.assertIn("Boolean.FALSE.equals(active)", self.backport)
+        self.assertIn('findTopLevelRawValue(eventObject, "editorOnly")', self.backport)
+        self.assertIn('findTopLevelBoolean(eventObject, "editorOnly")', self.backport)
+        self.assertIn("Boolean.TRUE.equals(editorOnly)", self.backport)
         self.assertIn('findTopLevelString(eventObject, "eventTag")', self.backport)
         self.assertIn("!eventTag.isEmpty()", self.backport)
         self.assertIn('findTopLevelBoolean(eventObject, "enabled")', self.backport)
@@ -83,6 +86,22 @@ class V240SetFrameRateBackportContract(unittest.TestCase):
                             "angleOffset was not preserved");
                     check(TOKEN.equals(V240SetFrameRateBackport.tokenFromPlaceholder(carrier)),
                             "carrier token did not round trip");
+
+                    String explicitGameplay = "{\"eventType\":\"SetFrameRate\","
+                            + "\"enabled\":true,\"frameRate\":120,\"editorOnly\":false}";
+                    check(V240SetFrameRateBackport.maybePlaceholder(
+                            explicitGameplay, 2, TOKEN, true) != null,
+                            "explicit editorOnly=false must remain executable");
+                    check(V240SetFrameRateBackport.maybePlaceholder(
+                            "{\"eventType\":\"SetFrameRate\",\"enabled\":true,"
+                                    + "\"frameRate\":120,\"editorOnly\":true}",
+                            2, TOKEN, true) == null,
+                            "editor-only event must stay preserve-only");
+                    check(V240SetFrameRateBackport.maybePlaceholder(
+                            "{\"eventType\":\"SetFrameRate\",\"enabled\":true,"
+                                    + "\"frameRate\":120,\"editorOnly\":7}",
+                            2, TOKEN, true) == null,
+                            "unknown editorOnly encoding must stay preserve-only");
 
                     check(V240SetFrameRateBackport.maybePlaceholder(good, 2, TOKEN, false) == null,
                             "runtime capability gate was bypassed");
