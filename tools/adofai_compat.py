@@ -128,6 +128,12 @@ V240_SEMANTIC_DRIFT_POLICY: Mapping[str, Mapping[str, Any]] = {
         "policy": "preserve_and_verify",
         "reason": "failure/restart transient-state reset behavior changed after v2.4",
     },
+    "SetDefaultText": {
+        "changed": "2.9.3",
+        "domain": "default_state",
+        "policy": "preserve_and_verify",
+        "reason": "the later editor corrected the Level Title Text default from the erroneous 'no key' value to an empty string",
+    },
     "RepeatEvents": {
         "changed": "2.6.0/3.1.0",
         "domain": "event_dispatch",
@@ -135,10 +141,10 @@ V240_SEMANTIC_DRIFT_POLICY: Mapping[str, Mapping[str, Any]] = {
         "reason": "repeat behavior was improved and later gained gap-length semantics; exact serialized gap key is intentionally not guessed",
     },
     "ColorTrack": {
-        "changed": "3.3.1",
-        "domain": "partial_update",
+        "changed": "2.8.0/3.3.1",
+        "domain": "scope_partial_update",
         "policy": "preserve_and_verify",
-        "reason": "later optional-property semantics may differ from v2.4 full-state updates",
+        "reason": "later builds added a current-tile-only scope and then optional-property semantics; exact serialized scope fields are not guessed",
     },
     "RecolorTrack": {
         "changed": "3.3.1",
@@ -163,6 +169,12 @@ V240_SEMANTIC_DRIFT_POLICY: Mapping[str, Mapping[str, Any]] = {
         "domain": "partial_update",
         "policy": "preserve_and_verify",
         "reason": "independent X/Y updates were added after the baseline",
+    },
+    "MultiPlanet": {
+        "changed": "2.9.7",
+        "domain": "gameplay_geometry_timing",
+        "policy": "preserve_and_verify",
+        "reason": "later builds added three-planet support for 360-degree turnaround tiles, so the same chart geometry can resolve differently",
     },
 }
 
