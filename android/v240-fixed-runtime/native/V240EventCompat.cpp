@@ -24,7 +24,8 @@ std::atomic<bool> g_probeComplete{false};
 std::atomic<bool> g_setFrameRateBackportReady{false};
 
 Field<String*> g_callMethodName;
-Field<IL2CPP::Il2CppObject*> g_cameraInstance;
+Field<IL2CPP::Il2CppObject*> g_cameraInstanceField;
+Property<IL2CPP::Il2CppObject*> g_cameraInstanceProperty;
 Method<void> g_setCustomFrameRateInt;
 Method<void> g_setCustomFrameRateFloat;
 void (*g_oldCallMethodStartEffect)(IL2CPP::Il2CppObject*, IL2CPP::Il2CppObject*) = nullptr;
@@ -79,9 +80,21 @@ bool ParseSetFrameRateMarker(String* value, bool* enabledOut, float* frameRateOu
     return true;
 }
 
+IL2CPP::Il2CppObject* GetCameraInstance() {
+    if (g_cameraInstanceProperty.IsValid()) {
+        Property<IL2CPP::Il2CppObject*> property = g_cameraInstanceProperty;
+        IL2CPP::Il2CppObject* camera = property.Get();
+        if (camera) return camera;
+    }
+    if (g_cameraInstanceField.IsValid()) {
+        Field<IL2CPP::Il2CppObject*> field = g_cameraInstanceField;
+        return field.Get();
+    }
+    return nullptr;
+}
+
 bool ApplySetFrameRate(bool enabled, float frameRate) {
-    Field<IL2CPP::Il2CppObject*> cameraInstance = g_cameraInstance;
-    IL2CPP::Il2CppObject* camera = cameraInstance.Get();
+    IL2CPP::Il2CppObject* camera = GetCameraInstance();
     if (!camera) return false;
 
     if (g_setCustomFrameRateFloat.IsValid()) {
@@ -130,7 +143,8 @@ void ProbeAndInstallEventCompat() {
     auto callMethodStartEffect = (ffxCallMethod && scrPlanet)
             ? ffxCallMethod.GetMethod("StartEffect", {scrPlanet.GetCompileTimeClass()})
             : MethodBase{};
-    auto cameraInstance = scrCamera ? scrCamera.GetField("instance") : FieldBase{};
+    auto cameraInstanceField = scrCamera ? scrCamera.GetField("instance") : FieldBase{};
+    auto cameraInstanceProperty = scrCamera ? scrCamera.GetProperty("instance") : PropertyBase{};
     auto setCustomFrameRateInt = scrCamera
             ? scrCamera.GetMethod("SetCustomFrameRate", {Defaults::Get<bool>(), Defaults::Get<int>()})
             : MethodBase{};
@@ -144,8 +158,11 @@ void ProbeAndInstallEventCompat() {
     const Class floatClass = Defaults::Get<float>().ToClass();
     const bool methodNameString = callMethodName.IsValid()
             && SameManagedType(callMethodName.GetType(), stringClass);
-    const bool cameraInstanceTyped = cameraInstance.IsValid()
-            && SameManagedType(cameraInstance.GetType(), scrCamera);
+    const bool cameraInstanceFieldTyped = cameraInstanceField.IsValid()
+            && SameManagedType(cameraInstanceField.GetType(), scrCamera);
+    const bool cameraInstancePropertyTyped = cameraInstanceProperty.IsValid()
+            && SameManagedType(cameraInstanceProperty.GetType(), scrCamera);
+    const bool cameraInstanceTyped = cameraInstanceFieldTyped || cameraInstancePropertyTyped;
     const bool frameRateMethod = setCustomFrameRateInt.IsValid() || setCustomFrameRateFloat.IsValid();
     const bool schedulerSurface = ffxCallMethod
             && methodNameString
@@ -159,13 +176,14 @@ void ProbeAndInstallEventCompat() {
             && floorLengthMultFloat
             && floorWidthMultFloat;
 
-    LOGD("V240: event compat probe ffxCallMethod=%d methodNameString=%d Decode=%d StartEffect=%d scrCamera=%d instance=%d SetCustomFrameRate=%d bool-int=%d bool-float=%d",
+    LOGD("V240: event compat probe ffxCallMethod=%d methodNameString=%d Decode=%d StartEffect=%d scrCamera=%d instanceField=%d instanceProperty=%d SetCustomFrameRate=%d bool-int=%d bool-float=%d",
          ffxCallMethod ? 1 : 0,
          methodNameString ? 1 : 0,
          callMethodDecode.IsValid() ? 1 : 0,
          callMethodStartEffect.IsValid() ? 1 : 0,
          scrCamera ? 1 : 0,
-         cameraInstanceTyped ? 1 : 0,
+         cameraInstanceFieldTyped ? 1 : 0,
+         cameraInstancePropertyTyped ? 1 : 0,
          frameRateMethod ? 1 : 0,
          setCustomFrameRateInt.IsValid() ? 1 : 0,
          setCustomFrameRateFloat.IsValid() ? 1 : 0);
@@ -182,7 +200,8 @@ void ProbeAndInstallEventCompat() {
     }
 
     g_callMethodName = callMethodName;
-    g_cameraInstance = cameraInstance;
+    if (cameraInstanceFieldTyped) g_cameraInstanceField = cameraInstanceField;
+    if (cameraInstancePropertyTyped) g_cameraInstanceProperty = cameraInstanceProperty;
     g_setCustomFrameRateInt = setCustomFrameRateInt;
     g_setCustomFrameRateFloat = setCustomFrameRateFloat;
     BasicHook(callMethodStartEffect, HookCallMethodStartEffect, g_oldCallMethodStartEffect);
