@@ -1,4 +1,9 @@
 from pathlib import Path
+import base64
+import shutil
+import subprocess
+import tempfile
+import textwrap
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,6 +80,207 @@ class V240OpaqueEventBridgeContract(unittest.TestCase):
     def test_runtime_dex_contract_contains_scanner_and_opaque_bridge(self):
         self.assertIn('Lcom/unity3d/player/V240ChartCompatibilityScanner;', self.build)
         self.assertIn('Lcom/unity3d/player/V240OpaqueEventBridge;', self.build)
+
+    def test_production_java_round_trip_is_byte_exact_and_fail_closed_before_export(self):
+        javac = shutil.which("javac")
+        java = shutil.which("java")
+        self.assertIsNotNone(javac, "JDK javac is required for the opaque bridge behavior contract")
+        self.assertIsNotNone(java, "JDK java is required for the opaque bridge behavior contract")
+
+        original_text = (
+            '{\r\n'
+            '  "pathData":"R!R",\r\n'
+            '  "settings":{"songFilename":"song.ogg","artist":"홍길동"},\r\n'
+            '  "actions":[\r\n'
+            '    {"floor":1,"eventType":"MoveCamera","duration":1},\r\n'
+            '    {"floor":2,"eventType":"SetFrameRate","frameRate":144,'
+            '"nested":{"brace":"{still-json}","items":[1,{"q":"\\\\\\\""}]},"label":"한글"},\r\n'
+            '    {"floor":3,"eventType":"SetInputEvent","eventTag":"x:y","active":true}\r\n'
+            '  ],\r\n'
+            '  "decorations":[\r\n'
+            '    {"floor":4,"eventType":"AddParticle","tag":"fx",'
+            '"params":{"seed":7,"literal":"}{"}},\r\n'
+            '    {"floor":5,"eventType":"AddDecoration","decorationImage":"bg.png","opacity":50}\r\n'
+            '  ]\r\n'
+            '}\r\n'
+        )
+        original = b"\xef\xbb\xbf" + original_text.encode("utf-8")
+        known_only = (
+            '{"pathData":"R","actions":[{"floor":1,"eventType":"MoveCamera"}],'
+            '"decorations":[]}\n'
+        ).encode("utf-8")
+
+        original_b64 = base64.b64encode(original).decode("ascii")
+        known_b64 = base64.b64encode(known_only).decode("ascii")
+
+        log_source = textwrap.dedent(
+            """
+            package android.util;
+            public final class Log {
+                public static int d(String tag, String msg) { return 0; }
+                public static int w(String tag, String msg) { return 0; }
+                public static int w(String tag, String msg, Throwable error) { return 0; }
+                public static int e(String tag, String msg) { return 0; }
+                public static int e(String tag, String msg, Throwable error) { return 0; }
+            }
+            """
+        )
+
+        harness_source = textwrap.dedent(
+            f"""
+            package com.unity3d.player;
+
+            import java.io.File;
+            import java.io.IOException;
+            import java.nio.charset.StandardCharsets;
+            import java.nio.file.Files;
+            import java.nio.file.Path;
+            import java.util.Arrays;
+            import java.util.Base64;
+            import java.util.stream.Stream;
+
+            public final class V240OpaqueEventBridgeHostTest {{
+                private static void check(boolean value, String message) {{
+                    if (!value) throw new AssertionError(message);
+                }}
+
+                private static void same(byte[] expected, byte[] actual, String message) {{
+                    if (!Arrays.equals(expected, actual)) {{
+                        throw new AssertionError(message + " expected=" + expected.length
+                                + " actual=" + actual.length);
+                    }}
+                }}
+
+                private static long countExports(Path root, String chartName) throws IOException {{
+                    try (Stream<Path> files = Files.list(root)) {{
+                        return files.filter(path -> path.getFileName().toString().startsWith(
+                                chartName + ".v240-export-"))
+                                .count();
+                    }}
+                }}
+
+                public static void main(String[] args) throws Exception {{
+                    Path root = Files.createTempDirectory("v240-opaque-host-");
+                    byte[] original = Base64.getDecoder().decode("{original_b64}");
+                    byte[] knownOnly = Base64.getDecoder().decode("{known_b64}");
+
+                    Path chart = root.resolve("level.adofai");
+                    Files.write(chart, original);
+                    check(V240OpaqueEventBridge.prepareForV240(chart.toFile()),
+                            "modern chart was not prepared");
+                    check(V240OpaqueEventBridge.hasSession(chart.toFile()),
+                            "opaque session marker was not created");
+
+                    Path session = root.resolve("level.adofai.v240-opaque-events");
+                    check(Files.isDirectory(session), "opaque session directory missing");
+                    check("3".equals(Files.readString(session.resolve(".ready"),
+                                    StandardCharsets.UTF_8)),
+                            "unexpected opaque replacement count");
+
+                    String prepared = Files.readString(chart, StandardCharsets.UTF_8);
+                    check(prepared.contains("__V240_OPAQUE__:"), "opaque marker missing");
+                    check(prepared.contains("\\\"eventType\\\":\\\"EditorComment\\\""),
+                            "action placeholder missing");
+                    check(prepared.contains("\\\"eventType\\\":\\\"AddDecoration\\\""),
+                            "decoration placeholder missing");
+
+                    File restored = V240OpaqueEventBridge.buildRestoredExport(chart.toFile());
+                    check(restored != null && restored.isFile(), "restored export missing");
+                    same(original, Files.readAllBytes(restored.toPath()),
+                            "prepare/restore was not byte exact");
+                    V240OpaqueEventBridge.releaseRestoredExport(restored);
+                    check(!restored.exists(), "restored export temp was not released");
+
+                    Path saveAs = root.resolve("saved-as.adofai");
+                    Files.write(saveAs, new byte[0]);
+                    check(V240OpaqueEventBridge.cloneSession(chart.toFile(), saveAs.toFile()),
+                            "Save As sidecar clone failed");
+                    Files.write(saveAs, Files.readAllBytes(chart));
+                    File restoredSaveAs = V240OpaqueEventBridge.buildRestoredExport(saveAs.toFile());
+                    same(original, Files.readAllBytes(restoredSaveAs.toPath()),
+                            "cloned Save As session did not restore the original chart");
+                    V240OpaqueEventBridge.releaseRestoredExport(restoredSaveAs);
+
+                    Path known = root.resolve("known-only.adofai");
+                    Files.write(known, knownOnly);
+                    check(!V240OpaqueEventBridge.prepareForV240(known.toFile()),
+                            "known-only chart should not create opaque state");
+                    same(knownOnly, Files.readAllBytes(known),
+                            "known-only chart was unexpectedly mutated");
+                    check(!V240OpaqueEventBridge.hasSession(known.toFile()),
+                            "known-only chart unexpectedly has opaque state");
+
+                    Path corrupt = root.resolve("corrupt.adofai");
+                    Files.write(corrupt, Files.readAllBytes(chart));
+                    check(V240OpaqueEventBridge.cloneSession(chart.toFile(), corrupt.toFile()),
+                            "corrupt-case sidecar clone failed");
+                    Path corruptSession = root.resolve("corrupt.adofai.v240-opaque-events");
+                    Path payload;
+                    try (Stream<Path> files = Files.list(corruptSession)) {{
+                        payload = files.filter(path -> path.getFileName().toString().endsWith(".json"))
+                                .findFirst()
+                                .orElseThrow(() -> new AssertionError("opaque payload missing"));
+                    }}
+                    Files.delete(payload);
+                    long before = countExports(root, "corrupt.adofai");
+                    boolean failed = false;
+                    try {{
+                        V240OpaqueEventBridge.buildRestoredExport(corrupt.toFile());
+                    }} catch (IOException expected) {{
+                        failed = true;
+                    }}
+                    check(failed, "missing sidecar payload did not fail the export");
+                    check(before == countExports(root, "corrupt.adofai"),
+                            "failed export leaked a partially restored temp file");
+                }}
+            }}
+            """
+        )
+
+        with tempfile.TemporaryDirectory(prefix="v240-opaque-java-") as temp:
+            temp_root = Path(temp)
+            classes = temp_root / "classes"
+            log_java = temp_root / "android/util/Log.java"
+            harness_java = temp_root / "com/unity3d/player/V240OpaqueEventBridgeHostTest.java"
+            log_java.parent.mkdir(parents=True)
+            harness_java.parent.mkdir(parents=True)
+            classes.mkdir()
+            log_java.write_text(log_source, encoding="utf-8")
+            harness_java.write_text(harness_source, encoding="utf-8")
+
+            compile_result = subprocess.run(
+                [
+                    javac,
+                    "-encoding", "UTF-8",
+                    "-d", str(classes),
+                    str(log_java),
+                    str(SCANNER),
+                    str(OPAQUE),
+                    str(harness_java),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(
+                0,
+                compile_result.returncode,
+                "production opaque bridge host compile failed:\n"
+                + compile_result.stdout + compile_result.stderr,
+            )
+
+            run_result = subprocess.run(
+                [java, "-cp", str(classes), "com.unity3d.player.V240OpaqueEventBridgeHostTest"],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(
+                0,
+                run_result.returncode,
+                "production opaque bridge behavior contract failed:\n"
+                + run_result.stdout + run_result.stderr,
+            )
 
 
 if __name__ == "__main__":
