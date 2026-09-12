@@ -141,6 +141,28 @@ class AdoFaiCompatTests(unittest.TestCase):
         )
         self.assertTrue(all(item["policy"] == "preserve_and_verify" for item in v240["structuralRisks"]))
 
+    def test_post_v240_fixture_survives_normalization_losslessly(self):
+        fixture = ROOT / "tests" / "fixtures" / "post-v240-semantics.adofai"
+        level = compat.load_adofai(fixture)
+        normalized = compat.normalize_level(level)
+        self.assertEqual(normalized, level)
+
+        report = compat.inspect_level(normalized)
+        v240 = report["v240Compatibility"]
+        self.assertEqual(v240["nativeEmulationCandidates"], ["SetFrameRate"])
+        self.assertIn("SetInputEvent", v240["preserveOnlyEventTypes"])
+        self.assertIn("AddParticle", v240["preserveOnlyEventTypes"])
+        self.assertEqual(v240["firstFloorEventCount"], 2)
+
+        actions = {item["eventType"]: item for item in normalized["actions"]}
+        self.assertEqual(actions["SetFrameRate"]["frameRate"], 144)
+        self.assertTrue(actions["SetFrameRate"]["editorOnly"])
+        self.assertEqual(actions["RepeatEvents"]["gapLength"], 2)
+        self.assertEqual(actions["RepeatEvents"]["futureRepeatField"], "preserve")
+        self.assertEqual(actions["RecolorTrack"]["texture"], "fixture.png")
+        self.assertEqual(actions["RecolorTrack"]["futureRecolorField"], [1, 2, 3])
+        self.assertEqual(normalized["futureTopLevel"], {"mustSurvive": True})
+
 
 if __name__ == "__main__":
     unittest.main()
