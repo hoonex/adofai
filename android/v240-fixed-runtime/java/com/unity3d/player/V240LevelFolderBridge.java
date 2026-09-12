@@ -257,6 +257,15 @@ public final class V240LevelFolderBridge {
             if (state.chart == null || state.chartUri == null) {
                 throw new IllegalArgumentException("selected folder does not contain an .adofai level");
             }
+
+            // Compatibility rewrites belong to the private mirror, never the authoritative SAF
+            // document merely because the user opened it. Run them before constructing/starting
+            // the write-back FileObserver so no backport or targeted legacy workaround can be
+            // mistaken for an editor save.
+            V240ChartBackport.backportForV240(state.chart);
+            V240HallLegacyFix.applyIfNeeded(state.chart);
+            ensurePending(id);
+
             if ((grantFlags & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0) {
                 installed = new SaveBinding(context, state.chartUri, state.chart);
                 replaceActiveBinding(installed);
