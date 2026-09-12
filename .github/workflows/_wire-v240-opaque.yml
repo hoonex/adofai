@@ -1,0 +1,40 @@
+name: One-shot wire v2.4 opaque bridge
+
+on:
+  push:
+    branches: [fix/v240-custom-bugfix]
+    paths:
+      - '.github/workflows/_wire-v240-opaque.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v240-custom-bugfix
+          fetch-depth: 0
+
+      - name: Apply exact bounded patch
+        run: python3 scripts/wire-v240-opaque.py
+
+      - name: Verify source-level preservation contract
+        run: |
+          python3 -m unittest discover -s tests -p 'test_v240_opaque_event_bridge.py' -v
+          python3 -m unittest discover -s tests -p 'test_v240_performance_runtime.py'
+          python3 -m unittest discover -s tests -p 'test_adofai_compat.py' -v
+          git diff --check
+
+      - name: Commit product changes and remove one-shot patch runner
+        run: |
+          set -euo pipefail
+          rm -f scripts/wire-v240-opaque.py .github/workflows/_wire-v240-opaque.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'Wire lossless opaque event save path'
+          git push origin HEAD:fix/v240-custom-bugfix
