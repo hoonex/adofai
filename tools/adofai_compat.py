@@ -15,7 +15,7 @@ import argparse
 import copy
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
 PATH_DATA_TABLE: Mapping[str, int] = {
     "R": 0, "p": 15, "J": 30, "E": 45, "T": 60, "o": 75,
@@ -314,6 +314,33 @@ def _policy_records(event_types: Iterable[str], policy: Mapping[str, Mapping[str
     return records
 
 
+def _first_floor_event_risks(level: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """Report, but never rewrite, events placed on floor 0.
+
+    Later editor builds explicitly made first-floor events authorable. Moving such an event to
+    floor 1 is not a lossless downgrade because it changes when state is initialized, so the
+    compatibility layer only records exact array/index/type evidence for runtime review.
+    """
+    risks: List[Dict[str, Any]] = []
+    for section in ("actions", "decorations"):
+        items = level.get(section, [])
+        if not isinstance(items, list):
+            continue
+        for index, item in enumerate(items):
+            if not isinstance(item, dict) or item.get("floor") != 0:
+                continue
+            risks.append({
+                "kind": "first_floor_event",
+                "section": section,
+                "index": index,
+                "floor": 0,
+                "eventType": str(item.get("eventType")) if item.get("eventType") is not None else None,
+                "policy": "preserve_and_verify",
+                "reason": "moving a floor-0 event would change trigger timing; no automatic downgrade is lossless",
+            })
+    return risks
+
+
 def v240_compatibility_report(level: Mapping[str, Any]) -> Dict[str, Any]:
     action_types = _event_types(level.get("actions", []))
     decoration_types = _event_types(level.get("decorations", []))
@@ -321,6 +348,7 @@ def v240_compatibility_report(level: Mapping[str, Any]) -> Dict[str, Any]:
 
     post_baseline = _policy_records(all_types, V240_POST_BASELINE_EVENT_POLICY)
     semantic_drift = _policy_records(all_types, V240_SEMANTIC_DRIFT_POLICY)
+    structural_risks = _first_floor_event_risks(level)
     preserve_only = sorted(
         record["eventType"] for record in post_baseline
         if record.get("policy") == "preserve_only"
@@ -340,10 +368,12 @@ def v240_compatibility_report(level: Mapping[str, Any]) -> Dict[str, Any]:
         "unknownEventsAreDeleted": False,
         "postV240Events": post_baseline,
         "semanticDriftEvents": semantic_drift,
+        "structuralRisks": structural_risks,
+        "firstFloorEventCount": len(structural_risks),
         "preserveOnlyEventTypes": preserve_only,
         "nativeEmulationCandidates": native_candidates,
         "gameplayMeaningRiskEventTypes": gameplay_risks,
-        "requiresRuntimeReview": bool(post_baseline or semantic_drift),
+        "requiresRuntimeReview": bool(post_baseline or semantic_drift or structural_risks),
     }
 
 
@@ -418,7 +448,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--normalize", metavar="OUTPUT", type=Path, help="write normalized JSON to this file")
     parser.add_argument("--convert-path-data", action="store_true", help="convert legacy pathData to angleData when angleData is absent")
     parser.add_argument("--fail-on-unknown-event", action="store_true", help="exit non-zero if an event type is not in the pinned modern inventory")
-    parser.add_argument("--fail-on-v240-runtime-review", action="store_true", help="exit non-zero when the chart contains post-v2.4 or later-semantics events that require runtime review")
+    parser.add_argument("--fail-on-v240-runtime-review", action="store_true", help="exit non-zero when the chart contains post-v2.4, later-semantics, or structural events that require runtime review")
     return parser
 
 
