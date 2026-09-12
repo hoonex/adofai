@@ -46,6 +46,7 @@ for marker in \
   'Lcom/unity3d/player/V240SettingsOverlay;' \
   'Lcom/unity3d/player/V240WindowCompat;' \
   'Lcom/unity3d/player/V240EventCompat;' \
+  'Lcom/unity3d/player/V240SetFrameRateBackport;' \
   'Lcom/unity3d/player/V240LevelFolderBridge;' \
   'Lcom/unity3d/player/V240ArchiveOpenBridge;' \
   'Lcom/unity3d/player/V240ZipLevelImporter;' \
