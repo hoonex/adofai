@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 JAVA = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player"
 OPAQUE = JAVA / "V240OpaqueEventBridge.java"
 SCANNER = JAVA / "V240ChartCompatibilityScanner.java"
+EVENT_COMPAT = JAVA / "V240EventCompat.java"
+SET_FRAME_BACKPORT = JAVA / "V240SetFrameRateBackport.java"
 ANDROID_BRIDGE = JAVA / "V240AndroidBridge.java"
 LEVEL_BRIDGE = JAVA / "V240LevelFolderBridge.java"
 SELECTOR = JAVA / "FileSelector.java"
@@ -21,18 +23,21 @@ class V240OpaqueEventBridgeContract(unittest.TestCase):
     def setUpClass(cls):
         cls.opaque = OPAQUE.read_text(encoding="utf-8")
         cls.scanner = SCANNER.read_text(encoding="utf-8")
+        cls.backport = SET_FRAME_BACKPORT.read_text(encoding="utf-8")
         cls.android = ANDROID_BRIDGE.read_text(encoding="utf-8")
         cls.level = LEVEL_BRIDGE.read_text(encoding="utf-8")
         cls.selector = SELECTOR.read_text(encoding="utf-8")
         cls.build = BUILD.read_text(encoding="utf-8")
 
-    def test_preserve_only_placeholders_are_inactive_and_sidecar_backed(self):
+    def test_fallback_placeholders_stay_inactive_and_sidecar_backed(self):
         self.assertIn('MARKER_PREFIX = "__V240_OPAQUE__:"', self.opaque)
         self.assertIn('"eventType\\":\\"EditorComment\\"', self.opaque)
         self.assertIn('"eventType\\":\\"AddDecoration\\"', self.opaque)
         self.assertIn('\\"active\\":false', self.opaque)
         self.assertIn('writeSmallFile(new File(session, token + ".json"), eventObject)', self.opaque)
         self.assertIn('copyUtf8File(original, writer)', self.opaque)
+        self.assertIn('V240SetFrameRateBackport.maybePlaceholder', self.opaque)
+        self.assertIn('V240SetFrameRateBackport.tokenFromPlaceholder', self.opaque)
         self.assertNotIn('LevelEventType', self.opaque)
         self.assertNotIn('libil2cpp', self.opaque)
 
@@ -77,9 +82,10 @@ class V240OpaqueEventBridgeContract(unittest.TestCase):
         self.assertIn('V240OpaqueEventBridge.prepareForV240(chart)', self.selector)
         self.assertNotIn('V240ChartCompatibilityScanner.scanAndLog(chart)', self.selector)
 
-    def test_runtime_dex_contract_contains_scanner_and_opaque_bridge(self):
+    def test_runtime_dex_contract_contains_scanner_opaque_bridge_and_backport_codec(self):
         self.assertIn('Lcom/unity3d/player/V240ChartCompatibilityScanner;', self.build)
         self.assertIn('Lcom/unity3d/player/V240OpaqueEventBridge;', self.build)
+        self.assertIn('Lcom/unity3d/player/V240SetFrameRateBackport;', self.build)
 
     def test_production_java_round_trip_is_byte_exact_and_fail_closed_before_export(self):
         javac = shutil.which("javac")
@@ -180,9 +186,11 @@ class V240OpaqueEventBridgeContract(unittest.TestCase):
                     String prepared = Files.readString(chart, StandardCharsets.UTF_8);
                     check(prepared.contains("__V240_OPAQUE__:"), "opaque marker missing");
                     check(prepared.contains("\\\"eventType\\\":\\\"EditorComment\\\""),
-                            "action placeholder missing");
+                            "action fallback placeholder missing");
                     check(prepared.contains("\\\"eventType\\\":\\\"AddDecoration\\\""),
                             "decoration placeholder missing");
+                    check(!prepared.contains("__V240_SET_FRAME_RATE__:"),
+                            "host without native capability unexpectedly enabled execution carrier");
 
                     File restored = V240OpaqueEventBridge.buildRestoredExport(chart.toFile());
                     check(restored != null && restored.isFile(), "restored export missing");
@@ -255,6 +263,8 @@ class V240OpaqueEventBridgeContract(unittest.TestCase):
                     "-d", str(classes),
                     str(log_java),
                     str(SCANNER),
+                    str(EVENT_COMPAT),
+                    str(SET_FRAME_BACKPORT),
                     str(OPAQUE),
                     str(harness_java),
                 ],
