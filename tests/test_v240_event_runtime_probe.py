@@ -41,6 +41,20 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
         self.assertIn('setCustomFrameRateBoolInt ? 1 : 0', self.probe)
         self.assertIn('setCustomFrameRateBoolFloat ? 1 : 0', self.probe)
 
+    def test_call_method_scheduler_probe_requires_exact_managed_abi(self):
+        expected = (
+            'Class scrPlanet("", "scrPlanet")',
+            'Class ffxCallMethod("", "ffxCallMethod")',
+            'ffxCallMethod.GetField("methodName").IsValid()',
+            '"Decode", {levelEvent.GetCompileTimeClass()}',
+            '"StartEffect", {scrPlanet.GetCompileTimeClass()}',
+            'callMethodSchedulerSurface = ffxCallMethod && callMethodNameField',
+            '&& callMethodDecode && callMethodStartEffect',
+        )
+        for marker in expected:
+            self.assertIn(marker, self.probe)
+        self.assertIn('ffxCallMethod=%d methodName=%d Decode=%d StartEffect=%d scheduler=%d', self.probe)
+
     def test_probe_is_read_only(self):
         self.assertNotIn("BasicHook", self.probe)
         self.assertNotIn("CreateNewObject", self.probe)
@@ -58,6 +72,7 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
         self.assertIn("V240: compatibility surface LevelData=%d", self.probe)
         self.assertIn("scrCamera.SetCustomFrameRate=%d", self.probe)
         self.assertIn("bool-int=%d bool-float=%d", self.probe)
+        self.assertIn("ffxCallMethod=%d methodName=%d Decode=%d StartEffect=%d scheduler=%d", self.probe)
 
 
 if __name__ == "__main__":
