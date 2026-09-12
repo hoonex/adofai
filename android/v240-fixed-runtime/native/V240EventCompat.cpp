@@ -29,19 +29,43 @@ bool SameManagedType(const Class& left, const Class& right) {
     return left && right && left.GetClass() == right.GetClass();
 }
 
+bool IsLowerUuidToken(const std::string& value, std::size_t offset, std::size_t length) {
+    if (length != 36 || offset + length > value.size()) return false;
+    for (std::size_t i = 0; i < length; ++i) {
+        const char ch = value[offset + i];
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+            if (ch != '-') return false;
+            continue;
+        }
+        const bool digit = ch >= '0' && ch <= '9';
+        const bool hex = ch >= 'a' && ch <= 'f';
+        if (!digit && !hex) return false;
+    }
+    return true;
+}
+
 bool ParseSetFrameRateMarker(String* value, bool* enabledOut, float* frameRateOut) {
     if (!value || !enabledOut || !frameRateOut) return false;
     const std::string text = value->str();
     const std::size_t prefixLength = sizeof(kSetFrameRateMarkerPrefix) - 1;
-    if (text.size() <= prefixLength + 2 ||
+    if (text.size() <= prefixLength + 39 ||
         text.compare(0, prefixLength, kSetFrameRateMarkerPrefix) != 0) {
         return false;
     }
 
-    const char enabled = text[prefixLength];
-    if ((enabled != '0' && enabled != '1') || text[prefixLength + 1] != ':') return false;
+    const std::size_t tokenStart = prefixLength;
+    const std::size_t tokenEnd = text.find(':', tokenStart);
+    if (tokenEnd == std::string::npos ||
+        !IsLowerUuidToken(text, tokenStart, tokenEnd - tokenStart)) {
+        return false;
+    }
 
-    const char* number = text.c_str() + prefixLength + 2;
+    const std::size_t enabledIndex = tokenEnd + 1;
+    if (enabledIndex + 2 >= text.size()) return false;
+    const char enabled = text[enabledIndex];
+    if ((enabled != '0' && enabled != '1') || text[enabledIndex + 1] != ':') return false;
+
+    const char* number = text.c_str() + enabledIndex + 2;
     char* end = nullptr;
     const float frameRate = std::strtof(number, &end);
     if (!end || end == number || *end != '\0' || !std::isfinite(frameRate)) return false;
