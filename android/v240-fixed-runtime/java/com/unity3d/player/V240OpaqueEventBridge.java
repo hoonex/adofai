@@ -199,6 +199,36 @@ final class V240OpaqueEventBridge {
         return true;
     }
 
+    static File buildRestoredExport(File chart) throws Exception {
+        if (!hasSession(chart)) return null;
+        if (chart == null || !chart.isFile()) throw new IOException("opaque chart is unavailable");
+        File parent = chart.getParentFile();
+        if (parent == null) throw new IOException("opaque chart has no parent directory");
+        File export = new File(parent, chart.getName() + ".v240-export-"
+                + UUID.randomUUID() + ".tmp");
+        try {
+            try (BufferedOutputStream output = new BufferedOutputStream(
+                    new FileOutputStream(export, false), IO_BUFFER_BYTES)) {
+                if (!writeRestoredCopy(chart, output)) {
+                    throw new IOException("opaque session disappeared before export");
+                }
+                output.flush();
+            }
+            try (FileOutputStream sync = new FileOutputStream(export, true)) {
+                sync.getFD().sync();
+            }
+            return export;
+        } catch (Throwable error) {
+            if (export.exists() && !export.delete()) export.deleteOnExit();
+            if (error instanceof Exception) throw (Exception) error;
+            throw new IOException("opaque export failed", error);
+        }
+    }
+
+    static void releaseRestoredExport(File export) {
+        if (export != null && export.exists() && !export.delete()) export.deleteOnExit();
+    }
+
     private static int rewriteFile(File source, File target, File session,
                                    Set<String> targetTypes, Mode mode) throws Exception {
         try (BufferedOutputStream output = new BufferedOutputStream(

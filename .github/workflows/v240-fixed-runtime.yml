@@ -9,6 +9,7 @@ on:
       - 'tools/adofai_compat.py'
       - 'tests/test_adofai_compat.py'
       - 'tests/test_v240_performance_runtime.py'
+      - 'tests/test_v240_opaque_event_bridge.py'
       - '.github/workflows/v240-fixed-runtime.yml'
   workflow_dispatch:
 
@@ -32,6 +33,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_adofai_compat.py' -v
       - name: Verify high-refresh safety contract
         run: python3 -m unittest discover -s tests -p 'test_v240_performance_runtime.py'
+      - name: Verify opaque event preservation contract
+        run: python3 -m unittest discover -s tests -p 'test_v240_opaque_event_bridge.py' -v
       - uses: android-actions/setup-android@v3
       - name: Install Android toolchain
         run: |

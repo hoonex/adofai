@@ -48,7 +48,8 @@ public final class FileSelector {
     public static void saveAs(String suggestedName) {
         // Release a tree-backed old chart only after the new Save-As document is successfully
         // prepared, so cancellation never loses the authoritative old save target.
-        start(V240AndroidBridge.beginSave(suggestedName, mimeForFilename(suggestedName)), false,
+        start(V240AndroidBridge.beginSave(
+                suggestedName, mimeForFilename(suggestedName), filePath), false,
                 BACKEND_DOCUMENT, true);
     }
 
@@ -109,11 +110,10 @@ public final class FileSelector {
                     if (backend == BACKEND_ARCHIVE) {
                         V240ChartBackport.backportForV240(chart);
                         V240HallLegacyFix.applyIfNeeded(chart);
+                        // Archive imports have no writable SAF binding yet. Direct documents and
+                        // tree-backed levels prepare inside their backend before observer install.
+                        V240OpaqueEventBridge.prepareForV240(chart);
                     }
-                    // Read-only streaming diagnostics run after any private-copy compatibility
-                    // rewrite so they describe the exact chart the legacy parser will receive.
-                    // This scan never mutates the chart and fails open on malformed/oversized input.
-                    V240ChartCompatibilityScanner.scanAndLog(chart);
                     // One asset compatibility pass covers direct documents, tree mirrors and
                     // TUF ZIPs. It only adds aliases inside private storage and fails open.
                     V240MapCompatibility.repairMap(chart);

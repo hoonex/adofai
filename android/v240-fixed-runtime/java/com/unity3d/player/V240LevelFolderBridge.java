@@ -264,6 +264,7 @@ public final class V240LevelFolderBridge {
             // mistaken for an editor save.
             V240ChartBackport.backportForV240(state.chart);
             V240HallLegacyFix.applyIfNeeded(state.chart);
+            V240OpaqueEventBridge.prepareForV240(state.chart);
             ensurePending(id);
 
             if ((grantFlags & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0) {
@@ -385,10 +386,16 @@ public final class V240LevelFolderBridge {
 
     private static void syncNow(SaveBinding binding) throws Exception {
         if (!binding.file.isFile()) return;
-        ContentResolver resolver = binding.context.getContentResolver();
-        try (InputStream in = new FileInputStream(binding.file);
-             OutputStream out = requireOutput(resolver, binding.uri)) {
-            copy(in, out, -1, Long.MAX_VALUE);
+        File restored = V240OpaqueEventBridge.buildRestoredExport(binding.file);
+        File source = restored != null ? restored : binding.file;
+        try {
+            ContentResolver resolver = binding.context.getContentResolver();
+            try (InputStream in = new FileInputStream(source);
+                 OutputStream out = requireOutput(resolver, binding.uri)) {
+                copy(in, out, -1, Long.MAX_VALUE);
+            }
+        } finally {
+            V240OpaqueEventBridge.releaseRestoredExport(restored);
         }
     }
 

@@ -56,6 +56,7 @@ public final class V240AndroidBridge {
     private static final AtomicInteger NEXT_ID = new AtomicInteger(24000);
     private static final Map<Integer, Result> RESULTS = new ConcurrentHashMap<Integer, Result>();
     private static final Map<String, SaveBinding> SAVE_BINDINGS = new ConcurrentHashMap<String, SaveBinding>();
+    private static final Map<Integer, String> SAVE_OPAQUE_SOURCES = new ConcurrentHashMap<Integer, String>();
     private static final Object IO_LOCK = new Object();
     private static volatile HandlerThread IO_THREAD;
     private static volatile Handler IO;
@@ -137,8 +138,16 @@ public final class V240AndroidBridge {
     }
 
     public static int beginSave(String suggestedName, String mime) {
-        return begin(MODE_SAVE, sanitizeName(emptyToDefault(suggestedName, "level.adofai")),
+        return beginSave(suggestedName, mime, null);
+    }
+
+    public static int beginSave(String suggestedName, String mime, String opaqueSourcePath) {
+        int id = begin(MODE_SAVE, sanitizeName(emptyToDefault(suggestedName, "level.adofai")),
                 emptyToDefault(mime, "application/octet-stream"), null, false);
+        if (id > 0 && opaqueSourcePath != null && opaqueSourcePath.length() > 0 && isPending(id)) {
+            SAVE_OPAQUE_SOURCES.put(id, opaqueSourcePath);
+        }
+        return id;
     }
 
     public static int beginFolder() {
@@ -219,6 +228,7 @@ public final class V240AndroidBridge {
             result.value = value == null ? "" : value;
             result.state = state;
         }
+        SAVE_OPAQUE_SOURCES.remove(id);
         result.done.countDown();
         return true;
     }
@@ -295,6 +305,12 @@ public final class V240AndroidBridge {
             ensurePending(id);
             if (workingFiles.isEmpty()) throw new IllegalArgumentException("no readable document selected");
 
+            // Prepare unknown post-v2.4 events while this is still an app-private copy and before
+            // any writable FileObserver is attached. External SAF content remains authoritative.
+            for (File working : workingFiles) {
+                if (isLevelDocument(working)) V240OpaqueEventBridge.prepareForV240(working);
+            }
+
             // Only a single .adofai level document becomes the editor's writable Save target.
             // Images/audio/zip imports also use OpenFilePanel; binding those would allow the
             // next level Save to overwrite the imported asset's content:// URI.
@@ -334,6 +350,11 @@ public final class V240AndroidBridge {
                 throw new IllegalStateException("working save file could not be created");
             }
             ensurePending(id);
+            String opaqueSourcePath = SAVE_OPAQUE_SOURCES.remove(id);
+            if (opaqueSourcePath != null && !V240OpaqueEventBridge.cloneSession(
+                    new File(opaqueSourcePath), working)) {
+                throw new IOException("opaque event state could not be cloned for Save As");
+            }
             bindSave(context, uri, working);
             bound = true;
             success = complete(id, Result.OK, working.getAbsolutePath());
@@ -448,10 +469,16 @@ public final class V240AndroidBridge {
 
     private static void syncNow(SaveBinding binding) throws Exception {
         if (!binding.file.isFile()) return;
-        ContentResolver resolver = binding.context.getContentResolver();
-        try (InputStream in = new FileInputStream(binding.file);
-             OutputStream out = requireOutput(resolver, binding.uri)) {
-            copy(in, out);
+        File restored = V240OpaqueEventBridge.buildRestoredExport(binding.file);
+        File source = restored != null ? restored : binding.file;
+        try {
+            ContentResolver resolver = binding.context.getContentResolver();
+            try (InputStream in = new FileInputStream(source);
+                 OutputStream out = requireOutput(resolver, binding.uri)) {
+                copy(in, out);
+            }
+        } finally {
+            V240OpaqueEventBridge.releaseRestoredExport(restored);
         }
     }
 

@@ -14,6 +14,7 @@ on:
       - 'tools/adofai_compat.py'
       - 'tests/test_adofai_compat.py'
       - 'tests/test_v240_performance_runtime.py'
+      - 'tests/test_v240_opaque_event_bridge.py'
       - 'tests/test_v240_event_runtime_probe.py'
       - '.github/workflows/v240-final-release.yml'
   workflow_dispatch:
@@ -76,6 +77,9 @@ jobs:
 
       - name: Verify mobile performance and storage safety contract
         run: python3 -m unittest discover -s tests -p 'test_v240_performance_runtime.py'
+
+      - name: Verify opaque event preservation contract
+        run: python3 -m unittest discover -s tests -p 'test_v240_opaque_event_bridge.py' -v
 
       - name: Build exact v2.4 runtime payloads
         run: |
@@ -159,6 +163,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_adofai_compat.py' -v
           python3 -m unittest discover -s tests -p 'test_v240_event_runtime_probe.py' -v
           python3 -m unittest discover -s tests -p 'test_v240_performance_runtime.py'
+          python3 -m unittest discover -s tests -p 'test_v240_opaque_event_bridge.py' -v
           bash scripts/build-v240-fixed-java.sh .work/v240-final-java
           bash scripts/build-v240-fixed-native.sh .work/v240-final-native
           test -s .work/v240-final-java/v240-fixed-runtime.dex
