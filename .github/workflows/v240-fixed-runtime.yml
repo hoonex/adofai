@@ -61,6 +61,16 @@ jobs:
           grep -q "slash.charAt(1) == ':'" android/v240-fixed-runtime/java/com/unity3d/player/V240MapCompatibility.java
           grep -q 'V240ChartBackport.backportForV240(chart)' android/v240-fixed-runtime/java/com/unity3d/player/FileSelector.java
           grep -q 'V240HallLegacyFix.applyIfNeeded(chart)' android/v240-fixed-runtime/java/com/unity3d/player/FileSelector.java
+          python3 - <<'PY'
+          from pathlib import Path
+          src = Path('android/v240-fixed-runtime/java/com/unity3d/player/V240LevelFolderBridge.java').read_text()
+          backport = src.index('V240ChartBackport.backportForV240(state.chart);')
+          hall = src.index('V240HallLegacyFix.applyIfNeeded(state.chart);')
+          binding = src.index('installed = new SaveBinding(context, state.chartUri, state.chart);')
+          observer = src.index('replaceActiveBinding(installed);')
+          assert backport < binding < observer
+          assert hall < binding < observer
+          PY
           ! grep -R -q 'libOctober\|Companion\|OfficialGameBridge' android/v240-fixed-runtime
       - uses: actions/upload-artifact@v4
         with:
