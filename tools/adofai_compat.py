@@ -2,7 +2,11 @@
 """Lossless-first ADOFAI level parser, inspector and normalizer.
 
 This tool deliberately does not delete event/settings fields it does not understand.
-The target game/editor decides whether a recognized event can actually render.
+The target game/editor decides whether a recognized event can actually render or execute.
+
+The v2.4 compatibility report is intentionally conservative. It distinguishes serialization
+backports that can be applied without changing chart meaning from newer event semantics that
+must be preserved for later runtime emulation or manual/device verification.
 """
 
 from __future__ import annotations
@@ -47,6 +51,120 @@ MODERN_EVENT_TYPES = frozenset({
     "AddObject", "SetObject", "SetDefaultText", "SetFrameRate", "AddParticle",
     "SetParticle", "EmitParticle", "SetInputEvent",
 })
+
+# Events confirmed to have been introduced after the v2.4 baseline, or in a later-era feature
+# family. We preserve these objects exactly. `policy` describes what the v2.4 compatibility
+# layer is currently allowed to do; it is not a claim that v2.4 executes the event natively.
+V240_POST_BASELINE_EVENT_POLICY: Mapping[str, Mapping[str, Any]] = {
+    "SetFilterAdvanced": {
+        "introduced": "2.8.0",
+        "domain": "visual",
+        "policy": "preserve_only",
+        "runtimeBackportImplemented": False,
+        "reason": "advanced filter semantics have no proven lossless v2.4 mapping",
+    },
+    "SetFrameRate": {
+        "introduced": "2.8.0",
+        "domain": "rendering",
+        "policy": "native_emulation_candidate",
+        "runtimeBackportImplemented": False,
+        "reason": "render-frame pacing is separable from judgement timing, but chart-trigger execution is not implemented yet",
+    },
+    "AddParticle": {
+        "introduced": "2.8-era",
+        "domain": "visual",
+        "policy": "preserve_only",
+        "runtimeBackportImplemented": False,
+        "reason": "particle-event family introduction is later than the v2.4 baseline; exact per-event build is not pinned",
+    },
+    "SetParticle": {
+        "introduced": "2.8-era",
+        "domain": "visual",
+        "policy": "preserve_only",
+        "runtimeBackportImplemented": False,
+        "reason": "particle-event family introduction is later than the v2.4 baseline; exact per-event build is not pinned",
+    },
+    "EmitParticle": {
+        "introduced": "2.8-era",
+        "domain": "visual",
+        "policy": "preserve_only",
+        "runtimeBackportImplemented": False,
+        "reason": "particle-event family introduction is later than the v2.4 baseline; exact per-event build is not pinned",
+    },
+    "SetInputEvent": {
+        "introduced": "2.9.0",
+        "domain": "gameplay_trigger",
+        "policy": "preserve_only",
+        "runtimeBackportImplemented": False,
+        "reason": "input-trigger semantics affect gameplay and must never be stripped or guessed",
+    },
+    "TileDimensions": {
+        "introduced": "2.9.7-era",
+        "domain": "gameplay_geometry",
+        "policy": "preserve_only",
+        "runtimeBackportImplemented": False,
+        "reason": "tile geometry can change gameplay; exact introduction/build semantics are not pinned",
+    },
+}
+
+# These event types exist in/around the v2.4 feature set, but later releases changed their
+# runtime or partial-update semantics. Presence is therefore a warning, not an automatic rewrite.
+V240_SEMANTIC_DRIFT_POLICY: Mapping[str, Mapping[str, Any]] = {
+    "FreeRoam": {
+        "changed": "2.9.7",
+        "domain": "timing",
+        "policy": "preserve_and_verify",
+        "reason": "duration semantics were unified with ordinary level events after v2.4",
+    },
+    "Pause": {
+        "changed": "2.9.3/2.9.7",
+        "domain": "timing_runtime_state",
+        "policy": "preserve_and_verify",
+        "reason": "restart reset and duration/beat behavior changed in later releases",
+    },
+    "SetConditionalEvents": {
+        "changed": "2.9.3",
+        "domain": "runtime_state",
+        "policy": "preserve_and_verify",
+        "reason": "failure/restart transient-state reset behavior changed after v2.4",
+    },
+    "RepeatEvents": {
+        "changed": "2.6.0/3.1.0",
+        "domain": "event_dispatch",
+        "policy": "preserve_and_verify",
+        "reason": "repeat behavior was improved and later gained gap-length semantics; exact serialized gap key is intentionally not guessed",
+    },
+    "ColorTrack": {
+        "changed": "3.3.1",
+        "domain": "partial_update",
+        "policy": "preserve_and_verify",
+        "reason": "later optional-property semantics may differ from v2.4 full-state updates",
+    },
+    "RecolorTrack": {
+        "changed": "3.3.1",
+        "domain": "partial_update_asset",
+        "policy": "preserve_and_verify",
+        "reason": "later optional properties and texture state have no proven lossless v2.4 mapping",
+    },
+    "MoveDecorations": {
+        "changed": "2.6.0/2.7.0",
+        "domain": "partial_update",
+        "policy": "preserve_and_verify",
+        "reason": "relative-to-last-position and axis/scale partial updates were added after the baseline",
+    },
+    "MoveTrack": {
+        "changed": "2.6.0/2.7.0",
+        "domain": "partial_update",
+        "policy": "preserve_and_verify",
+        "reason": "axis/scale partial-update semantics were expanded after the baseline",
+    },
+    "MoveCamera": {
+        "changed": "2.6.0",
+        "domain": "partial_update",
+        "policy": "preserve_and_verify",
+        "reason": "independent X/Y updates were added after the baseline",
+    },
+}
 
 
 class AdoFaiFormatError(ValueError):
@@ -184,6 +302,51 @@ def _event_types(items: Any) -> List[str]:
     return sorted(types)
 
 
+def _policy_records(event_types: Iterable[str], policy: Mapping[str, Mapping[str, Any]]) -> List[Dict[str, Any]]:
+    records: List[Dict[str, Any]] = []
+    for event_type in sorted(set(event_types)):
+        data = policy.get(event_type)
+        if data is None:
+            continue
+        record = {"eventType": event_type}
+        record.update(dict(data))
+        records.append(record)
+    return records
+
+
+def v240_compatibility_report(level: Mapping[str, Any]) -> Dict[str, Any]:
+    action_types = _event_types(level.get("actions", []))
+    decoration_types = _event_types(level.get("decorations", []))
+    all_types = sorted(set(action_types) | set(decoration_types))
+
+    post_baseline = _policy_records(all_types, V240_POST_BASELINE_EVENT_POLICY)
+    semantic_drift = _policy_records(all_types, V240_SEMANTIC_DRIFT_POLICY)
+    preserve_only = sorted(
+        record["eventType"] for record in post_baseline
+        if record.get("policy") == "preserve_only"
+    )
+    native_candidates = sorted(
+        record["eventType"] for record in post_baseline
+        if record.get("policy") == "native_emulation_candidate"
+    )
+    gameplay_risks = sorted(
+        record["eventType"] for record in post_baseline
+        if record.get("domain") in {"gameplay_trigger", "gameplay_geometry"}
+    )
+
+    return {
+        "target": "ADOFAI v2.4.0 Custom Android",
+        "serializationBackport": "known_v2.4_togglebool_fields_only",
+        "unknownEventsAreDeleted": False,
+        "postV240Events": post_baseline,
+        "semanticDriftEvents": semantic_drift,
+        "preserveOnlyEventTypes": preserve_only,
+        "nativeEmulationCandidates": native_candidates,
+        "gameplayMeaningRiskEventTypes": gameplay_risks,
+        "requiresRuntimeReview": bool(post_baseline or semantic_drift),
+    }
+
+
 def inspect_level(level: Mapping[str, Any]) -> Dict[str, Any]:
     actions = level.get("actions", [])
     decorations = level.get("decorations", [])
@@ -212,6 +375,7 @@ def inspect_level(level: Mapping[str, Any]) -> Dict[str, Any]:
         "actionTypes": action_types,
         "decorationTypes": decoration_types,
         "unknownModernEventTypes": unknown_types,
+        "v240Compatibility": v240_compatibility_report(level),
         "topLevelKeys": sorted(level.keys()),
     }
 
@@ -254,6 +418,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--normalize", metavar="OUTPUT", type=Path, help="write normalized JSON to this file")
     parser.add_argument("--convert-path-data", action="store_true", help="convert legacy pathData to angleData when angleData is absent")
     parser.add_argument("--fail-on-unknown-event", action="store_true", help="exit non-zero if an event type is not in the pinned modern inventory")
+    parser.add_argument("--fail-on-v240-runtime-review", action="store_true", help="exit non-zero when the chart contains post-v2.4 or later-semantics events that require runtime review")
     return parser
 
 
@@ -265,6 +430,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.fail_on_unknown_event and report["unknownModernEventTypes"]:
         return 3
+    if args.fail_on_v240_runtime_review and report["v240Compatibility"]["requiresRuntimeReview"]:
+        return 4
 
     if args.normalize is not None:
         normalized = normalize_level(level, convert_path_data=args.convert_path_data)
