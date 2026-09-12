@@ -41,6 +41,77 @@ class AdoFaiCompatTests(unittest.TestCase):
         self.assertIn("SetInputEvent", report["actionTypes"])
         self.assertIn("AddParticle", report["decorationTypes"])
         self.assertEqual(report["unknownModernEventTypes"], [])
+        v240 = report["v240Compatibility"]
+        self.assertTrue(v240["requiresRuntimeReview"])
+        self.assertIn("SetInputEvent", v240["preserveOnlyEventTypes"])
+        self.assertIn("AddParticle", v240["preserveOnlyEventTypes"])
+        self.assertIn("SetInputEvent", v240["gameplayMeaningRiskEventTypes"])
+        self.assertFalse(v240["unknownEventsAreDeleted"])
+
+    def test_set_frame_rate_is_candidate_not_claimed_supported(self):
+        level = {
+            "angleData": [0, 90],
+            "settings": {},
+            "actions": [
+                {"floor": 1, "eventType": "SetFrameRate", "frameRate": 144},
+            ],
+            "decorations": [],
+        }
+        v240 = compat.v240_compatibility_report(level)
+        self.assertEqual(v240["nativeEmulationCandidates"], ["SetFrameRate"])
+        event = v240["postV240Events"][0]
+        self.assertEqual(event["introduced"], "2.8.0")
+        self.assertEqual(event["domain"], "rendering")
+        self.assertFalse(event["runtimeBackportImplemented"])
+        self.assertNotIn("SetFrameRate", v240["preserveOnlyEventTypes"])
+
+    def test_gameplay_events_are_preserved_not_auto_downgraded(self):
+        level = {
+            "angleData": [0],
+            "settings": {},
+            "actions": [
+                {
+                    "floor": 0,
+                    "eventType": "SetInputEvent",
+                    "inputAction": "Probe",
+                    "inputEventState": "Subscribe",
+                    "inputEventTarget": "Pressed",
+                },
+                {"floor": 0, "eventType": "TileDimensions", "futureGeometry": [2, 1]},
+            ],
+            "decorations": [],
+        }
+        normalized = compat.normalize_level(level)
+        self.assertEqual(normalized["actions"], level["actions"])
+        v240 = compat.v240_compatibility_report(normalized)
+        self.assertEqual(
+            v240["gameplayMeaningRiskEventTypes"],
+            ["SetInputEvent", "TileDimensions"],
+        )
+        self.assertEqual(
+            v240["preserveOnlyEventTypes"],
+            ["SetInputEvent", "TileDimensions"],
+        )
+
+    def test_later_semantics_are_reported_without_guessing_fields(self):
+        level = {
+            "angleData": [0],
+            "settings": {},
+            "actions": [
+                {"floor": 0, "eventType": "FreeRoam", "duration": 4},
+                {"floor": 0, "eventType": "RepeatEvents", "opaqueFutureGap": 3},
+                {"floor": 0, "eventType": "RecolorTrack", "opaqueFutureTexture": "x"},
+            ],
+            "decorations": [],
+        }
+        normalized = compat.normalize_level(level)
+        self.assertEqual(normalized["actions"], level["actions"])
+        v240 = compat.v240_compatibility_report(normalized)
+        drift = {item["eventType"]: item for item in v240["semanticDriftEvents"]}
+        self.assertIn("FreeRoam", drift)
+        self.assertIn("RepeatEvents", drift)
+        self.assertIn("RecolorTrack", drift)
+        self.assertEqual(drift["RepeatEvents"]["policy"], "preserve_and_verify")
 
 
 if __name__ == "__main__":
