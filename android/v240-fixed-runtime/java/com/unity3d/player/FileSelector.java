@@ -110,6 +110,10 @@ public final class FileSelector {
                         V240ChartBackport.backportForV240(chart);
                         V240HallLegacyFix.applyIfNeeded(chart);
                     }
+                    // Read-only streaming diagnostics run after any private-copy compatibility
+                    // rewrite so they describe the exact chart the legacy parser will receive.
+                    // This scan never mutates the chart and fails open on malformed/oversized input.
+                    V240ChartCompatibilityScanner.scanAndLog(chart);
                     // One asset compatibility pass covers direct documents, tree mirrors and
                     // TUF ZIPs. It only adds aliases inside private storage and fails open.
                     V240MapCompatibility.repairMap(chart);
