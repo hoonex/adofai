@@ -25,6 +25,10 @@ public final class V240Bootstrap {
                 Log.e(TAG, "v240fix native runtime failed to load", error);
             }
         }
+        // Register the event-compat BNM callback as early as possible after the native
+        // library is available. The native side is idempotent, so Activity recreation
+        // also gives a failed/late bootstrap a harmless retry opportunity.
+        V240EventCompat.initialize();
         installMobileRuntimeWhenActivityIsReady();
     }
 
