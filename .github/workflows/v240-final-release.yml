@@ -17,6 +17,7 @@ on:
       - 'tests/test_v240_opaque_event_bridge.py'
       - 'tests/test_v240_event_runtime_probe.py'
       - 'tests/test_v240_set_frame_rate_backport.py'
+      - 'tests/test_v240_tile_dimensions_preservation.py'
       - '.github/workflows/v240-final-release.yml'
   workflow_dispatch:
     inputs:
@@ -84,6 +85,9 @@ jobs:
 
       - name: Verify SetFrameRate execution backport contract
         run: python3 -m unittest discover -s tests -p 'test_v240_set_frame_rate_backport.py' -v
+
+      - name: Verify TileDimensions remains lossless preserve-only
+        run: python3 -m unittest discover -s tests -p 'test_v240_tile_dimensions_preservation.py' -v
 
       - name: Build exact v2.4 runtime payloads
         run: |
@@ -171,6 +175,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_v240_performance_runtime.py'
           python3 -m unittest discover -s tests -p 'test_v240_opaque_event_bridge.py' -v
           python3 -m unittest discover -s tests -p 'test_v240_set_frame_rate_backport.py' -v
+          python3 -m unittest discover -s tests -p 'test_v240_tile_dimensions_preservation.py' -v
           bash scripts/build-v240-fixed-java.sh .work/v240-final-java
           bash scripts/build-v240-fixed-native.sh .work/v240-final-native
           test -s .work/v240-final-java/v240-fixed-runtime.dex
