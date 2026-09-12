@@ -117,6 +117,37 @@ void RequestJavaRefresh() {
     if (attached) vm->DetachCurrentThread();
 }
 
+void LogPostV240CompatibilitySurface() {
+    // Read-only capability inventory. This deliberately does not hook, call, or mutate any
+    // chart/event API. It tells us which v2.4 managed surfaces are safe candidates for a later
+    // lossless unknown-event round-trip bridge and SetFrameRate scheduler.
+    Class levelData("ADOFAI", "LevelData");
+    Class levelEvent("ADOFAI", "LevelEvent");
+    Class levelEventInfo("ADOFAI", "LevelEventInfo");
+    Class gcs("", "GCS");
+    Class scnGame("", "scnGame");
+    Class scrCamera("", "scrCamera");
+
+    const bool levelDataDecode = levelData && levelData.GetMethod("Decode").IsValid();
+    const bool levelEventDecode = levelEvent && levelEvent.GetMethod("Decode").IsValid();
+    const bool levelEventEncode = levelEvent && levelEvent.GetMethod("Encode").IsValid();
+    const bool levelEventsInfo = gcs && gcs.GetField("levelEventsInfo").IsValid();
+    const bool applyEvent = scnGame && scnGame.GetMethod("ApplyEvent").IsValid();
+    const bool setCustomFrameRate = scrCamera && scrCamera.GetMethod("SetCustomFrameRate").IsValid();
+
+    LOGD("V240: compatibility surface LevelData=%d Decode=%d LevelEvent=%d EventDecode=%d EventEncode=%d LevelEventInfo=%d GCS=%d levelEventsInfo=%d scnGame.ApplyEvent=%d scrCamera.SetCustomFrameRate=%d",
+         levelData ? 1 : 0,
+         levelDataDecode ? 1 : 0,
+         levelEvent ? 1 : 0,
+         levelEventDecode ? 1 : 0,
+         levelEventEncode ? 1 : 0,
+         levelEventInfo ? 1 : 0,
+         gcs ? 1 : 0,
+         levelEventsInfo ? 1 : 0,
+         applyEvent ? 1 : 0,
+         setCustomFrameRate ? 1 : 0);
+}
+
 bool RaycastAt(IL2CPP::Il2CppObject* eventSystem,
                IL2CPP::Il2CppObject* eventData,
                IL2CPP::Il2CppObject* results,
@@ -227,6 +258,7 @@ bool InstallTouchAssistHook() {
 void RegisterTouchAssistHook() {
     std::call_once(g_registrationOnce, []() {
         Loading::AddOnLoadedEvent([]() {
+            LogPostV240CompatibilitySurface();
             if (!InstallTouchAssistHook()) {
                 LOGW("V240: enhanced touch hook unavailable; legacy touch fallback remains active");
             }
