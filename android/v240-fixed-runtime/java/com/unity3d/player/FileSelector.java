@@ -102,9 +102,16 @@ public final class FileSelector {
                 }
 
                 if (ok && !folder && isLocalLevelPath(result)) {
-                    // One compatibility pass covers direct documents, tree mirrors and TUF ZIPs.
-                    // It only adds aliases inside private storage and fails open on malformed maps.
-                    V240MapCompatibility.repairMap(new File(result));
+                    File chart = new File(result);
+                    // Archives are already detached private copies. Backport newer desktop
+                    // ToggleBool serialization before the v2.4 parser sees the chart, while
+                    // leaving the downloaded ZIP/source document completely untouched.
+                    if (backend == BACKEND_ARCHIVE) {
+                        V240ChartBackport.backportForV240(chart);
+                    }
+                    // One asset compatibility pass covers direct documents, tree mirrors and
+                    // TUF ZIPs. It only adds aliases inside private storage and fails open.
+                    V240MapCompatibility.repairMap(chart);
                 }
 
                 if (ok && releaseLevelOnSuccess) {
