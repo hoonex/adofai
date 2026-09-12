@@ -60,7 +60,7 @@ class V240SetFrameRateBackportContract(unittest.TestCase):
             """
         )
         harness = textwrap.dedent(
-            """
+            r"""
             package com.unity3d.player;
 
             public final class V240SetFrameRateBackportHostTest {
@@ -75,11 +75,11 @@ class V240SetFrameRateBackportContract(unittest.TestCase):
                             + "\"enabled\":true,\"frameRate\":144,\"angleOffset\":1.25}";
                     String carrier = V240SetFrameRateBackport.maybePlaceholder(good, 2, TOKEN, true);
                     check(carrier != null, "safe SetFrameRate did not get a carrier");
-                    check(carrier.contains("\\\"eventType\\\":\\\"CallMethod\\\""),
+                    check(carrier.contains("\"eventType\":\"CallMethod\""),
                             "carrier is not CallMethod");
                     check(carrier.contains("__V240_SET_FRAME_RATE__:" + TOKEN + ":1:144"),
                             "carrier payload changed");
-                    check(carrier.contains("\\\"angleOffset\\\":1.25"),
+                    check(carrier.contains("\"angleOffset\":1.25"),
                             "angleOffset was not preserved");
                     check(TOKEN.equals(V240SetFrameRateBackport.tokenFromPlaceholder(carrier)),
                             "carrier token did not round trip");
