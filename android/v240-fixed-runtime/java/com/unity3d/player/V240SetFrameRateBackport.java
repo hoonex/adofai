@@ -24,6 +24,12 @@ final class V240SetFrameRateBackport {
         Boolean active = findTopLevelBoolean(eventObject, "active");
         if (Boolean.FALSE.equals(active)) return null;
 
+        // v2.4's CallMethod carrier does not have the newer editor-only scheduling semantics.
+        // Never turn an editor-only effect into one that can run during ordinary gameplay.
+        String editorOnlyRaw = findTopLevelRawValue(eventObject, "editorOnly");
+        Boolean editorOnly = findTopLevelBoolean(eventObject, "editorOnly");
+        if ((editorOnlyRaw != null && editorOnly == null) || Boolean.TRUE.equals(editorOnly)) return null;
+
         // Tagged effects can participate in RepeatEvents / SetInputEvent scheduling. v2.4 cannot
         // reproduce every post-v2.4 manual-trigger interaction, so keep those preserve-only.
         String eventTag = findTopLevelString(eventObject, "eventTag");
