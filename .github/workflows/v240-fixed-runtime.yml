@@ -52,6 +52,9 @@ jobs:
           grep -q 'preferredDisplayModeId' android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java
           grep -q 'preferredRefreshRate' android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java
           grep -q 'fps_unlock' android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java
+          grep -q 'parseHex4' android/v240-fixed-runtime/java/com/unity3d/player/V240MapCompatibility.java
+          grep -q 'Character.toCodePoint' android/v240-fixed-runtime/java/com/unity3d/player/V240MapCompatibility.java
+          grep -q "slash.charAt(1) == ':'" android/v240-fixed-runtime/java/com/unity3d/player/V240MapCompatibility.java
           ! grep -R -q 'libOctober\|Companion\|OfficialGameBridge' android/v240-fixed-runtime
       - uses: actions/upload-artifact@v4
         with:
