@@ -120,15 +120,17 @@ void RequestJavaRefresh() {
 void LogPostV240CompatibilitySurface() {
     // Read-only capability inventory. This deliberately does not hook, call, or mutate any
     // chart/event API. It tells us which v2.4 managed surfaces are safe candidates for a later
-    // lossless unknown-event round-trip bridge and SetFrameRate scheduler. SetCustomFrameRate is
-    // resolved by exact primitive parameter types so an unrelated overload cannot be mistaken for
-    // the camera effect ABI.
+    // lossless unknown-event round-trip bridge and SetFrameRate scheduler. Candidate methods are
+    // resolved by exact managed parameter types so unrelated overloads cannot be mistaken for a
+    // compatible ABI.
     Class levelData("ADOFAI", "LevelData");
     Class levelEvent("ADOFAI", "LevelEvent");
     Class levelEventInfo("ADOFAI", "LevelEventInfo");
     Class gcs("", "GCS");
     Class scnGame("", "scnGame");
     Class scrCamera("", "scrCamera");
+    Class scrPlanet("", "scrPlanet");
+    Class ffxCallMethod("", "ffxCallMethod");
 
     const bool levelDataDecode = levelData && levelData.GetMethod("Decode").IsValid();
     const bool levelEventDecode = levelEvent && levelEvent.GetMethod("Decode").IsValid();
@@ -140,8 +142,15 @@ void LogPostV240CompatibilitySurface() {
     const bool setCustomFrameRateBoolFloat = scrCamera && scrCamera.GetMethod(
             "SetCustomFrameRate", {Defaults::Get<bool>(), Defaults::Get<float>()}).IsValid();
     const bool setCustomFrameRateTyped = setCustomFrameRateBoolInt || setCustomFrameRateBoolFloat;
+    const bool callMethodNameField = ffxCallMethod && ffxCallMethod.GetField("methodName").IsValid();
+    const bool callMethodDecode = ffxCallMethod && levelEvent && ffxCallMethod.GetMethod(
+            "Decode", {levelEvent.GetCompileTimeClass()}).IsValid();
+    const bool callMethodStartEffect = ffxCallMethod && scrPlanet && ffxCallMethod.GetMethod(
+            "StartEffect", {scrPlanet.GetCompileTimeClass()}).IsValid();
+    const bool callMethodSchedulerSurface = ffxCallMethod && callMethodNameField
+            && callMethodDecode && callMethodStartEffect;
 
-    LOGD("V240: compatibility surface LevelData=%d Decode=%d LevelEvent=%d EventDecode=%d EventEncode=%d LevelEventInfo=%d GCS=%d levelEventsInfo=%d scnGame.ApplyEvent=%d scrCamera.SetCustomFrameRate=%d bool-int=%d bool-float=%d",
+    LOGD("V240: compatibility surface LevelData=%d Decode=%d LevelEvent=%d EventDecode=%d EventEncode=%d LevelEventInfo=%d GCS=%d levelEventsInfo=%d scnGame.ApplyEvent=%d scrCamera.SetCustomFrameRate=%d bool-int=%d bool-float=%d ffxCallMethod=%d methodName=%d Decode=%d StartEffect=%d scheduler=%d",
          levelData ? 1 : 0,
          levelDataDecode ? 1 : 0,
          levelEvent ? 1 : 0,
@@ -153,7 +162,12 @@ void LogPostV240CompatibilitySurface() {
          applyEvent ? 1 : 0,
          setCustomFrameRateTyped ? 1 : 0,
          setCustomFrameRateBoolInt ? 1 : 0,
-         setCustomFrameRateBoolFloat ? 1 : 0);
+         setCustomFrameRateBoolFloat ? 1 : 0,
+         ffxCallMethod ? 1 : 0,
+         callMethodNameField ? 1 : 0,
+         callMethodDecode ? 1 : 0,
+         callMethodStartEffect ? 1 : 0,
+         callMethodSchedulerSurface ? 1 : 0);
 }
 
 bool RaycastAt(IL2CPP::Il2CppObject* eventSystem,
