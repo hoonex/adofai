@@ -14,6 +14,7 @@ on:
       - 'tools/adofai_compat.py'
       - 'tests/test_adofai_compat.py'
       - 'tests/test_v240_performance_runtime.py'
+      - 'tests/test_v240_event_runtime_probe.py'
       - '.github/workflows/v240-final-release.yml'
   workflow_dispatch:
     inputs:
@@ -70,6 +71,9 @@ jobs:
       - name: Verify chart compatibility policy
         run: python3 -m unittest discover -s tests -p 'test_adofai_compat.py' -v
 
+      - name: Verify event compatibility probe stays read-only
+        run: python3 -m unittest discover -s tests -p 'test_v240_event_runtime_probe.py' -v
+
       - name: Verify mobile performance and storage safety contract
         run: python3 -m unittest discover -s tests -p 'test_v240_performance_runtime.py'
 
@@ -87,6 +91,8 @@ jobs:
           strings .work/v240-final-native/libv240fix.so | grep -q 'OpenFolderPanelAsync'
           strings .work/v240-final-native/libv240fix.so | grep -q 'set_targetFrameRate'
           strings .work/v240-final-native/libv240fix.so | grep -q 'set_vSyncCount'
+          strings .work/v240-final-native/libv240fix.so | grep -q 'compatibility surface LevelData='
+          strings .work/v240-final-native/libv240fix.so | grep -q 'scrCamera.SetCustomFrameRate='
           grep -q 'preferredDisplayModeId' android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java
           grep -q 'preferredRefreshRate' android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java
           grep -q 'fps_unlock' android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java
@@ -151,6 +157,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -p 'test_adofai_compat.py' -v
+          python3 -m unittest discover -s tests -p 'test_v240_event_runtime_probe.py' -v
           python3 -m unittest discover -s tests -p 'test_v240_performance_runtime.py'
           bash scripts/build-v240-fixed-java.sh .work/v240-final-java
           bash scripts/build-v240-fixed-native.sh .work/v240-final-native
@@ -158,6 +165,8 @@ jobs:
           test -s .work/v240-final-native/libv240fix.so
           strings .work/v240-final-native/libv240fix.so | grep -q 'set_targetFrameRate'
           strings .work/v240-final-native/libv240fix.so | grep -q 'set_vSyncCount'
+          strings .work/v240-final-native/libv240fix.so | grep -q 'compatibility surface LevelData='
+          strings .work/v240-final-native/libv240fix.so | grep -q 'scrCamera.SetCustomFrameRate='
 
       - name: Produce unsigned exact-source patched APK on host
         env:
@@ -227,6 +236,7 @@ jobs:
           - v2.4-specific IL2CPP SFB sync/async hook runtime
           - mobile editor UI scale, drag sensitivity, touch-assist runtime, and save-I/O debounce
           - conservative chart compatibility policy: known v2.4 ToggleBool serialization is backported while newer event payloads are preserved for explicit runtime review
+          - read-only runtime capability probe for LevelData/LevelEvent/GCS/scnGame/scrCamera surfaces needed by later lossless event backports
           - configurable high-refresh FPS policy using the device's supported display modes
           - FPS presets for display maximum / 60 / 90 / 120 / 144 / 165 / 240 and optional low-latency VSync override
           - fail-open frame policy: original game FPS/VSync behavior is preserved until settings are successfully applied
