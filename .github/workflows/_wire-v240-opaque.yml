@@ -1,3 +1,4 @@
+# One-shot workflow; removes itself after a successful exact patch.
 name: One-shot wire v2.4 opaque bridge
 
 on:
