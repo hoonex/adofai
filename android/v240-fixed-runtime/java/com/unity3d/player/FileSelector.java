@@ -103,11 +103,12 @@ public final class FileSelector {
 
                 if (ok && !folder && isLocalLevelPath(result)) {
                     File chart = new File(result);
-                    // Archives are already detached private copies. Backport newer desktop
-                    // ToggleBool serialization before the v2.4 parser sees the chart, while
-                    // leaving the downloaded ZIP/source document completely untouched.
+                    // Archives are detached app-private copies. It is therefore safe to backport
+                    // newer desktop serialization and apply narrowly-scoped legacy workarounds
+                    // before the v2.4 parser sees the chart. The downloaded ZIP remains untouched.
                     if (backend == BACKEND_ARCHIVE) {
                         V240ChartBackport.backportForV240(chart);
+                        V240HallLegacyFix.applyIfNeeded(chart);
                     }
                     // One asset compatibility pass covers direct documents, tree mirrors and
                     // TUF ZIPs. It only adds aliases inside private storage and fails open.
