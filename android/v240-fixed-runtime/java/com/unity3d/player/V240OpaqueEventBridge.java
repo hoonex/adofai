@@ -19,21 +19,23 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Lossless preserve-only bridge for chart events introduced after the v2.4 baseline.
+ * Lossless compatibility bridge for chart events introduced after the v2.4 baseline.
  *
  * The legacy editor cannot decode event types it does not know. Rather than extending the
  * original IL2CPP enum/data tables, this bridge rewrites only the app-private working copy:
  *
- *   modern action      -> inactive EditorComment marker
+ *   modern action      -> inactive EditorComment marker by default
+ *   safe SetFrameRate  -> fail-closed CallMethod scheduler carrier when native support is ready
  *   modern decoration  -> inactive AddDecoration marker
  *
- * The complete original JSON event object is stored beside the private chart. Save syncs never
- * copy the marker representation to the authoritative SAF document; writeRestoredCopy() replaces
- * every surviving marker with its exact original JSON object while streaming the file out.
+ * The complete original JSON event object is always stored beside the private chart. Save syncs
+ * never copy the compatibility representation to the authoritative SAF document;
+ * writeRestoredCopy() replaces every surviving marker with its exact original JSON object while
+ * streaming the file out.
  *
- * This is intentionally preserve-only. v2.4 cannot edit the opaque payload. If a marker survives,
- * the original event survives byte-for-byte. If a marker is deliberately removed, that original
- * event is omitted on export. No original game native library is modified.
+ * v2.4 still cannot edit opaque payloads. If a marker survives, the original event survives
+ * byte-for-byte. If a marker is deliberately removed, that original event is omitted on export.
+ * No original game native library is modified.
  */
 final class V240OpaqueEventBridge {
     private static final String TAG = "ADOFAI.V240Opaque";
@@ -135,7 +137,7 @@ final class V240OpaqueEventBridge {
                 throw new IOException("could not install opaque chart representation");
             }
             if (backup.exists() && !backup.delete()) backup.deleteOnExit();
-            Log.d(TAG, "Preserved post-v2.4 events as opaque placeholders count=" + replacements
+            Log.d(TAG, "Preserved post-v2.4 events as compatibility placeholders count=" + replacements
                     + " file=" + chart.getName());
             return true;
         } catch (Throwable error) {
@@ -151,9 +153,9 @@ final class V240OpaqueEventBridge {
     }
 
     /**
-     * Clone preserve-only sidecar state before Save As returns a new local working path.
-     * The v2.4 serializer will copy the marker events into the new chart; the cloned sidecar lets
-     * that chart restore the same original payloads on its first SAF sync.
+     * Clone sidecar state before Save As returns a new local working path. The v2.4 serializer will
+     * copy compatibility markers into the new chart; the cloned sidecar lets that chart restore
+     * the same original payloads on its first SAF sync.
      */
     static boolean cloneSession(File sourceChart, File destinationChart) {
         if (!hasSession(sourceChart)) return true;
@@ -187,8 +189,8 @@ final class V240OpaqueEventBridge {
     }
 
     /**
-     * Writes an export view with opaque markers replaced by the exact original event objects.
-     * Returns false when no opaque session exists, allowing the caller to use its normal byte copy.
+     * Writes an export view with compatibility markers replaced by the exact original event
+     * objects. Returns false when no sidecar session exists, allowing the normal byte copy.
      */
     static boolean writeRestoredCopy(File chart, OutputStream output) throws Exception {
         if (!hasSession(chart)) return false;
@@ -281,7 +283,12 @@ final class V240OpaqueEventBridge {
                         String token = UUID.randomUUID().toString();
                         writeSmallFile(new File(session, token + ".json"), eventObject);
                         int floor = findTopLevelInt(eventObject, "floor", 0);
-                        writer.write(placeholder(state.section, floor, token, eventType));
+                        String executable = state.section == Section.ACTIONS
+                                ? V240SetFrameRateBackport.maybePlaceholder(eventObject, floor, token)
+                                : null;
+                        writer.write(executable != null
+                                ? executable
+                                : placeholder(state.section, floor, token, eventType));
                         state.replacements++;
                     } else {
                         writer.write(eventObject);
@@ -400,6 +407,11 @@ final class V240OpaqueEventBridge {
     }
 
     private static Marker findMarker(String eventObject, Section section) {
+        if (section == Section.ACTIONS) {
+            String executableToken = V240SetFrameRateBackport.tokenFromPlaceholder(eventObject);
+            if (executableToken != null) return new Marker(executableToken, section);
+        }
+
         String eventType = findTopLevelString(eventObject, "eventType");
         String value;
         if (section == Section.ACTIONS && "EditorComment".equals(eventType)) {
