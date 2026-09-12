@@ -31,7 +31,15 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
         self.assertIn('Class scnGame("", "scnGame")', self.probe)
         self.assertIn('scnGame.GetMethod("ApplyEvent")', self.probe)
         self.assertIn('Class scrCamera("", "scrCamera")', self.probe)
-        self.assertIn('scrCamera.GetMethod("SetCustomFrameRate")', self.probe)
+        self.assertIn('"SetCustomFrameRate", {Defaults::Get<bool>(), Defaults::Get<int>()}', self.probe)
+        self.assertIn('"SetCustomFrameRate", {Defaults::Get<bool>(), Defaults::Get<float>()}', self.probe)
+        self.assertIn('setCustomFrameRateTyped = setCustomFrameRateBoolInt || setCustomFrameRateBoolFloat', self.probe)
+
+    def test_frame_rate_probe_requires_exact_primitive_abi(self):
+        self.assertNotIn('scrCamera.GetMethod("SetCustomFrameRate").IsValid()', self.probe)
+        self.assertIn('bool-int=%d bool-float=%d', self.probe)
+        self.assertIn('setCustomFrameRateBoolInt ? 1 : 0', self.probe)
+        self.assertIn('setCustomFrameRateBoolFloat ? 1 : 0', self.probe)
 
     def test_probe_is_read_only(self):
         self.assertNotIn("BasicHook", self.probe)
@@ -44,12 +52,12 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
         callback = self.source.index("Loading::AddOnLoadedEvent")
         probe_call = self.source.index("LogPostV240CompatibilitySurface();", callback)
         touch_install = self.source.index("InstallTouchAssistHook()", probe_call)
-        self.assertLess(callback, probe_call)
-        self.assertLess(probe_call, touch_install)
+        self.assertLess(callback, probe_call, touch_install)
 
     def test_runtime_log_has_stable_machine_searchable_marker(self):
         self.assertIn("V240: compatibility surface LevelData=%d", self.probe)
         self.assertIn("scrCamera.SetCustomFrameRate=%d", self.probe)
+        self.assertIn("bool-int=%d bool-float=%d", self.probe)
 
 
 if __name__ == "__main__":
