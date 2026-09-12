@@ -10,6 +10,7 @@ on:
       - 'tests/test_adofai_compat.py'
       - 'tests/test_v240_performance_runtime.py'
       - 'tests/test_v240_opaque_event_bridge.py'
+      - 'tests/test_v240_set_frame_rate_backport.py'
       - '.github/workflows/v240-fixed-runtime.yml'
   workflow_dispatch:
 
@@ -35,6 +36,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_v240_performance_runtime.py'
       - name: Verify opaque event preservation contract
         run: python3 -m unittest discover -s tests -p 'test_v240_opaque_event_bridge.py' -v
+      - name: Verify SetFrameRate execution backport contract
+        run: python3 -m unittest discover -s tests -p 'test_v240_set_frame_rate_backport.py' -v
       - uses: android-actions/setup-android@v3
       - name: Install Android toolchain
         run: |
@@ -56,6 +59,8 @@ jobs:
           grep -q 'openOutputStream(uri, "wt")' android/v240-fixed-runtime/java/com/unity3d/player/V240AndroidBridge.java
           grep -q 'openOutputStream(uri, "w")' android/v240-fixed-runtime/java/com/unity3d/player/V240AndroidBridge.java
           grep -q 'V240SettingsOverlay' android/v240-fixed-runtime/java/com/unity3d/player/V240Bootstrap.java
+          grep -q 'V240EventCompat.initialize' android/v240-fixed-runtime/java/com/unity3d/player/V240Bootstrap.java
+          grep -q '__V240_SET_FRAME_RATE__:' android/v240-fixed-runtime/java/com/unity3d/player/V240SetFrameRateBackport.java
           grep -q 'preferredDisplayModeId' android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java
           grep -q 'preferredRefreshRate' android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java
           grep -q 'fps_unlock' android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java
