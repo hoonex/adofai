@@ -6,7 +6,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -26,7 +25,6 @@ final class V240ChartBackport {
     private static final String TAG = "ADOFAI.V240Backport";
     private static final long MAX_BYTES = 96L * 1024L * 1024L;
 
-    // Settings that were serialized as ToggleBool strings in pre-2.6 charts.
     private static final Set<String> SETTINGS_TOGGLE_BOOL = new HashSet<String>(Arrays.asList(
             "separateCountdownTime",
             "seizureWarning",
@@ -40,8 +38,7 @@ final class V240ChartBackport {
             "stickToFloors"
     ));
 
-    // Event fields whose old 2.4 representation was ToggleBool and whose names are specific
-    // enough to convert without changing unrelated legacy JSON booleans.
+    // Generic `enabled` is deliberately excluded and handled only for SetFilter below.
     private static final Set<String> EVENT_TOGGLE_BOOL = new HashSet<String>(Arrays.asList(
             "disableOthers",
             "dontDisable",
@@ -51,8 +48,9 @@ final class V240ChartBackport {
             "maxVfxOnly"
     ));
 
-    private static final Pattern EVENT_TYPE = Pattern.compile(
-            "\\\"eventType\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
+    private static final Pattern SET_FILTER_OBJECT = Pattern.compile(
+            "\\{(?=[^{}]*\\\"eventType\\\"\\s*:\\s*\\\"SetFilter\\\")[^{}]*\\}",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     private V240ChartBackport() {}
 
@@ -64,6 +62,8 @@ final class V240ChartBackport {
             return false;
         }
 
+        File temp = null;
+        File backup = null;
         try {
             byte[] bytes = readFully(chart, (int) length);
             int bom = hasUtf8Bom(bytes) ? 3 : 0;
@@ -73,75 +73,62 @@ final class V240ChartBackport {
 
             File parent = chart.getParentFile();
             if (parent == null) throw new IOException("chart has no parent directory");
-            File temp = new File(parent, chart.getName() + ".v240-backport.tmp");
+            temp = new File(parent, chart.getName() + ".v240-backport.tmp");
+            backup = new File(parent, chart.getName() + ".v240-backport.original");
+            if (temp.exists() && !temp.delete()) throw new IOException("stale backport temp is locked");
+            if (backup.exists() && !backup.delete()) throw new IOException("stale backport backup is locked");
+
             try (FileOutputStream out = new FileOutputStream(temp, false)) {
                 if (bom != 0) out.write(new byte[] {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF});
                 out.write(rewritten.getBytes(StandardCharsets.UTF_8));
                 out.flush();
                 out.getFD().sync();
             }
-            if (chart.exists() && !chart.delete()) {
-                temp.delete();
-                throw new IOException("could not replace private chart copy");
-            }
+
+            // Same-directory renames keep the original intact until the replacement is complete.
+            if (!chart.renameTo(backup)) throw new IOException("could not stage original chart");
             if (!temp.renameTo(chart)) {
-                copyFile(temp, chart);
-                temp.delete();
+                if (!backup.renameTo(chart)) {
+                    Log.e(TAG, "Could not restore private chart after failed backport rename");
+                }
+                throw new IOException("could not install backported chart");
             }
+            if (backup.exists() && !backup.delete()) backup.deleteOnExit();
             Log.d(TAG, "Applied conservative 2.4 ToggleBool backport: " + chart.getName());
             return true;
         } catch (Throwable error) {
-            // A compatibility pass must never make a chart that otherwise loaded become unusable.
+            if (chart != null && !chart.exists() && backup != null && backup.exists()) {
+                if (!backup.renameTo(chart)) Log.e(TAG, "Backport recovery failed for " + chart, error);
+            }
             Log.w(TAG, "Chart backport failed open", error);
             return false;
+        } finally {
+            if (temp != null && temp.exists()) temp.delete();
         }
     }
 
     static String rewriteDocument(String source) {
         if (source == null || source.length() == 0) return source == null ? "" : source;
-        StringBuilder out = new StringBuilder(source.length() + 128);
-        int cursor = 0;
-        while (cursor < source.length()) {
-            int start = nextObjectStart(source, cursor);
-            if (start < 0) {
-                out.append(source, cursor, source.length());
-                break;
-            }
-            out.append(source, cursor, start);
-            int end = matchingObjectEnd(source, start);
-            if (end < 0) {
-                out.append(source, start, source.length());
-                break;
-            }
-            String object = source.substring(start, end + 1);
-            out.append(rewriteObject(object));
-            cursor = end + 1;
-        }
-        return out.toString();
-    }
+        String result = source;
 
-    private static String rewriteObject(String object) {
-        Matcher eventMatcher = EVENT_TYPE.matcher(object);
-        if (eventMatcher.find()) {
-            String eventType = eventMatcher.group(1);
-            String result = object;
-            for (String field : EVENT_TOGGLE_BOOL) result = rewriteBooleanField(result, field);
-            if ("SetFilter".equals(eventType)) result = rewriteBooleanField(result, "enabled");
-            return result;
-        }
-
-        // Only treat an object as settings when it contains several characteristic settings keys.
-        // This prevents a same-named field inside arbitrary modern event payloads from being touched.
-        int markers = 0;
-        if (object.indexOf("\"songFilename\"") >= 0) markers++;
-        if (object.indexOf("\"bpm\"") >= 0) markers++;
-        if (object.indexOf("\"backgroundColor\"") >= 0) markers++;
-        if (object.indexOf("\"trackStyle\"") >= 0) markers++;
-        if (markers < 2) return object;
-
-        String result = object;
+        // These field names are evidence-backed pre-2.6 ToggleBool properties and are specific
+        // enough not to collide with the legacy JSON booleans that must stay real booleans.
         for (String field : SETTINGS_TOGGLE_BOOL) result = rewriteBooleanField(result, field);
-        return result;
+        for (String field : EVENT_TOGGLE_BOOL) result = rewriteBooleanField(result, field);
+
+        // `enabled` is generic, so only convert it inside a flat SetFilter action object.
+        Matcher matcher = SET_FILTER_OBJECT.matcher(result);
+        StringBuffer out = new StringBuffer(result.length() + 64);
+        boolean changed = false;
+        while (matcher.find()) {
+            String object = matcher.group();
+            String rewritten = rewriteBooleanField(object, "enabled");
+            if (!object.equals(rewritten)) changed = true;
+            matcher.appendReplacement(out, Matcher.quoteReplacement(rewritten));
+        }
+        if (!changed) return result;
+        matcher.appendTail(out);
+        return out.toString();
     }
 
     private static String rewriteBooleanField(String input, String field) {
@@ -161,42 +148,6 @@ final class V240ChartBackport {
         return buffer.toString();
     }
 
-    private static int nextObjectStart(String text, int from) {
-        boolean inString = false;
-        boolean escaped = false;
-        for (int i = Math.max(0, from); i < text.length(); ++i) {
-            char ch = text.charAt(i);
-            if (inString) {
-                if (escaped) escaped = false;
-                else if (ch == '\\') escaped = true;
-                else if (ch == '"') inString = false;
-            } else {
-                if (ch == '"') inString = true;
-                else if (ch == '{') return i;
-            }
-        }
-        return -1;
-    }
-
-    private static int matchingObjectEnd(String text, int start) {
-        int depth = 0;
-        boolean inString = false;
-        boolean escaped = false;
-        for (int i = start; i < text.length(); ++i) {
-            char ch = text.charAt(i);
-            if (inString) {
-                if (escaped) escaped = false;
-                else if (ch == '\\') escaped = true;
-                else if (ch == '"') inString = false;
-                continue;
-            }
-            if (ch == '"') inString = true;
-            else if (ch == '{') depth++;
-            else if (ch == '}' && --depth == 0) return i;
-        }
-        return -1;
-    }
-
     private static byte[] readFully(File file, int expected) throws IOException {
         byte[] data = new byte[expected];
         int offset = 0;
@@ -206,25 +157,12 @@ final class V240ChartBackport {
                 if (count < 0) break;
                 if (count > 0) offset += count;
             }
-            if (offset == data.length && in.read() < 0) return data;
         }
-        if (offset == data.length) return data;
-        return Arrays.copyOf(data, offset);
+        return offset == data.length ? data : Arrays.copyOf(data, offset);
     }
 
     private static boolean hasUtf8Bom(byte[] bytes) {
         return bytes.length >= 3 && (bytes[0] & 0xFF) == 0xEF &&
                 (bytes[1] & 0xFF) == 0xBB && (bytes[2] & 0xFF) == 0xBF;
-    }
-
-    private static void copyFile(File from, File to) throws IOException {
-        byte[] buffer = new byte[256 * 1024];
-        try (FileInputStream in = new FileInputStream(from);
-             FileOutputStream out = new FileOutputStream(to, false)) {
-            int count;
-            while ((count = in.read(buffer)) != -1) if (count > 0) out.write(buffer, 0, count);
-            out.flush();
-            out.getFD().sync();
-        }
     }
 }
