@@ -9,10 +9,8 @@ import java.io.FileOutputStream;
 import java.io.InputStreamReader;
 import java.io.IOException;
 import java.text.Normalizer;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -139,6 +137,7 @@ final class V240MapCompatibility {
         return path.toLowerCase(Locale.US);
     }
 
+    /** Decode JSON string escapes without changing the chart itself. */
     private static String decodeJsonPath(String raw) {
         if (raw == null || raw.indexOf('\\') < 0) return raw == null ? "" : raw;
         StringBuilder out = new StringBuilder(raw.length());
@@ -148,17 +147,61 @@ final class V240MapCompatibility {
                 out.append(ch);
                 continue;
             }
+            int slash = i;
             char next = raw.charAt(++i);
-            if (next == '\\' || next == '/' || next == '"') out.append(next);
-            else if (next == 'n') out.append('\n');
-            else if (next == 'r') out.append('\r');
-            else if (next == 't') out.append('\t');
-            else {
+            if (next == '\\' || next == '/' || next == '"') {
+                out.append(next);
+            } else if (next == 'b') {
+                out.append('\b');
+            } else if (next == 'f') {
+                out.append('\f');
+            } else if (next == 'n') {
+                out.append('\n');
+            } else if (next == 'r') {
+                out.append('\r');
+            } else if (next == 't') {
+                out.append('\t');
+            } else if (next == 'u') {
+                int first = parseHex4(raw, i + 1);
+                if (first < 0) {
+                    out.append(raw, slash, Math.min(raw.length(), i + 1));
+                    continue;
+                }
+                i += 4;
+                char firstChar = (char) first;
+                // Preserve valid UTF-16 surrogate pairs as one code point. Lone surrogates are
+                // kept as their literal JSON escape rather than corrupting a filename.
+                if (Character.isHighSurrogate(firstChar) && i + 6 < raw.length() &&
+                        raw.charAt(i + 1) == '\\' && raw.charAt(i + 2) == 'u') {
+                    int second = parseHex4(raw, i + 3);
+                    if (second >= 0 && Character.isLowSurrogate((char) second)) {
+                        out.appendCodePoint(Character.toCodePoint(firstChar, (char) second));
+                        i += 6;
+                    } else {
+                        out.append(raw, slash, i + 1);
+                    }
+                } else if (Character.isSurrogate(firstChar)) {
+                    out.append(raw, slash, i + 1);
+                } else {
+                    out.append(firstChar);
+                }
+            } else {
                 // Preserve unknown escapes rather than silently corrupting a filename.
                 out.append('\\').append(next);
             }
         }
         return out.toString();
+    }
+
+    private static int parseHex4(String value, int offset) {
+        if (offset < 0 || offset + 4 > value.length()) return -1;
+        int result = 0;
+        for (int i = 0; i < 4; ++i) {
+            int digit = Character.digit(value.charAt(offset + i), 16);
+            if (digit < 0) return -1;
+            result = (result << 4) | digit;
+        }
+        return result;
     }
 
     private static String stripRelativePrefix(String value) {
@@ -168,11 +211,16 @@ final class V240MapCompatibility {
     }
 
     private static boolean isUnsafe(String relative) {
-        if (relative.startsWith("/") || relative.indexOf('\u0000') >= 0) return true;
-        String lower = relative.toLowerCase(Locale.US);
+        if (relative == null || relative.length() == 0) return true;
+        String slash = relative.replace('\\', '/');
+        if (slash.startsWith("/") || slash.indexOf('\u0000') >= 0) return true;
+        // java.io.File on Android does not classify a Windows drive path as absolute.
+        if (slash.length() >= 3 && Character.isLetter(slash.charAt(0)) &&
+                slash.charAt(1) == ':' && slash.charAt(2) == '/') return true;
+        String lower = slash.toLowerCase(Locale.US);
         if (lower.startsWith("file:") || lower.startsWith("content:") ||
                 lower.startsWith("http:") || lower.startsWith("https:")) return true;
-        String[] parts = relative.split("/");
+        String[] parts = slash.split("/");
         for (String part : parts) if ("..".equals(part)) return true;
         return false;
     }
