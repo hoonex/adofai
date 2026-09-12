@@ -12,6 +12,10 @@
 using namespace BNM;
 using namespace BNM::Structures::Mono;
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_unity3d_player_V240SettingsOverlay_nativeApplyTouchAssist(
+        JNIEnv* env, jclass overlayClass, jboolean enabled, jfloat radiusPx);
+
 namespace {
 constexpr char kSetFrameRateMarkerPrefix[] = "__V240_SET_FRAME_RATE__:";
 
@@ -185,7 +189,14 @@ void RegisterV240EventCompat() {
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_unity3d_player_V240EventCompat_nativeRegister(JNIEnv*, jclass) {
+Java_com_unity3d_player_V240EventCompat_nativeRegister(JNIEnv* env, jclass) {
+    // V240Bootstrap calls this synchronously immediately after System.loadLibrary(). Register
+    // the enhanced touch callback here as well so it cannot lose the IL2CPP-loaded event while
+    // waiting for UnityPlayer.currentActivity / the settings overlay to become ready.
+    if (env) {
+        Java_com_unity3d_player_V240SettingsOverlay_nativeApplyTouchAssist(
+                env, nullptr, JNI_TRUE, 0.0f);
+    }
     RegisterV240EventCompat();
 }
 
