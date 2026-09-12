@@ -25,7 +25,7 @@ import java.util.Set;
  * ADOFAI 2.6 changed ToggleBool serialization from the strings "Enabled"/"Disabled" to
  * JSON true/false. The 2.4 editor predates that serializer change. This class backports only
  * fields that are known to have been ToggleBool in 2.4, and only inside the app-private working
- * copy. Unknown fields and modern events are preserved byte-for-byte.
+ * copy. Unknown fields and modern events are otherwise preserved.
  *
  * The transformer is streaming: even a very large decoration-heavy chart does not require a
  * second full in-memory copy of the JSON. Only one JSON string token is buffered at a time.
@@ -40,6 +40,8 @@ final class V240ChartBackport {
             "separateCountdownTime",
             "seizureWarning",
             "showDefaultBGIfNoImage",
+            "showDefaultBGTile",
+            "imageSmoothing",
             "lockRot",
             "loopBG",
             "pulseOnFloor",
@@ -50,13 +52,19 @@ final class V240ChartBackport {
     ));
 
     // Generic `enabled` is deliberately excluded and handled only for SetFilter below.
+    // These key names are ToggleBool-valued in v2.4-era/Neo-Cosmos event schemas and are
+    // sufficiently specific that converting their JSON boolean representation is unambiguous.
     private static final Set<String> EVENT_TOGGLE_BOOL = new HashSet<String>(Arrays.asList(
             "disableOthers",
             "dontDisable",
             "minVfxOnly",
             "justThisTile",
             "editorOnly",
-            "maxVfxOnly"
+            "maxVfxOnly",
+            "hideJudgment",
+            "hideUI",
+            "hidePlanet",
+            "freeRoamAngleLocal"
     ));
 
     private V240ChartBackport() {}
