@@ -157,11 +157,19 @@ class AdoFaiCompatTests(unittest.TestCase):
         actions = {item["eventType"]: item for item in normalized["actions"]}
         self.assertEqual(actions["SetFrameRate"]["frameRate"], 144)
         self.assertTrue(actions["SetFrameRate"]["editorOnly"])
-        self.assertEqual(actions["RepeatEvents"]["gapLength"], 2)
+        self.assertEqual(actions["RepeatEvents"]["opaqueFutureGap"], 2)
         self.assertEqual(actions["RepeatEvents"]["futureRepeatField"], "preserve")
-        self.assertEqual(actions["RecolorTrack"]["texture"], "fixture.png")
+        self.assertEqual(actions["RecolorTrack"]["opaqueFutureTexture"], "fixture.png")
         self.assertEqual(actions["RecolorTrack"]["futureRecolorField"], [1, 2, 3])
         self.assertEqual(normalized["futureTopLevel"], {"mustSurvive": True})
+
+    def test_unconfirmed_serialized_keys_are_not_promoted_to_schema_contract(self):
+        fixture = ROOT / "tests" / "fixtures" / "post-v240-semantics.adofai"
+        raw = fixture.read_text(encoding="utf-8")
+        self.assertNotIn('"gapLength"', raw)
+        self.assertNotIn('"texture"', raw)
+        self.assertIn('"opaqueFutureGap"', raw)
+        self.assertIn('"opaqueFutureTexture"', raw)
 
 
 if __name__ == "__main__":
