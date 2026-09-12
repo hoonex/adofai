@@ -8,6 +8,7 @@ on:
       - 'android/v240-fixed-runtime/native/**'
       - 'scripts/build-v240-fixed-native.sh'
       - 'tests/test_v240_performance_runtime.py'
+      - 'tests/test_v240_event_runtime_probe.py'
       - '.github/workflows/v240-fixed-native.yml'
   workflow_dispatch:
 
@@ -26,6 +27,9 @@ jobs:
 
       - name: Verify high-refresh safety contract
         run: python3 -m unittest discover -s tests -p 'test_v240_performance_runtime.py'
+
+      - name: Verify event compatibility probe stays read-only
+        run: python3 -m unittest discover -s tests -p 'test_v240_event_runtime_probe.py' -v
 
       - uses: android-actions/setup-android@v3
 
@@ -49,6 +53,8 @@ jobs:
           strings dist/v240-fixed-native/libv240fix.so | grep -q 'OpenFilePanelAsync'
           strings dist/v240-fixed-native/libv240fix.so | grep -q 'set_targetFrameRate'
           strings dist/v240-fixed-native/libv240fix.so | grep -q 'set_vSyncCount'
+          strings dist/v240-fixed-native/libv240fix.so | grep -q 'compatibility surface LevelData='
+          strings dist/v240-fixed-native/libv240fix.so | grep -q 'scrCamera.SetCustomFrameRate='
 
       - uses: actions/upload-artifact@v4
         with:
