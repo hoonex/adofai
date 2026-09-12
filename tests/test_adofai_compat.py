@@ -113,6 +113,34 @@ class AdoFaiCompatTests(unittest.TestCase):
         self.assertIn("RecolorTrack", drift)
         self.assertEqual(drift["RepeatEvents"]["policy"], "preserve_and_verify")
 
+    def test_first_floor_events_are_reported_without_being_moved(self):
+        level = {
+            "angleData": [0, 90],
+            "settings": {},
+            "actions": [
+                {"floor": 0, "eventType": "MoveCamera", "position": [4, 5]},
+                {"floor": 1, "eventType": "Twirl"},
+            ],
+            "decorations": [
+                {"floor": 0, "eventType": "AddDecoration", "tag": "start"},
+            ],
+        }
+        normalized = compat.normalize_level(level)
+        self.assertEqual(normalized["actions"][0]["floor"], 0)
+        self.assertEqual(normalized["decorations"][0]["floor"], 0)
+
+        v240 = compat.v240_compatibility_report(normalized)
+        self.assertEqual(v240["firstFloorEventCount"], 2)
+        self.assertTrue(v240["requiresRuntimeReview"])
+        self.assertEqual(
+            [(item["section"], item["index"], item["eventType"]) for item in v240["structuralRisks"]],
+            [
+                ("actions", 0, "MoveCamera"),
+                ("decorations", 0, "AddDecoration"),
+            ],
+        )
+        self.assertTrue(all(item["policy"] == "preserve_and_verify" for item in v240["structuralRisks"]))
+
 
 if __name__ == "__main__":
     unittest.main()
