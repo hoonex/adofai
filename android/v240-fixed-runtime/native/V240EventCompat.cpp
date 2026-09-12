@@ -160,9 +160,15 @@ void RegisterV240EventCompat() {
     });
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_unity3d_player_V240EventCompat_nativeRegister(JNIEnv*, jclass) {
+    RegisterV240EventCompat();
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_unity3d_player_V240EventCompat_nativeIsSetFrameRateBackportReady(
         JNIEnv*, jclass) {
+    RegisterV240EventCompat();
     if (!g_probeComplete.load(std::memory_order_acquire)) return JNI_FALSE;
     return g_setFrameRateBackportReady.load(std::memory_order_acquire) ? JNI_TRUE : JNI_FALSE;
 }
