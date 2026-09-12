@@ -90,8 +90,8 @@ final class V240SetFrameRateBackport {
     private static boolean validFiniteNumber(String raw) {
         if (raw == null || raw.isEmpty() || raw.charAt(0) == '"') return false;
         try {
-            double value = Double.parseDouble(raw);
-            return !Double.isNaN(value) && !Double.isInfinite(value);
+            float value = Float.parseFloat(raw);
+            return !Float.isNaN(value) && !Float.isInfinite(value);
         } catch (NumberFormatException ignored) {
             return false;
         }
