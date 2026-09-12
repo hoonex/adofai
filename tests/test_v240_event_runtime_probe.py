@@ -75,13 +75,22 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
             '"Decode", {levelEvent.GetCompileTimeClass()}',
             '"StartEffect", {scrPlanet.GetCompileTimeClass()}',
             'scrCamera.GetField("instance")',
+            'scrCamera.GetProperty("instance")',
             '"SetCustomFrameRate", {Defaults::Get<bool>(), Defaults::Get<int>()}',
             '"SetCustomFrameRate", {Defaults::Get<bool>(), Defaults::Get<float>()}',
             'SameManagedType(callMethodName.GetType(), stringClass)',
-            'SameManagedType(cameraInstance.GetType(), scrCamera)',
+            'SameManagedType(cameraInstanceField.GetType(), scrCamera)',
+            'SameManagedType(cameraInstanceProperty.GetType(), scrCamera)',
         )
         for marker in expected:
             self.assertIn(marker, self.event_source)
+
+    def test_camera_singleton_accepts_field_or_property_but_not_untyped_surface(self):
+        self.assertIn("cameraInstanceFieldTyped || cameraInstancePropertyTyped", self.event_source)
+        self.assertIn("if (cameraInstanceFieldTyped) g_cameraInstanceField = cameraInstanceField;", self.event_source)
+        self.assertIn("if (cameraInstancePropertyTyped) g_cameraInstanceProperty = cameraInstanceProperty;", self.event_source)
+        self.assertIn("instanceField=%d instanceProperty=%d", self.event_source)
+        self.assertNotIn("cameraInstance.IsValid()", self.event_source)
 
     def test_tile_dimensions_probe_requires_exact_float_floor_fields(self):
         expected = (
@@ -139,8 +148,10 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
         self.assertLess(hook_call, old_pointer_check, ready_store)
         self.assertIn("std::atomic<bool> g_setFrameRateBackportReady{false};", self.event_source)
 
-    def test_camera_call_uses_existing_v240_camera_instance(self):
-        self.assertIn("IL2CPP::Il2CppObject* camera = cameraInstance.Get();", self.event_source)
+    def test_camera_call_uses_existing_v240_camera_singleton(self):
+        self.assertIn("IL2CPP::Il2CppObject* camera = GetCameraInstance();", self.event_source)
+        self.assertIn("property.Get();", self.event_source)
+        self.assertIn("field.Get();", self.event_source)
         self.assertIn("method[camera].Call(enabled, frameRate);", self.event_source)
         self.assertIn("method[camera].Call(enabled, static_cast<int>(std::lround(frameRate)));", self.event_source)
         self.assertNotIn("Application.set_targetFrameRate", self.event_source)
