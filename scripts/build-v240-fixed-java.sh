@@ -19,6 +19,7 @@ grep -Fq 'setSystemGestureExclusionRects' "${WINDOW_COMPAT}"
 grep -Fq 'height * 0.30f' "${WINDOW_COMPAT}"
 grep -Fq 'height * 0.70f' "${WINDOW_COMPAT}"
 grep -Fq 'V240WindowCompat.apply();' "${BOOTSTRAP}"
+grep -Fq 'V240EventCompat.initialize();' "${BOOTSTRAP}"
 grep -Fq 'main.postDelayed(forceRebind, 500L);' "${BOOTSTRAP}"
 grep -Fq 'main.postDelayed(forceRebind, 1500L);' "${BOOTSTRAP}"
 
@@ -44,6 +45,7 @@ for marker in \
   'Lcom/unity3d/player/V240PickerActivity;' \
   'Lcom/unity3d/player/V240SettingsOverlay;' \
   'Lcom/unity3d/player/V240WindowCompat;' \
+  'Lcom/unity3d/player/V240EventCompat;' \
   'Lcom/unity3d/player/V240LevelFolderBridge;' \
   'Lcom/unity3d/player/V240ArchiveOpenBridge;' \
   'Lcom/unity3d/player/V240ZipLevelImporter;' \
