@@ -133,6 +133,20 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
         self.assertIn("nativeIsSetFrameRateBackportReady", self.event_java)
         self.assertIn("return false;", self.event_java)
 
+    def test_event_registration_preregisters_touch_before_activity_is_ready(self):
+        register = self.event_source.index(
+            "Java_com_unity3d_player_V240EventCompat_nativeRegister")
+        touch = self.event_source.index(
+            "Java_com_unity3d_player_V240SettingsOverlay_nativeApplyTouchAssist(", register)
+        event = self.event_source.index("RegisterV240EventCompat();", touch)
+        self.assertLess(register, touch, event)
+        early = self.event_source[touch:event]
+        self.assertIn("JNI_TRUE, 0.0f", early)
+
+        init = self.bootstrap.index("V240EventCompat.initialize();")
+        mobile = self.bootstrap.index("installMobileRuntimeWhenActivityIsReady();", init)
+        self.assertLess(init, mobile)
+
     def test_native_registration_is_idempotent_and_bnm_loaded_gated(self):
         self.assertIn("std::once_flag g_registerOnce;", self.event_source)
         self.assertIn("std::call_once(g_registerOnce", self.event_source)
