@@ -35,14 +35,14 @@
             "floor": 2,
             "eventType": "RepeatEvents",
             "eventTag": "fixture-repeat",
-            "gapLength": 2,
+            "opaqueFutureGap": 2,
             "futureRepeatField": "preserve"
         },
         {
             "floor": 3,
             "eventType": "RecolorTrack",
             "trackColor": "ff00ff",
-            "texture": "fixture.png",
+            "opaqueFutureTexture": "fixture.png",
             "futureRecolorField": [1, 2, 3]
         }
     ],
