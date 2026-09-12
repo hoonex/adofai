@@ -121,6 +121,7 @@ void ProbeAndInstallEventCompat() {
     Class scrPlanet("", "scrPlanet");
     Class ffxCallMethod("", "ffxCallMethod");
     Class scrCamera("", "scrCamera");
+    Class scrFloor("", "scrFloor");
 
     auto callMethodName = ffxCallMethod ? ffxCallMethod.GetField("methodName") : FieldBase{};
     auto callMethodDecode = (ffxCallMethod && levelEvent)
@@ -136,8 +137,11 @@ void ProbeAndInstallEventCompat() {
     auto setCustomFrameRateFloat = scrCamera
             ? scrCamera.GetMethod("SetCustomFrameRate", {Defaults::Get<bool>(), Defaults::Get<float>()})
             : MethodBase{};
+    auto floorLengthMult = scrFloor ? scrFloor.GetField("lengthMult") : FieldBase{};
+    auto floorWidthMult = scrFloor ? scrFloor.GetField("widthMult") : FieldBase{};
 
     const Class stringClass = Defaults::Get<String*>().ToClass();
+    const Class floatClass = Defaults::Get<float>().ToClass();
     const bool methodNameString = callMethodName.IsValid()
             && SameManagedType(callMethodName.GetType(), stringClass);
     const bool cameraInstanceTyped = cameraInstance.IsValid()
@@ -147,6 +151,13 @@ void ProbeAndInstallEventCompat() {
             && methodNameString
             && callMethodDecode.IsValid()
             && callMethodStartEffect.IsValid();
+    const bool floorLengthMultFloat = floorLengthMult.IsValid()
+            && SameManagedType(floorLengthMult.GetType(), floatClass);
+    const bool floorWidthMultFloat = floorWidthMult.IsValid()
+            && SameManagedType(floorWidthMult.GetType(), floatClass);
+    const bool tileDimensionsSurface = scrFloor
+            && floorLengthMultFloat
+            && floorWidthMultFloat;
 
     LOGD("V240: event compat probe ffxCallMethod=%d methodNameString=%d Decode=%d StartEffect=%d scrCamera=%d instance=%d SetCustomFrameRate=%d bool-int=%d bool-float=%d",
          ffxCallMethod ? 1 : 0,
@@ -158,6 +169,11 @@ void ProbeAndInstallEventCompat() {
          frameRateMethod ? 1 : 0,
          setCustomFrameRateInt.IsValid() ? 1 : 0,
          setCustomFrameRateFloat.IsValid() ? 1 : 0);
+    LOGD("V240: TileDimensions ABI scrFloor=%d lengthMultFloat=%d widthMultFloat=%d compatible=%d",
+         scrFloor ? 1 : 0,
+         floorLengthMultFloat ? 1 : 0,
+         floorWidthMultFloat ? 1 : 0,
+         tileDimensionsSurface ? 1 : 0);
 
     if (!schedulerSurface || !cameraInstanceTyped || !frameRateMethod) {
         g_probeComplete.store(true, std::memory_order_release);
