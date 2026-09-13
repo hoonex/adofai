@@ -139,6 +139,7 @@ void ProbeAndInstallEventCompat() {
     Class scrDecoration("", "scrDecoration");
     Class scrTextDecoration("", "scrTextDecoration");
     Class genericEnumerable("System.Collections.Generic", "IEnumerable`1");
+    Class linqEnumerable("System.Linq", "Enumerable");
 
     const Class stringClass = Defaults::Get<String*>().ToClass();
     const Class floatClass = Defaults::Get<float>().ToClass();
@@ -175,6 +176,10 @@ void ProbeAndInstallEventCompat() {
             : MethodBase{};
     auto setTextString = scrTextDecoration
             ? scrTextDecoration.GetMethod("SetText", {Defaults::Get<String*>()}) : MethodBase{};
+    auto toArrayDefinition = linqEnumerable
+            ? linqEnumerable.GetMethod("ToArray", 1) : MethodBase{};
+    auto toDecorationArray = (toArrayDefinition.IsValid() && scrDecoration)
+            ? toArrayDefinition.GetGeneric({scrDecoration.GetCompileTimeClass()}) : MethodBase{};
 
     const bool methodNameString = callMethodName.IsValid()
             && SameManagedType(callMethodName.GetType(), stringClass);
@@ -206,6 +211,7 @@ void ProbeAndInstallEventCompat() {
             && SameManagedType(getTaggedDecorations.GetReturnType(), enumerableDecoration);
     const bool setTextStringVoid = setTextString.IsValid()
             && SameManagedType(setTextString.GetReturnType(), voidClass);
+    const bool decorationMaterializerTyped = toDecorationArray.IsValid();
     const bool setTextSurface = scrDecorationManager
             && scrDecoration
             && scrTextDecoration
@@ -213,7 +219,8 @@ void ProbeAndInstallEventCompat() {
             && enumerableDecoration
             && decorationManagerSingletonTyped
             && getTaggedDecorationsTyped
-            && setTextStringVoid;
+            && setTextStringVoid
+            && decorationMaterializerTyped;
 
     LOGD("V240: event compat probe ffxCallMethod=%d methodNameString=%d Decode=%d StartEffect=%d scrCamera=%d instanceField=%d instanceProperty=%d SetCustomFrameRate=%d bool-int=%d bool-float=%d",
          ffxCallMethod ? 1 : 0,
@@ -231,7 +238,7 @@ void ProbeAndInstallEventCompat() {
          floorLengthMultFloat ? 1 : 0,
          floorWidthMultFloat ? 1 : 0,
          tileDimensionsSurface ? 1 : 0);
-    LOGD("V240: SetText ABI scrDecorationManager=%d instanceField=%d instanceProperty=%d IEnumerableString=%d GetTaggedDecorationsTyped=%d scrTextDecoration=%d SetTextStringVoid=%d compatible=%d",
+    LOGD("V240: SetText ABI scrDecorationManager=%d instanceField=%d instanceProperty=%d IEnumerableString=%d GetTaggedDecorationsTyped=%d scrTextDecoration=%d SetTextStringVoid=%d ToArrayDecoration=%d compatible=%d",
          scrDecorationManager ? 1 : 0,
          decorationManagerFieldTyped ? 1 : 0,
          decorationManagerPropertyTyped ? 1 : 0,
@@ -239,6 +246,7 @@ void ProbeAndInstallEventCompat() {
          getTaggedDecorationsTyped ? 1 : 0,
          scrTextDecoration ? 1 : 0,
          setTextStringVoid ? 1 : 0,
+         decorationMaterializerTyped ? 1 : 0,
          setTextSurface ? 1 : 0);
 
     if (!schedulerSurface || !cameraInstanceTyped || !frameRateMethod) {
