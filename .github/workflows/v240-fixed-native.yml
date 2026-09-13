@@ -9,6 +9,7 @@ on:
       - 'scripts/build-v240-fixed-native.sh'
       - 'tests/test_v240_performance_runtime.py'
       - 'tests/test_v240_event_runtime_probe.py'
+      - 'tests/test_v240_post_v240_runtime_probe.py'
       - '.github/workflows/v240-fixed-native.yml'
   workflow_dispatch:
 
@@ -31,6 +32,9 @@ jobs:
       - name: Verify event compatibility probe stays read-only
         run: python3 -m unittest discover -s tests -p 'test_v240_event_runtime_probe.py' -v
 
+      - name: Verify post-v2.4 feasibility probe stays read-only
+        run: python3 -m unittest discover -s tests -p 'test_v240_post_v240_runtime_probe.py' -v
+
       - uses: android-actions/setup-android@v3
 
       - name: Install pinned NDK
@@ -48,6 +52,7 @@ jobs:
           readelf -h dist/v240-fixed-native/libv240fix.so | grep -q 'AArch64'
           readelf -Ws dist/v240-fixed-native/libv240fix.so | grep -q 'JNI_OnLoad'
           readelf -Ws dist/v240-fixed-native/libv240fix.so | grep -q 'V240SettingsOverlay_nativeApply'
+          readelf -Ws dist/v240-fixed-native/libv240fix.so | grep -q 'V240EventCompat_nativeRegisterFeasibilityProbe'
           strings dist/v240-fixed-native/libv240fix.so | grep -q 'StandaloneFileBrowser'
           strings dist/v240-fixed-native/libv240fix.so | grep -q 'SaveFilePanelAsync'
           strings dist/v240-fixed-native/libv240fix.so | grep -q 'OpenFilePanelAsync'
@@ -55,6 +60,9 @@ jobs:
           strings dist/v240-fixed-native/libv240fix.so | grep -q 'set_vSyncCount'
           strings dist/v240-fixed-native/libv240fix.so | grep -q 'compatibility surface LevelData='
           strings dist/v240-fixed-native/libv240fix.so | grep -q 'scrCamera.SetCustomFrameRate='
+          strings dist/v240-fixed-native/libv240fix.so | grep -q 'V240: EmitParticle ABI'
+          strings dist/v240-fixed-native/libv240fix.so | grep -q 'V240: SetInputEvent feasibility'
+          strings dist/v240-fixed-native/libv240fix.so | grep -q 'V240: SetFilterAdvanced feasibility'
 
       - uses: actions/upload-artifact@v4
         with:
