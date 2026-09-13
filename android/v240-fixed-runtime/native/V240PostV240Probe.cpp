@@ -1,4 +1,3 @@
-#include <jni.h>
 #include <mutex>
 
 #include "universe.h"
@@ -16,8 +15,10 @@ bool SameManagedType(const Class& left, const Class& right) {
 
 void ProbePostV240Feasibility() {
     // Evidence-only inventory. This file must stay non-mutating: it deliberately performs no
-    // managed calls, field/property writes, object creation, or hooks. Active backports remain
-    // forbidden until every required v2.4 ABI and lifecycle semantic is independently proven.
+    // managed calls, field/property writes, object creation, hooks, or load callbacks. The caller
+    // must only invoke V240RunPostV240FeasibilityProbe after BNM reports IL2CPP fully loaded.
+    // Active event backports remain forbidden until the required v2.4 ABI and lifecycle semantics
+    // are independently proven.
     Class scrPlanet("", "scrPlanet");
     Class ffxPlusBase("", "ffxPlusBase");
     Class scrController("", "scrController");
@@ -165,9 +166,8 @@ void ProbePostV240Feasibility() {
 }
 } // namespace
 
-extern "C" JNIEXPORT void JNICALL
-Java_com_unity3d_player_V240EventCompat_nativeRegisterFeasibilityProbe(JNIEnv*, jclass) {
-    std::call_once(g_postV240ProbeOnce, []() {
-        Loading::AddOnLoadedEvent([]() { ProbePostV240Feasibility(); });
-    });
+extern "C" void V240RunPostV240FeasibilityProbe() {
+    // Intentionally not auto-registered. A future caller must invoke this only from a proven
+    // post-BNM-load point; until then the production runtime behavior is unchanged.
+    std::call_once(g_postV240ProbeOnce, []() { ProbePostV240Feasibility(); });
 }
