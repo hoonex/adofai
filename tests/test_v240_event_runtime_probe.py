@@ -113,23 +113,29 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
         self.assertNotIn("BasicHook", probe)
         self.assertNotIn("CreateNewObject", probe)
 
-    def test_set_text_probe_requires_typed_manager_and_string_setter(self):
+    def test_set_text_probe_requires_exact_enumerable_and_text_setter_abi(self):
         expected = (
             'Class scrDecorationManager("", "scrDecorationManager")',
+            'Class scrDecoration("", "scrDecoration")',
             'Class scrTextDecoration("", "scrTextDecoration")',
+            'Class genericEnumerable("System.Collections.Generic", "IEnumerable`1")',
+            'genericEnumerable.GetGeneric({stringClass.GetCompileTimeClass()})',
+            'genericEnumerable.GetGeneric({scrDecoration.GetCompileTimeClass()})',
             'scrDecorationManager.GetField("instance")',
             'scrDecorationManager.GetProperty("instance")',
-            'scrDecorationManager.GetMethod("GetTaggedDecorations", 1)',
+            '"GetTaggedDecorations", {enumerableString.GetCompileTimeClass()}',
             'scrTextDecoration.GetMethod("SetText", {Defaults::Get<String*>()})',
             'const Class voidClass = Defaults::Get<void>().ToClass();',
             'SameManagedType(decorationManagerInstanceField.GetType(), scrDecorationManager)',
             'SameManagedType(decorationManagerInstanceProperty.GetType(), scrDecorationManager)',
+            'SameManagedType(getTaggedDecorations.GetReturnType(), enumerableDecoration)',
             'SameManagedType(setTextString.GetReturnType(), voidClass)',
             'setTextSurface = scrDecorationManager',
             'V240: SetText ABI scrDecorationManager=%d',
         )
         for marker in expected:
             self.assertIn(marker, self.event_source)
+        self.assertNotIn('GetMethod("GetTaggedDecorations", 1)', self.event_source)
 
     def test_set_text_probe_stays_read_only_until_collection_abi_is_proven(self):
         start = self.event_source.index('auto decorationManagerInstanceField =')
