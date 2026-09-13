@@ -37,6 +37,21 @@ final class V240ChartCompatibilityScanner {
             "TileDimensions"
     ));
 
+    /**
+     * Post-v2.4 events that currently have no proven lossless execution backport on the v2.4
+     * Android runtime. They still participate in the opaque sidecar bridge, but must remain
+     * preserve-only until exact runtime ABI and required semantics are demonstrated separately.
+     * SetFrameRate is intentionally absent because its guarded scheduler carrier has that proof.
+     */
+    private static final Set<String> PRESERVE_ONLY_POST_V240 = new HashSet<String>(Arrays.asList(
+            "SetFilterAdvanced",
+            "AddParticle",
+            "SetParticle",
+            "EmitParticle",
+            "SetInputEvent",
+            "TileDimensions"
+    ));
+
     private static final Set<String> SEMANTIC_DRIFT = new HashSet<String>(Arrays.asList(
             "FreeRoam",
             "Pause",
@@ -55,6 +70,7 @@ final class V240ChartCompatibilityScanner {
 
     static final class Result {
         final Set<String> postV240 = new TreeSet<String>();
+        final Set<String> preserveOnlyPostV240 = new TreeSet<String>();
         final Set<String> semanticDrift = new TreeSet<String>();
 
         boolean requiresReview() {
@@ -95,6 +111,7 @@ final class V240ChartCompatibilityScanner {
         if (result.requiresReview()) {
             Log.w(TAG, "v2.4 runtime review required file=" + safeName(chart)
                     + " post-v2.4=" + result.postV240
+                    + " preserve-only=" + result.preserveOnlyPostV240
                     + " semantic-drift=" + result.semanticDrift);
         } else {
             Log.d(TAG, "No known post-v2.4 event risk detected file=" + safeName(chart));
@@ -123,6 +140,9 @@ final class V240ChartCompatibilityScanner {
             if ("eventType".equals(key) && first == '"') {
                 String eventType = decodeJsonStringToken(readStringToken(reader));
                 if (POST_V240.contains(eventType)) result.postV240.add(eventType);
+                if (PRESERVE_ONLY_POST_V240.contains(eventType)) {
+                    result.preserveOnlyPostV240.add(eventType);
+                }
                 if (SEMANTIC_DRIFT.contains(eventType)) result.semanticDrift.add(eventType);
                 continue;
             }
