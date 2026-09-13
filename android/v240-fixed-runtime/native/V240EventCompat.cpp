@@ -136,7 +136,17 @@ void ProbeAndInstallEventCompat() {
     Class scrCamera("", "scrCamera");
     Class scrFloor("", "scrFloor");
     Class scrDecorationManager("", "scrDecorationManager");
+    Class scrDecoration("", "scrDecoration");
     Class scrTextDecoration("", "scrTextDecoration");
+    Class genericEnumerable("System.Collections.Generic", "IEnumerable`1");
+
+    const Class stringClass = Defaults::Get<String*>().ToClass();
+    const Class floatClass = Defaults::Get<float>().ToClass();
+    const Class voidClass = Defaults::Get<void>().ToClass();
+    const Class enumerableString = (genericEnumerable && stringClass)
+            ? genericEnumerable.GetGeneric({stringClass.GetCompileTimeClass()}) : Class{};
+    const Class enumerableDecoration = (genericEnumerable && scrDecoration)
+            ? genericEnumerable.GetGeneric({scrDecoration.GetCompileTimeClass()}) : Class{};
 
     auto callMethodName = ffxCallMethod ? ffxCallMethod.GetField("methodName") : FieldBase{};
     auto callMethodDecode = (ffxCallMethod && levelEvent)
@@ -159,14 +169,13 @@ void ProbeAndInstallEventCompat() {
             ? scrDecorationManager.GetField("instance") : FieldBase{};
     auto decorationManagerInstanceProperty = scrDecorationManager
             ? scrDecorationManager.GetProperty("instance") : PropertyBase{};
-    auto getTaggedDecorations = scrDecorationManager
-            ? scrDecorationManager.GetMethod("GetTaggedDecorations", 1) : MethodBase{};
+    auto getTaggedDecorations = (scrDecorationManager && enumerableString)
+            ? scrDecorationManager.GetMethod(
+                    "GetTaggedDecorations", {enumerableString.GetCompileTimeClass()})
+            : MethodBase{};
     auto setTextString = scrTextDecoration
             ? scrTextDecoration.GetMethod("SetText", {Defaults::Get<String*>()}) : MethodBase{};
 
-    const Class stringClass = Defaults::Get<String*>().ToClass();
-    const Class floatClass = Defaults::Get<float>().ToClass();
-    const Class voidClass = Defaults::Get<void>().ToClass();
     const bool methodNameString = callMethodName.IsValid()
             && SameManagedType(callMethodName.GetType(), stringClass);
     const bool cameraInstanceFieldTyped = cameraInstanceField.IsValid()
@@ -192,12 +201,18 @@ void ProbeAndInstallEventCompat() {
             && SameManagedType(decorationManagerInstanceProperty.GetType(), scrDecorationManager);
     const bool decorationManagerSingletonTyped = decorationManagerFieldTyped
             || decorationManagerPropertyTyped;
+    const bool getTaggedDecorationsTyped = getTaggedDecorations.IsValid()
+            && enumerableDecoration
+            && SameManagedType(getTaggedDecorations.GetReturnType(), enumerableDecoration);
     const bool setTextStringVoid = setTextString.IsValid()
             && SameManagedType(setTextString.GetReturnType(), voidClass);
     const bool setTextSurface = scrDecorationManager
+            && scrDecoration
             && scrTextDecoration
+            && enumerableString
+            && enumerableDecoration
             && decorationManagerSingletonTyped
-            && getTaggedDecorations.IsValid()
+            && getTaggedDecorationsTyped
             && setTextStringVoid;
 
     LOGD("V240: event compat probe ffxCallMethod=%d methodNameString=%d Decode=%d StartEffect=%d scrCamera=%d instanceField=%d instanceProperty=%d SetCustomFrameRate=%d bool-int=%d bool-float=%d",
@@ -216,11 +231,12 @@ void ProbeAndInstallEventCompat() {
          floorLengthMultFloat ? 1 : 0,
          floorWidthMultFloat ? 1 : 0,
          tileDimensionsSurface ? 1 : 0);
-    LOGD("V240: SetText ABI scrDecorationManager=%d instanceField=%d instanceProperty=%d GetTaggedDecorations=%d scrTextDecoration=%d SetTextStringVoid=%d compatible=%d",
+    LOGD("V240: SetText ABI scrDecorationManager=%d instanceField=%d instanceProperty=%d IEnumerableString=%d GetTaggedDecorationsTyped=%d scrTextDecoration=%d SetTextStringVoid=%d compatible=%d",
          scrDecorationManager ? 1 : 0,
          decorationManagerFieldTyped ? 1 : 0,
          decorationManagerPropertyTyped ? 1 : 0,
-         getTaggedDecorations.IsValid() ? 1 : 0,
+         enumerableString ? 1 : 0,
+         getTaggedDecorationsTyped ? 1 : 0,
          scrTextDecoration ? 1 : 0,
          setTextStringVoid ? 1 : 0,
          setTextSurface ? 1 : 0);
