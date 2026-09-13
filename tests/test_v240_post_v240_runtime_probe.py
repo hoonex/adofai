@@ -82,11 +82,12 @@ class V240PostV240RuntimeProbeContract(unittest.TestCase):
         for marker in expected:
             self.assertIn(marker, self.probe)
 
-    def test_java_registration_is_idempotent_native_probe_entrypoint(self):
-        event_register = self.event_java.index("nativeRegister();")
-        feasibility = self.event_java.index("nativeRegisterFeasibilityProbe();")
-        self.assertLess(event_register, feasibility)
-        self.assertIn("private static native void nativeRegisterFeasibilityProbe();", self.event_java)
+    def test_probe_is_compile_time_only_until_registration_is_deliberately_enabled(self):
+        self.assertNotIn("nativeRegisterFeasibilityProbe", self.event_java)
+        self.assertIn(
+            "Java_com_unity3d_player_V240EventCompat_nativeRegisterFeasibilityProbe",
+            self.probe,
+        )
         self.assertIn("std::once_flag g_postV240ProbeOnce;", self.probe)
         self.assertIn("Loading::AddOnLoadedEvent", self.probe)
 
