@@ -82,18 +82,17 @@ class V240PostV240RuntimeProbeContract(unittest.TestCase):
         for marker in expected:
             self.assertIn(marker, self.probe)
 
-    def test_probe_is_compile_time_only_until_registration_is_deliberately_enabled(self):
+    def test_probe_has_no_automatic_registration_path(self):
         self.assertNotIn("nativeRegisterFeasibilityProbe", self.event_java)
-        self.assertIn(
-            "Java_com_unity3d_player_V240EventCompat_nativeRegisterFeasibilityProbe",
-            self.probe,
-        )
+        self.assertNotIn("JNIEXPORT", self.probe)
+        self.assertNotIn("Loading::AddOnLoadedEvent", self.probe)
+        self.assertIn('extern "C" void V240RunPostV240FeasibilityProbe()', self.probe)
         self.assertIn("std::once_flag g_postV240ProbeOnce;", self.probe)
-        self.assertIn("Loading::AddOnLoadedEvent", self.probe)
+        self.assertIn("production runtime behavior is unchanged", self.probe)
 
     def test_native_payload_cannot_silently_drop_probe(self):
         self.assertIn("V240PostV240Probe.cpp", self.native_build)
-        self.assertIn("nativeRegisterFeasibilityProbe", self.native_build)
+        self.assertIn("V240RunPostV240FeasibilityProbe", self.native_build)
         self.assertIn("V240: EmitParticle ABI", self.native_build)
 
 
