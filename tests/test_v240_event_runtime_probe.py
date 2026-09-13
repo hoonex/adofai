@@ -113,6 +113,33 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
         self.assertNotIn("BasicHook", probe)
         self.assertNotIn("CreateNewObject", probe)
 
+    def test_set_text_probe_requires_typed_manager_and_string_setter(self):
+        expected = (
+            'Class scrDecorationManager("", "scrDecorationManager")',
+            'Class scrTextDecoration("", "scrTextDecoration")',
+            'scrDecorationManager.GetField("instance")',
+            'scrDecorationManager.GetProperty("instance")',
+            'scrDecorationManager.GetMethod("GetTaggedDecorations", 1)',
+            'scrTextDecoration.GetMethod("SetText", {Defaults::Get<String*>()})',
+            'const Class voidClass = Defaults::Get<void>().ToClass();',
+            'SameManagedType(decorationManagerInstanceField.GetType(), scrDecorationManager)',
+            'SameManagedType(decorationManagerInstanceProperty.GetType(), scrDecorationManager)',
+            'SameManagedType(setTextString.GetReturnType(), voidClass)',
+            'setTextSurface = scrDecorationManager',
+            'V240: SetText ABI scrDecorationManager=%d',
+        )
+        for marker in expected:
+            self.assertIn(marker, self.event_source)
+
+    def test_set_text_probe_stays_read_only_until_collection_abi_is_proven(self):
+        start = self.event_source.index('auto decorationManagerInstanceField =')
+        end = self.event_source.index('LOGD("V240: SetText ABI', start)
+        probe = self.event_source[start:end]
+        self.assertNotIn(".Call(", probe)
+        self.assertNotIn(".Set(", probe)
+        self.assertNotIn("BasicHook", probe)
+        self.assertNotIn("CreateNewObject", probe)
+
     def test_marker_is_deliberately_not_a_valid_call_method_expression(self):
         prefix = '__V240_SET_FRAME_RATE__:'
         self.assertIn(prefix, self.event_source)
@@ -198,6 +225,7 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
         self.assertIn("scrCamera.SetCustomFrameRate=%d", self.probe)
         self.assertIn("V240: event compat probe ffxCallMethod=%d", self.event_source)
         self.assertIn("V240: TileDimensions ABI scrFloor=%d", self.event_source)
+        self.assertIn("V240: SetText ABI scrDecorationManager=%d", self.event_source)
         self.assertIn("SetFrameRate execution backport ready", self.event_source)
         self.assertIn("opaque preserve-only mode retained", self.event_source)
 
