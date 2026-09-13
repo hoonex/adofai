@@ -1,10 +1,17 @@
 from pathlib import Path
+import base64
+import shutil
+import subprocess
+import tempfile
+import textwrap
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 JAVA = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player"
 SCANNER = JAVA / "V240ChartCompatibilityScanner.java"
 OPAQUE = JAVA / "V240OpaqueEventBridge.java"
+EVENT_COMPAT = JAVA / "V240EventCompat.java"
+SET_FRAME_BACKPORT = JAVA / "V240SetFrameRateBackport.java"
 EVENT_NATIVE = ROOT / "android/v240-fixed-runtime/native/V240EventCompat.cpp"
 
 
@@ -59,6 +66,149 @@ class V240PostV240FeasibilityContract(unittest.TestCase):
         self.assertIn("V240SetFrameRateBackport.maybePlaceholder", self.opaque)
         self.assertIn("__V240_SET_FRAME_RATE__:", self.event_native)
         self.assertIn("g_setFrameRateBackportReady", self.event_native)
+
+    def test_production_bridge_round_trips_representative_unproven_events_byte_exact(self):
+        javac = shutil.which("javac")
+        java = shutil.which("java")
+        self.assertIsNotNone(javac, "JDK javac is required for preserve-only behavior proof")
+        self.assertIsNotNone(java, "JDK java is required for preserve-only behavior proof")
+
+        original_text = (
+            '{\r\n'
+            '  "pathData":"R!R",\r\n'
+            '  "actions":[\r\n'
+            '    {"floor":1,"eventType":"SetInputEvent","inputAction":"Set",'
+            '"inputEventState":"Down","inputEventTarget":"Any","active":true,'
+            '"eventTag":"input:gate","futureInputField":{"mode":"모바일"}},\r\n'
+            '    {"floor":2,"eventType":"SetFilterAdvanced","filterType":"Glitch",'
+            '"enabled":true,"intensity":73.5,"duration":1.25,"easing":"InOutSine",'
+            '"disableOthers":false,"plane":"Foreground","angleOffset":2.5,'
+            '"futureFilterField":[1,{"nested":true}]},\r\n'
+            '    {"floor":3,"eventType":"SetParticle","tag":"fx:main","duration":2,'
+            '"positionOffset":[1.5,-2],"rotationOffset":45,"scale":[120,80],'
+            '"opacity":67,"color":"ff00ffaa","colorTo":"00ffffff",'
+            '"colorToDuration":0.5,"colorToEasing":"OutQuad","easing":"InOutSine",'
+            '"futureParticleField":{"seed":7}},\r\n'
+            '    {"floor":4,"eventType":"EmitParticle","tag":"fx:main","amount":12,'
+            '"angleOffset":-1.25,"futureEmitField":"그대로"}\r\n'
+            '  ],\r\n'
+            '  "decorations":[\r\n'
+            '    {"floor":5,"eventType":"AddParticle","particle":"spark✨",'
+            '"angleOffset":0.125,"futureAddField":{"literal":"}{","items":[1,2,3]}}\r\n'
+            '  ]\r\n'
+            '}\r\n'
+        )
+        original = b"\xef\xbb\xbf" + original_text.encode("utf-8")
+        original_b64 = base64.b64encode(original).decode("ascii")
+
+        log_source = textwrap.dedent(
+            """
+            package android.util;
+            public final class Log {
+                public static int d(String tag, String msg) { return 0; }
+                public static int w(String tag, String msg) { return 0; }
+                public static int w(String tag, String msg, Throwable error) { return 0; }
+                public static int e(String tag, String msg) { return 0; }
+                public static int e(String tag, String msg, Throwable error) { return 0; }
+            }
+            """
+        )
+
+        harness_source = textwrap.dedent(
+            f"""
+            package com.unity3d.player;
+
+            import java.nio.charset.StandardCharsets;
+            import java.nio.file.Files;
+            import java.nio.file.Path;
+            import java.util.Arrays;
+            import java.util.Base64;
+
+            public final class V240PostV240PreserveOnlyHostTest {{
+                private static void check(boolean value, String message) {{
+                    if (!value) throw new AssertionError(message);
+                }}
+
+                public static void main(String[] args) throws Exception {{
+                    Path root = Files.createTempDirectory("v240-post-v240-preserve-");
+                    Path chart = root.resolve("modern.adofai");
+                    byte[] original = Base64.getDecoder().decode("{original_b64}");
+                    Files.write(chart, original);
+
+                    check(V240OpaqueEventBridge.prepareForV240(chart.toFile()),
+                            "modern chart was not prepared");
+                    Path session = root.resolve("modern.adofai.v240-opaque-events");
+                    check(Files.isDirectory(session), "opaque sidecar directory missing");
+                    check("5".equals(Files.readString(session.resolve(".ready"),
+                                    StandardCharsets.UTF_8)),
+                            "unexpected preserve-only replacement count");
+
+                    String prepared = Files.readString(chart, StandardCharsets.UTF_8);
+                    check(prepared.contains("__V240_OPAQUE__:"), "opaque marker missing");
+                    check(!prepared.contains("__V240_SET_INPUT_EVENT__:"),
+                            "SetInputEvent unexpectedly gained an execution carrier");
+                    check(!prepared.contains("__V240_SET_FILTER_ADVANCED__:"),
+                            "SetFilterAdvanced unexpectedly gained an execution carrier");
+                    check(!prepared.contains("__V240_PARTICLE__:"),
+                            "particle family unexpectedly gained an execution carrier");
+
+                    java.io.File restored = V240OpaqueEventBridge.buildRestoredExport(chart.toFile());
+                    check(restored != null && restored.isFile(), "restored export missing");
+                    check(Arrays.equals(original, Files.readAllBytes(restored.toPath())),
+                            "unproven post-v2.4 events were not restored byte-for-byte");
+                    V240OpaqueEventBridge.releaseRestoredExport(restored);
+                    check(!restored.exists(), "restored export temp was not released");
+                }}
+            }}
+            """
+        )
+
+        with tempfile.TemporaryDirectory(prefix="v240-post-v240-java-") as temp:
+            temp_root = Path(temp)
+            classes = temp_root / "classes"
+            log_java = temp_root / "android/util/Log.java"
+            harness_java = temp_root / "com/unity3d/player/V240PostV240PreserveOnlyHostTest.java"
+            log_java.parent.mkdir(parents=True)
+            harness_java.parent.mkdir(parents=True)
+            classes.mkdir()
+            log_java.write_text(log_source, encoding="utf-8")
+            harness_java.write_text(harness_source, encoding="utf-8")
+
+            compile_result = subprocess.run(
+                [
+                    javac,
+                    "-encoding", "UTF-8",
+                    "-d", str(classes),
+                    str(log_java),
+                    str(SCANNER),
+                    str(EVENT_COMPAT),
+                    str(SET_FRAME_BACKPORT),
+                    str(OPAQUE),
+                    str(harness_java),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(
+                0,
+                compile_result.returncode,
+                "production preserve-only host compile failed:\n"
+                + compile_result.stdout + compile_result.stderr,
+            )
+
+            run_result = subprocess.run(
+                [java, "-cp", str(classes), "com.unity3d.player.V240PostV240PreserveOnlyHostTest"],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(
+                0,
+                run_result.returncode,
+                "production preserve-only behavior contract failed:\n"
+                + run_result.stdout + run_result.stderr,
+            )
 
 
 if __name__ == "__main__":
