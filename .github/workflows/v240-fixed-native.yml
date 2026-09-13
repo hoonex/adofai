@@ -52,7 +52,7 @@ jobs:
           readelf -h dist/v240-fixed-native/libv240fix.so | grep -q 'AArch64'
           readelf -Ws dist/v240-fixed-native/libv240fix.so | grep -q 'JNI_OnLoad'
           readelf -Ws dist/v240-fixed-native/libv240fix.so | grep -q 'V240SettingsOverlay_nativeApply'
-          readelf -Ws dist/v240-fixed-native/libv240fix.so | grep -q 'V240EventCompat_nativeRegisterFeasibilityProbe'
+          readelf -Ws dist/v240-fixed-native/libv240fix.so | grep -q 'V240RunPostV240FeasibilityProbe'
           strings dist/v240-fixed-native/libv240fix.so | grep -q 'StandaloneFileBrowser'
           strings dist/v240-fixed-native/libv240fix.so | grep -q 'SaveFilePanelAsync'
           strings dist/v240-fixed-native/libv240fix.so | grep -q 'OpenFilePanelAsync'
