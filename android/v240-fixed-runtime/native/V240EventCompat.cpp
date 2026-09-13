@@ -135,6 +135,8 @@ void ProbeAndInstallEventCompat() {
     Class ffxCallMethod("", "ffxCallMethod");
     Class scrCamera("", "scrCamera");
     Class scrFloor("", "scrFloor");
+    Class scrDecorationManager("", "scrDecorationManager");
+    Class scrTextDecoration("", "scrTextDecoration");
 
     auto callMethodName = ffxCallMethod ? ffxCallMethod.GetField("methodName") : FieldBase{};
     auto callMethodDecode = (ffxCallMethod && levelEvent)
@@ -153,9 +155,18 @@ void ProbeAndInstallEventCompat() {
             : MethodBase{};
     auto floorLengthMult = scrFloor ? scrFloor.GetField("lengthMult") : FieldBase{};
     auto floorWidthMult = scrFloor ? scrFloor.GetField("widthMult") : FieldBase{};
+    auto decorationManagerInstanceField = scrDecorationManager
+            ? scrDecorationManager.GetField("instance") : FieldBase{};
+    auto decorationManagerInstanceProperty = scrDecorationManager
+            ? scrDecorationManager.GetProperty("instance") : PropertyBase{};
+    auto getTaggedDecorations = scrDecorationManager
+            ? scrDecorationManager.GetMethod("GetTaggedDecorations", 1) : MethodBase{};
+    auto setTextString = scrTextDecoration
+            ? scrTextDecoration.GetMethod("SetText", {Defaults::Get<String*>()}) : MethodBase{};
 
     const Class stringClass = Defaults::Get<String*>().ToClass();
     const Class floatClass = Defaults::Get<float>().ToClass();
+    const Class voidClass = Defaults::Get<void>().ToClass();
     const bool methodNameString = callMethodName.IsValid()
             && SameManagedType(callMethodName.GetType(), stringClass);
     const bool cameraInstanceFieldTyped = cameraInstanceField.IsValid()
@@ -175,6 +186,19 @@ void ProbeAndInstallEventCompat() {
     const bool tileDimensionsSurface = scrFloor
             && floorLengthMultFloat
             && floorWidthMultFloat;
+    const bool decorationManagerFieldTyped = decorationManagerInstanceField.IsValid()
+            && SameManagedType(decorationManagerInstanceField.GetType(), scrDecorationManager);
+    const bool decorationManagerPropertyTyped = decorationManagerInstanceProperty.IsValid()
+            && SameManagedType(decorationManagerInstanceProperty.GetType(), scrDecorationManager);
+    const bool decorationManagerSingletonTyped = decorationManagerFieldTyped
+            || decorationManagerPropertyTyped;
+    const bool setTextStringVoid = setTextString.IsValid()
+            && SameManagedType(setTextString.GetReturnType(), voidClass);
+    const bool setTextSurface = scrDecorationManager
+            && scrTextDecoration
+            && decorationManagerSingletonTyped
+            && getTaggedDecorations.IsValid()
+            && setTextStringVoid;
 
     LOGD("V240: event compat probe ffxCallMethod=%d methodNameString=%d Decode=%d StartEffect=%d scrCamera=%d instanceField=%d instanceProperty=%d SetCustomFrameRate=%d bool-int=%d bool-float=%d",
          ffxCallMethod ? 1 : 0,
@@ -192,6 +216,14 @@ void ProbeAndInstallEventCompat() {
          floorLengthMultFloat ? 1 : 0,
          floorWidthMultFloat ? 1 : 0,
          tileDimensionsSurface ? 1 : 0);
+    LOGD("V240: SetText ABI scrDecorationManager=%d instanceField=%d instanceProperty=%d GetTaggedDecorations=%d scrTextDecoration=%d SetTextStringVoid=%d compatible=%d",
+         scrDecorationManager ? 1 : 0,
+         decorationManagerFieldTyped ? 1 : 0,
+         decorationManagerPropertyTyped ? 1 : 0,
+         getTaggedDecorations.IsValid() ? 1 : 0,
+         scrTextDecoration ? 1 : 0,
+         setTextStringVoid ? 1 : 0,
+         setTextSurface ? 1 : 0);
 
     if (!schedulerSurface || !cameraInstanceTyped || !frameRateMethod) {
         g_probeComplete.store(true, std::memory_order_release);
