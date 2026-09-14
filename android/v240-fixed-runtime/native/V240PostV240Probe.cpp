@@ -1,4 +1,6 @@
-#include <jni.h>
+#include <algorithm>
+#include <cstddef>
+#include <cstring>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -253,14 +255,19 @@ extern "C" void V240RunPostV240FeasibilityProbe() {
     std::call_once(g_postV240ProbeOnce, []() { ProbePostV240Feasibility(); });
 }
 
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_unity3d_player_V240SettingsOverlay_nativeGetCompatibilityReport(
-        JNIEnv* env, jclass) {
-    if (!env) return nullptr;
+extern "C" std::size_t V240CopyPostV240CompatibilityReport(
+        char* buffer, std::size_t bufferSize) {
     std::string report;
     {
         std::lock_guard<std::mutex> lock(g_postV240ReportMutex);
         report = g_postV240Report;
     }
-    return env->NewStringUTF(report.c_str());
+
+    const std::size_t length = report.size();
+    if (buffer && bufferSize > 0) {
+        const std::size_t copyLength = std::min(length, bufferSize - 1);
+        if (copyLength > 0) std::memcpy(buffer, report.data(), copyLength);
+        buffer[copyLength] = '\0';
+    }
+    return length;
 }
