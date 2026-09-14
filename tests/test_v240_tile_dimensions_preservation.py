@@ -1,5 +1,6 @@
 from pathlib import Path
 import base64
+import json
 import shutil
 import subprocess
 import tempfile
@@ -13,6 +14,7 @@ EVENT_COMPAT = JAVA / "V240EventCompat.java"
 SET_FRAME = JAVA / "V240SetFrameRateBackport.java"
 OPAQUE = JAVA / "V240OpaqueEventBridge.java"
 EVENT_NATIVE = ROOT / "android/v240-fixed-runtime/native/V240EventCompat.cpp"
+EVIDENCE = ROOT / "android/v240-fixed-runtime/evidence/post-v240-feasibility.json"
 
 
 class V240TileDimensionsPreservationContract(unittest.TestCase):
@@ -21,6 +23,7 @@ class V240TileDimensionsPreservationContract(unittest.TestCase):
         cls.scanner = SCANNER.read_text(encoding="utf-8")
         cls.opaque = OPAQUE.read_text(encoding="utf-8")
         cls.native = EVENT_NATIVE.read_text(encoding="utf-8")
+        cls.evidence = json.loads(EVIDENCE.read_text(encoding="utf-8"))
 
     def test_tile_dimensions_is_post_v240_but_has_no_active_backport(self):
         self.assertIn('"TileDimensions"', self.scanner)
@@ -35,6 +38,38 @@ class V240TileDimensionsPreservationContract(unittest.TestCase):
         self.assertNotIn(".Set(", probe)
         self.assertNotIn("BasicHook", probe)
         self.assertNotIn("CreateNewObject", probe)
+
+    def test_tile_dimensions_evidence_fail_closes_schema_and_runtime_gaps(self):
+        tile = self.evidence["families"]["TileDimensions"]
+        self.assertEqual("candidate_preserve_only", tile["status"])
+        self.assertFalse(tile["exact_v240_abi_proven"])
+        self.assertFalse(tile["scheduler_or_lifecycle_semantics_proven"])
+        self.assertFalse(tile["active_backport_allowed"])
+
+        surfaces = set(tile["required_v240_surfaces"])
+        self.assertIn("scrFloor.lengthMult : float", surfaces)
+        self.assertIn("scrFloor.widthMult : float", surfaces)
+
+        schema = tile["serialized_schema_evidence"]
+        width_length = schema["width_length"]
+        self.assertEqual("strong_third_party_parser_evidence", width_length["grade"])
+        self.assertEqual("Cocoa2219/AdofaiBin", width_length["repository"])
+        self.assertIn("Width = 100", width_length["properties"])
+        self.assertIn("Length = 100", width_length["properties"])
+        self.assertIn("PascalCase", width_length["parser_mapping"])
+
+        conflict = schema["conflicting_interface"]
+        self.assertEqual("conflicting_third_party_interface", conflict["grade"])
+        self.assertEqual("adofaiex/ADOFAI-JS", conflict["repository"])
+        self.assertIn("scale", conflict["properties"])
+        self.assertIn("scaleTo", conflict["properties"])
+        self.assertIn("Do not transform or execute", conflict["resolution"])
+
+        blockers = set(tile["remaining_blockers"])
+        self.assertIn("resolve serialized schema conflict", blockers)
+        self.assertIn("prove width/length units and percent-to-multiplier conversion", blockers)
+        self.assertIn("prove floor propagation/application ordering", blockers)
+        self.assertIn("prove exact v2.4 runtime fields on authoritative source or device", blockers)
 
     def test_production_bridge_preserves_tile_dimensions_byte_exactly(self):
         javac = shutil.which("javac")
