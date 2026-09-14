@@ -14,6 +14,7 @@ OPAQUE = JAVA / "V240OpaqueEventBridge.java"
 EVENT_COMPAT = JAVA / "V240EventCompat.java"
 SET_FRAME_BACKPORT = JAVA / "V240SetFrameRateBackport.java"
 EVENT_NATIVE = ROOT / "android/v240-fixed-runtime/native/V240EventCompat.cpp"
+POST_V240_PROBE = ROOT / "android/v240-fixed-runtime/native/V240PostV240Probe.cpp"
 EVIDENCE = ROOT / "android/v240-fixed-runtime/evidence/post-v240-feasibility.json"
 
 
@@ -23,6 +24,7 @@ class V240PostV240FeasibilityContract(unittest.TestCase):
         cls.scanner = SCANNER.read_text(encoding="utf-8")
         cls.opaque = OPAQUE.read_text(encoding="utf-8")
         cls.event_native = EVENT_NATIVE.read_text(encoding="utf-8")
+        cls.post_v240_probe = POST_V240_PROBE.read_text(encoding="utf-8")
         cls.evidence = json.loads(EVIDENCE.read_text(encoding="utf-8"))
 
     def test_unproven_execution_families_are_explicitly_preserve_only(self):
@@ -69,6 +71,24 @@ class V240PostV240FeasibilityContract(unittest.TestCase):
         self.assertIn("V240SetFrameRateBackport.maybePlaceholder", self.opaque)
         self.assertIn("__V240_SET_FRAME_RATE__:", self.event_native)
         self.assertIn("g_setFrameRateBackportReady", self.event_native)
+
+    def test_feasibility_probe_remains_read_only_and_caller_gated(self):
+        for forbidden in (
+            ".Call(",
+            ".Set(",
+            "BasicHook",
+            "CreateNewObject",
+            "Loading::AddOnLoadedEvent",
+            "JNIEXPORT",
+            "nativeRegisterFeasibilityProbe",
+        ):
+            self.assertNotIn(forbidden, self.post_v240_probe)
+        self.assertIn("V240RunPostV240FeasibilityProbe", self.post_v240_probe)
+        self.assertIn("std::call_once(g_postV240ProbeOnce", self.post_v240_probe)
+        self.assertIn("active=0", self.post_v240_probe)
+        self.assertNotIn("__V240_SET_INPUT_EVENT__:", self.post_v240_probe)
+        self.assertNotIn("__V240_SET_FILTER_ADVANCED__:", self.post_v240_probe)
+        self.assertNotIn("__V240_PARTICLE__:", self.post_v240_probe)
 
     def test_authoritative_source_fingerprint_is_pinned_but_exact_abi_audit_is_pending(self):
         source = self.evidence["authoritative_v240_source"]
