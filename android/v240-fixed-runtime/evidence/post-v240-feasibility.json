@@ -124,7 +124,11 @@
         },
         "conflicting_interface": {
           "grade": "conflicting_third_party_interface",
+          "weight": "low_unverified_interface",
           "repository": "adofaiex/ADOFAI-JS",
+          "introduced_in_commit": "b0a922606b0dc138a66c119d5de5482e4c0c9aff",
+          "introduced_at": "2026-05-31",
+          "introduction_context": "TileDimensions.ts was introduced in a bulk event-interface commit rather than derived as an exact shipped-game runtime ABI or serializer dump.",
           "properties": [
             "scale",
             "scaleTo",
@@ -132,11 +136,24 @@
             "scaleToEasing",
             "angleOffset"
           ],
+          "evidence_limit": "A TypeScript interface alone does not prove the serialized keys accepted by the shipped game, and therefore cannot outweigh a parser that directly maps disk keys to a declared TileDimensions schema.",
           "resolution": "Do not transform or execute TileDimensions from serialized fields until authoritative/current schema and unit conversion are independently proven."
-        }
+        },
+        "assessment": "width/length currently has the stronger serialization evidence, but the conflict is not treated as fully resolved until an authoritative game serializer/schema or representative shipped chart proves the keys and units."
       },
       "runtime_evidence": {
         "current_documented_behavior": "scnGame.ApplyEventsToFloors applies TileDimensions as core floor state by writing lengthMult and widthMult",
+        "current_real_install_usage_stub": {
+          "repository": "PrismMods/Quartz",
+          "commit": "a53c00912a8e33435fa06e16c05ada63cb8260b6",
+          "generation_contract": "Quartz stubs are generated against a real game install but intentionally contain only members referenced by Quartz itself.",
+          "confirms": [
+            "ADOFAI.LevelEventType.TileDimensions exists",
+            "scnGame.ApplyEventsToFloors(List<scrFloor>) exists",
+            "scnGame.ApplyEventsToFloors(List<scrFloor>, LevelData, scrLevelMaker, List<LevelEvent>) exists"
+          ],
+          "cannot_prove": "Absence of lengthMult or widthMult from the usage-limited stub is not evidence that the real game lacks those fields, because unreferenced members are deliberately omitted."
+        },
         "v240_read_only_probe_already_checks": [
           "scrFloor.lengthMult is float",
           "scrFloor.widthMult is float"
