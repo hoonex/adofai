@@ -220,7 +220,11 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
         self.assertIn("Java_com_unity3d_player_V240EventCompat_nativeRegister", self.event_source)
 
     def test_payload_builds_cannot_drop_event_compat(self):
-        self.assertIn('cp "${ROOT}/android/v240-fixed-runtime/native/V240EventCompat.cpp"', self.native_build)
+        self.assertIn(
+            'EVENT_COMPAT_SOURCE="${ROOT}/android/v240-fixed-runtime/native/V240EventCompat.cpp"',
+            self.native_build,
+        )
+        self.assertIn('cp "${EVENT_COMPAT_SOURCE}" "${JNI}/V240EventCompat.cpp"', self.native_build)
         self.assertIn("V240EventCompat.cpp", self.native_build)
         self.assertIn("Java_com_unity3d_player_V240EventCompat_nativeIsSetFrameRateBackportReady", self.native_build)
         self.assertIn("V240EventCompat.initialize();", self.java_build)
