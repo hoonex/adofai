@@ -102,6 +102,55 @@
       ],
       "exact_v240_abi_proven": false,
       "active_backport_allowed": false
+    },
+    "TileDimensions": {
+      "status": "candidate_preserve_only",
+      "latest_semantics": "core floor-state processing writes scrFloor.lengthMult and scrFloor.widthMult rather than requiring a later ffx runtime class",
+      "required_v240_surfaces": [
+        "scrFloor.lengthMult : float",
+        "scrFloor.widthMult : float",
+        "a proven v2.4 floor-state application point with equivalent propagation semantics"
+      ],
+      "serialized_schema_evidence": {
+        "width_length": {
+          "grade": "strong_third_party_parser_evidence",
+          "repository": "Cocoa2219/AdofaiBin",
+          "event_class": "TileDimensions",
+          "properties": [
+            "Width = 100",
+            "Length = 100"
+          ],
+          "parser_mapping": "JSON keys are converted to PascalCase before matching declared event properties, so Width and Length correspond to width and length on disk."
+        },
+        "conflicting_interface": {
+          "grade": "conflicting_third_party_interface",
+          "repository": "adofaiex/ADOFAI-JS",
+          "properties": [
+            "scale",
+            "scaleTo",
+            "scaleToDuration",
+            "scaleToEasing",
+            "angleOffset"
+          ],
+          "resolution": "Do not transform or execute TileDimensions from serialized fields until authoritative/current schema and unit conversion are independently proven."
+        }
+      },
+      "runtime_evidence": {
+        "current_documented_behavior": "scnGame.ApplyEventsToFloors applies TileDimensions as core floor state by writing lengthMult and widthMult",
+        "v240_read_only_probe_already_checks": [
+          "scrFloor.lengthMult is float",
+          "scrFloor.widthMult is float"
+        ]
+      },
+      "remaining_blockers": [
+        "resolve serialized schema conflict",
+        "prove width/length units and percent-to-multiplier conversion",
+        "prove floor propagation/application ordering",
+        "prove exact v2.4 runtime fields on authoritative source or device"
+      ],
+      "exact_v240_abi_proven": false,
+      "scheduler_or_lifecycle_semantics_proven": false,
+      "active_backport_allowed": false
     }
   },
   "promotion_rule": {
