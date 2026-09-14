@@ -15,6 +15,13 @@ final class V240EventCompat {
             // Preserve-only opaque event handling remains the authoritative fallback.
             Log.w(TAG, "event compatibility runtime registration unavailable", error);
         }
+        try {
+            // Evidence-only TileDimensions observation is registered independently so a
+            // diagnostic failure can never disable the proven SetFrameRate path above.
+            nativeRegisterTileDimensionsSnapshot();
+        } catch (Throwable error) {
+            Log.w(TAG, "TileDimensions read-only snapshot registration unavailable", error);
+        }
     }
 
     static boolean isSetFrameRateBackportReady() {
@@ -27,5 +34,6 @@ final class V240EventCompat {
     }
 
     private static native void nativeRegister();
+    private static native void nativeRegisterTileDimensionsSnapshot();
     private static native boolean nativeIsSetFrameRateBackportReady();
 }

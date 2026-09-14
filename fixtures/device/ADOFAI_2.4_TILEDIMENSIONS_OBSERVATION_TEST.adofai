@@ -1,0 +1,23 @@
+{
+    "angleData": [0, 90, 180, 270, 0, 90, 180, 270],
+    "settings": {
+        "version": 15,
+        "artist": "Compatibility Fixture",
+        "song": "TileDimensions Read-Only Observation"
+    },
+    "actions": [
+        {
+            "floor": 1,
+            "eventType": "TileDimensions",
+            "width": 200,
+            "length": 50
+        },
+        {
+            "floor": 4,
+            "eventType": "TileDimensions",
+            "width": 125,
+            "length": 175
+        }
+    ],
+    "decorations": []
+}

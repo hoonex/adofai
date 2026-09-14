@@ -51,6 +51,10 @@ grep -q 'extern "C" void V240RunPostV240FeasibilityProbe()' "${POST_V240_PROBE_S
 grep -q 'std::call_once(g_postV240ProbeOnce' "${POST_V240_PROBE_SOURCE}"
 grep -q 'V240CopyPostV240CompatibilityReport' "${POST_V240_PROBE_SOURCE}"
 grep -q 'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport' "${COMPAT_REPORT_SOURCE}"
+grep -q 'Java_com_unity3d_player_V240EventCompat_nativeRegisterTileDimensionsSnapshot' "${COMPAT_REPORT_SOURCE}"
+grep -q 'V240CopyTileDimensionsLiveSnapshot' "${COMPAT_REPORT_SOURCE}"
+grep -q 'TileDimensions.liveSnapshot.mutatesRuntime=0' "${COMPAT_REPORT_SOURCE}"
+grep -q 'TileDimensions.liveSnapshot.conversionAssumption=none' "${COMPAT_REPORT_SOURCE}"
 
 JNI="${UPSTREAM}/app/src/main/jni"
 cp "${ROOT}/android/v240-fixed-runtime/native/V240Fix.cpp" "${JNI}/V240Fix.cpp"
@@ -131,11 +135,16 @@ readelf -Ws "${OUT}/libv240fix.so" | grep -q 'JNI_OnLoad'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240SettingsOverlay_nativeApply'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240SettingsOverlay_nativeApplyTouchAssist'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240EventCompat_nativeIsSetFrameRateBackportReady'
+readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240EventCompat_nativeRegisterTileDimensionsSnapshot'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'V240RunPostV240FeasibilityProbe'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'V240CopyPostV240CompatibilityReport'
+readelf -Ws "${OUT}/libv240fix.so" | grep -q 'V240CopyTileDimensionsLiveSnapshot'
 strings "${OUT}/libv240fix.so" | grep -q 'V240 compatibility report'
 strings "${OUT}/libv240fix.so" | grep -q 'TileDimensions.applicationSurface='
+strings "${OUT}/libv240fix.so" | grep -q 'TileDimensions.liveSnapshot.status=ready'
+strings "${OUT}/libv240fix.so" | grep -q 'TileDimensions.liveSnapshot.mutatesRuntime=0'
+strings "${OUT}/libv240fix.so" | grep -q 'TileDimensions.liveSnapshot.conversionAssumption=none'
 strings "${OUT}/libv240fix.so" | grep -q 'V240: EmitParticle ABI'
 strings "${OUT}/libv240fix.so" | grep -q 'V240: SetInputEvent feasibility'
 strings "${OUT}/libv240fix.so" | grep -q 'V240: SetFilterAdvanced feasibility'
