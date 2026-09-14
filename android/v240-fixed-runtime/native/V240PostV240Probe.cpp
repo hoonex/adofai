@@ -167,7 +167,7 @@ void ProbePostV240Feasibility() {
 } // namespace
 
 extern "C" void V240RunPostV240FeasibilityProbe() {
-    // Intentionally not auto-registered. A future caller must invoke this only from a proven
-    // post-BNM-load point; until then the production runtime behavior is unchanged.
+    // Called only from V240EventCompat's existing post-BNM loaded callback, before event compat
+    // installation. The probe stays evidence-only; std::call_once prevents duplicate scans.
     std::call_once(g_postV240ProbeOnce, []() { ProbePostV240Feasibility(); });
 }
