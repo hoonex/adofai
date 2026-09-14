@@ -22,11 +22,38 @@ git -C "${UPSTREAM}" reset --hard "${UPSTREAM_SHA}"
 git -C "${UPSTREAM}" clean -fdx
 [[ "$(git -C "${UPSTREAM}" rev-parse HEAD)" == "${UPSTREAM_SHA}" ]]
 
+EVENT_COMPAT_SOURCE="${ROOT}/android/v240-fixed-runtime/native/V240EventCompat.cpp"
+POST_V240_PROBE_SOURCE="${ROOT}/android/v240-fixed-runtime/native/V240PostV240Probe.cpp"
+python3 - "${EVENT_COMPAT_SOURCE}" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1]).read_text(encoding="utf-8")
+callback_marker = "Loading::AddOnLoadedEvent([]() {"
+probe_call = "V240RunPostV240FeasibilityProbe();"
+install_call = "ProbeAndInstallEventCompat();"
+declaration = 'extern "C" void V240RunPostV240FeasibilityProbe();'
+
+assert declaration in source, "post-v2.4 probe declaration missing"
+start = source.index(callback_marker)
+end = source.index("});", start)
+callback = source[start:end]
+assert probe_call in callback, "post-v2.4 probe is not gated by the proven BNM-loaded callback"
+assert install_call in callback, "event compatibility install call missing from BNM-loaded callback"
+assert callback.index(probe_call) < callback.index(install_call), \
+    "read-only ABI probe must run before active event hook installation"
+assert source.count(probe_call) == 2, \
+    "only one post-BNM probe invocation plus its declaration are allowed"
+PY
+
+grep -q 'extern "C" void V240RunPostV240FeasibilityProbe()' "${POST_V240_PROBE_SOURCE}"
+grep -q 'std::call_once(g_postV240ProbeOnce' "${POST_V240_PROBE_SOURCE}"
+
 JNI="${UPSTREAM}/app/src/main/jni"
 cp "${ROOT}/android/v240-fixed-runtime/native/V240Fix.cpp" "${JNI}/V240Fix.cpp"
 cp "${ROOT}/android/v240-fixed-runtime/native/V240TouchAssist.cpp" "${JNI}/V240TouchAssist.cpp"
-cp "${ROOT}/android/v240-fixed-runtime/native/V240EventCompat.cpp" "${JNI}/V240EventCompat.cpp"
-cp "${ROOT}/android/v240-fixed-runtime/native/V240PostV240Probe.cpp" "${JNI}/V240PostV240Probe.cpp"
+cp "${EVENT_COMPAT_SOURCE}" "${JNI}/V240EventCompat.cpp"
+cp "${POST_V240_PROBE_SOURCE}" "${JNI}/V240PostV240Probe.cpp"
 
 # The source snapshot was configured for a later Unity build. The user's audited APK
 # is Unity 2021.3.10f1, so make BNM's IL2CPP layout match that exact runtime family.
