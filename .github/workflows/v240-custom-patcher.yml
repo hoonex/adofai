@@ -9,6 +9,8 @@ on:
       - 'android/v240-fixed-runtime/**'
       - 'scripts/build-v240-fixed-java.sh'
       - 'scripts/build-v240-fixed-native.sh'
+      - 'tests/test_v240_tile_dimensions_live_snapshot.py'
+      - 'fixtures/device/ADOFAI_2.4_TILEDIMENSIONS_OBSERVATION_TEST.adofai'
       - '.github/workflows/v240-custom-patcher.yml'
   workflow_dispatch:
 
@@ -34,7 +36,12 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Verify TileDimensions live snapshot stays read-only
+        run: python3 -m unittest discover -s tests -p 'test_v240_tile_dimensions_live_snapshot.py' -v
+
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Install pinned Android toolchain
         run: |
