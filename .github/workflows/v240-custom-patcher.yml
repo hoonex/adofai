@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: adofai-v240-custom-patcher-${{ github.ref }}
@@ -116,3 +116,31 @@ jobs:
           path: dist/v240-patcher/
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish stable patcher APK link
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG='v2.4.0-custom-mobile-bugfix-patcher'
+          TITLE='ADOFAI 2.4.0 Custom Mobile Bugfix Patcher'
+          NOTES='.work/v240-patcher-release-notes.md'
+          mkdir -p .work
+          cat > "$NOTES" <<'EOF'
+          One-click Android patcher for the exact historical V2.4.0 Custom APK.
+
+          Expected source:
+          - size: 370,092,054 bytes
+          - SHA-256: 630f519ae1ab3391aad95da90ebc296f4f0f8ae4ea41024ace7349d93926ef30
+
+          The patcher keeps the original game native libraries intact and adds the verified v2.4 mobile bugfix runtime. It does not redistribute the original game APK.
+          EOF
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes-file "$NOTES" --target "$GITHUB_SHA"
+          else
+            gh release create "$TAG" --title "$TITLE" --notes-file "$NOTES" --target "$GITHUB_SHA"
+          fi
+          gh release upload "$TAG" \
+            dist/v240-patcher/ADOFAI-2.4.0-Custom-Bugfix-Patcher.apk \
+            dist/v240-patcher/SHA256SUMS.txt \
+            --clobber
