@@ -1,0 +1,87 @@
+{
+  "schema": 1,
+  "policy": "fail_closed_until_exact_v240_abi_is_proven",
+  "authoritative_v240_source": {
+    "name": "V2.4.0 Custom.apk",
+    "size_bytes": 370092054,
+    "sha256": "630f519ae1ab3391aad95da90ebc296f4f0f8ae4ea41024ace7349d93926ef30",
+    "exact_abi_audit": "pending_runtime_file_access"
+  },
+  "families": {
+    "SetInputEvent": {
+      "status": "preserve_only",
+      "latest_runtime_class": "ffxSetInputEventPlus",
+      "latest_semantics": "register same-floor tagged effects for manual input-trigger execution and write controller input-event state",
+      "required_v240_surfaces": [
+        "ffxPlusBase.StartEffectWithOffset(scrPlanet)",
+        "scrController.ResetInputEventFfx()",
+        "scrController.inputEventFfx",
+        "InputEventTarget",
+        "InputEventState"
+      ],
+      "exact_v240_abi_proven": false,
+      "active_backport_allowed": false
+    },
+    "EmitParticle": {
+      "status": "candidate_preserve_only",
+      "candidate_rank": 1,
+      "latest_runtime_class": "ADOFAI.FloorFX.ffxEmitParticlePlus",
+      "latest_semantics": "resolve tagged scrParticleDecoration instances and call particleSystem.Emit(count)",
+      "required_v240_surfaces": [
+        "scrDecorationManager singleton",
+        "scrDecorationManager.GetTaggedDecorations(IEnumerable<string>) -> IEnumerable<scrDecoration>",
+        "System.Linq.Enumerable.ToArray<scrDecoration>(IEnumerable<scrDecoration>)",
+        "scrParticleDecoration.particleSystem : UnityEngine.ParticleSystem",
+        "UnityEngine.ParticleSystem.Emit(int) -> void"
+      ],
+      "historical_nearby_evidence": {
+        "grade": "indirect_only",
+        "adofai_version": "v2.5.0",
+        "repository": "adofaiex/Iridium",
+        "commit": "fe7ff015c6e28285d288d6bf58f447d5a1883aa5",
+        "commit_declares_support_for": [
+          "v2.9.8",
+          "v2.5.0"
+        ],
+        "same_commit_particle_code_uses": [
+          "scrParticleDecoration",
+          "scrParticleDecoration.particleSystem"
+        ],
+        "note": "This narrows the historical gap but does not prove the exact Android v2.4 IL2CPP ABI."
+      },
+      "exact_v240_abi_proven": false,
+      "active_backport_allowed": false
+    },
+    "SetParticle": {
+      "status": "preserve_only",
+      "latest_runtime_class": "ADOFAI.FloorFX.ffxSetParticlePlus",
+      "latest_semantics": "mutate and tween multiple ParticleSystem modules, play state, locks, simulation speed, and scrub simulation",
+      "exact_v240_abi_proven": false,
+      "active_backport_allowed": false
+    },
+    "SetFilterAdvanced": {
+      "status": "preserve_only",
+      "latest_runtime_class": "ffxSetFilterAdvancedPlus",
+      "latest_semantics": "reflect filter component types, add/reuse components, tween supported fields, track original values, and clean up lifecycle state",
+      "required_v240_surfaces": [
+        "System.Type.GetType(string)",
+        "UnityEngine.GameObject.GetComponent(Type)",
+        "UnityEngine.GameObject.AddComponent(Type)",
+        "UnityEngine.Behaviour.enabled",
+        "compatible filter component assemblies and fields",
+        "DOTween lifecycle and cleanup semantics"
+      ],
+      "exact_v240_abi_proven": false,
+      "active_backport_allowed": false
+    }
+  },
+  "promotion_rule": {
+    "all_required": [
+      "exact_v240_abi_proven",
+      "scheduler_or_lifecycle_semantics_proven",
+      "lossless_fallback_preserved",
+      "production_tests_green"
+    ],
+    "default": "preserve_only"
+  }
+}
