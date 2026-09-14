@@ -16,6 +16,8 @@ extern "C" JNIEXPORT jboolean JNICALL
 Java_com_unity3d_player_V240SettingsOverlay_nativeApplyTouchAssist(
         JNIEnv* env, jclass overlayClass, jboolean enabled, jfloat radiusPx);
 
+extern "C" void V240RunPostV240FeasibilityProbe();
+
 namespace {
 constexpr char kSetFrameRateMarkerPrefix[] = "__V240_SET_FRAME_RATE__:";
 
@@ -275,7 +277,10 @@ void ProbeAndInstallEventCompat() {
 
 void RegisterV240EventCompat() {
     std::call_once(g_registerOnce, []() {
-        Loading::AddOnLoadedEvent([]() { ProbeAndInstallEventCompat(); });
+        Loading::AddOnLoadedEvent([]() {
+            V240RunPostV240FeasibilityProbe();
+            ProbeAndInstallEventCompat();
+        });
     });
 }
 
