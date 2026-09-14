@@ -132,7 +132,10 @@ void HookCallMethodStartEffect(IL2CPP::Il2CppObject* self, IL2CPP::Il2CppObject*
 }
 
 void ProbeAndInstallEventCompat() {
+    Class levelData("ADOFAI", "LevelData");
     Class levelEvent("ADOFAI", "LevelEvent");
+    Class scnGame("", "scnGame");
+    Class scrLevelMaker("", "scrLevelMaker");
     Class scrPlanet("", "scrPlanet");
     Class ffxCallMethod("", "ffxCallMethod");
     Class scrCamera("", "scrCamera");
@@ -140,12 +143,17 @@ void ProbeAndInstallEventCompat() {
     Class scrDecorationManager("", "scrDecorationManager");
     Class scrDecoration("", "scrDecoration");
     Class scrTextDecoration("", "scrTextDecoration");
+    Class genericList("System.Collections.Generic", "List`1");
     Class genericEnumerable("System.Collections.Generic", "IEnumerable`1");
     Class linqEnumerable("System.Linq", "Enumerable");
 
     const Class stringClass = Defaults::Get<String*>().ToClass();
     const Class floatClass = Defaults::Get<float>().ToClass();
     const Class voidClass = Defaults::Get<void>().ToClass();
+    const Class listFloor = (genericList && scrFloor)
+            ? genericList.GetGeneric({scrFloor.GetCompileTimeClass()}) : Class{};
+    const Class listEvent = (genericList && levelEvent)
+            ? genericList.GetGeneric({levelEvent.GetCompileTimeClass()}) : Class{};
     const Class enumerableString = (genericEnumerable && stringClass)
             ? genericEnumerable.GetGeneric({stringClass.GetCompileTimeClass()}) : Class{};
     const Class enumerableDecoration = (genericEnumerable && scrDecoration)
@@ -168,6 +176,16 @@ void ProbeAndInstallEventCompat() {
             : MethodBase{};
     auto floorLengthMult = scrFloor ? scrFloor.GetField("lengthMult") : FieldBase{};
     auto floorWidthMult = scrFloor ? scrFloor.GetField("widthMult") : FieldBase{};
+    auto applyEventsToFloorsLegacy = (scnGame && listFloor)
+            ? scnGame.GetMethod(
+                    "ApplyEventsToFloors", {listFloor.GetCompileTimeClass()})
+            : MethodBase{};
+    auto applyEventsToFloorsExtended = (scnGame && listFloor && levelData && scrLevelMaker && listEvent)
+            ? scnGame.GetMethod(
+                    "ApplyEventsToFloors",
+                    {listFloor.GetCompileTimeClass(), levelData.GetCompileTimeClass(),
+                     scrLevelMaker.GetCompileTimeClass(), listEvent.GetCompileTimeClass()})
+            : MethodBase{};
     auto decorationManagerInstanceField = scrDecorationManager
             ? scrDecorationManager.GetField("instance") : FieldBase{};
     auto decorationManagerInstanceProperty = scrDecorationManager
@@ -202,6 +220,12 @@ void ProbeAndInstallEventCompat() {
     const bool tileDimensionsSurface = scrFloor
             && floorLengthMultFloat
             && floorWidthMultFloat;
+    const bool applyEventsToFloorsLegacyVoid = applyEventsToFloorsLegacy.IsValid()
+            && SameManagedType(applyEventsToFloorsLegacy.GetReturnType(), voidClass);
+    const bool applyEventsToFloorsExtendedVoid = applyEventsToFloorsExtended.IsValid()
+            && SameManagedType(applyEventsToFloorsExtended.GetReturnType(), voidClass);
+    const bool tileDimensionsApplicationSurface = applyEventsToFloorsLegacyVoid
+            || applyEventsToFloorsExtendedVoid;
     const bool decorationManagerFieldTyped = decorationManagerInstanceField.IsValid()
             && SameManagedType(decorationManagerInstanceField.GetType(), scrDecorationManager);
     const bool decorationManagerPropertyTyped = decorationManagerInstanceProperty.IsValid()
@@ -240,6 +264,15 @@ void ProbeAndInstallEventCompat() {
          floorLengthMultFloat ? 1 : 0,
          floorWidthMultFloat ? 1 : 0,
          tileDimensionsSurface ? 1 : 0);
+    LOGD("V240: TileDimensions apply ABI scnGame=%d ListFloor=%d ListEvent=%d LevelData=%d scrLevelMaker=%d legacyVoid=%d extendedVoid=%d applicationSurface=%d active=0",
+         scnGame ? 1 : 0,
+         listFloor ? 1 : 0,
+         listEvent ? 1 : 0,
+         levelData ? 1 : 0,
+         scrLevelMaker ? 1 : 0,
+         applyEventsToFloorsLegacyVoid ? 1 : 0,
+         applyEventsToFloorsExtendedVoid ? 1 : 0,
+         tileDimensionsApplicationSurface ? 1 : 0);
     LOGD("V240: SetText ABI scrDecorationManager=%d instanceField=%d instanceProperty=%d IEnumerableString=%d GetTaggedDecorationsTyped=%d scrTextDecoration=%d SetTextStringVoid=%d ToArrayDecoration=%d compatible=%d",
          scrDecorationManager ? 1 : 0,
          decorationManagerFieldTyped ? 1 : 0,

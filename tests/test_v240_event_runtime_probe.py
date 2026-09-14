@@ -113,6 +113,35 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
         self.assertNotIn("BasicHook", probe)
         self.assertNotIn("CreateNewObject", probe)
 
+    def test_tile_dimensions_probe_covers_floor_state_application_candidates(self):
+        expected = (
+            'Class levelData("ADOFAI", "LevelData")',
+            'Class levelEvent("ADOFAI", "LevelEvent")',
+            'Class scnGame("", "scnGame")',
+            'Class scrLevelMaker("", "scrLevelMaker")',
+            'Class genericList("System.Collections.Generic", "List`1")',
+            'genericList.GetGeneric({scrFloor.GetCompileTimeClass()})',
+            'genericList.GetGeneric({levelEvent.GetCompileTimeClass()})',
+            '"ApplyEventsToFloors", {listFloor.GetCompileTimeClass()}',
+            'listFloor.GetCompileTimeClass(), levelData.GetCompileTimeClass()',
+            'scrLevelMaker.GetCompileTimeClass(), listEvent.GetCompileTimeClass()',
+            'SameManagedType(applyEventsToFloorsLegacy.GetReturnType(), voidClass)',
+            'SameManagedType(applyEventsToFloorsExtended.GetReturnType(), voidClass)',
+            'tileDimensionsApplicationSurface = applyEventsToFloorsLegacyVoid',
+            'V240: TileDimensions apply ABI scnGame=%d',
+            'applicationSurface=%d active=0',
+        )
+        for marker in expected:
+            self.assertIn(marker, self.event_source)
+
+        start = self.event_source.index('auto applyEventsToFloorsLegacy =')
+        end = self.event_source.index('LOGD("V240: SetText ABI', start)
+        probe = self.event_source[start:end]
+        self.assertNotIn(".Call(", probe)
+        self.assertNotIn(".Set(", probe)
+        self.assertNotIn("BasicHook", probe)
+        self.assertNotIn("CreateNewObject", probe)
+
     def test_set_text_probe_requires_exact_enumerable_and_text_setter_abi(self):
         expected = (
             'Class scrDecorationManager("", "scrDecorationManager")',
@@ -235,6 +264,7 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
         self.assertIn("scrCamera.SetCustomFrameRate=%d", self.probe)
         self.assertIn("V240: event compat probe ffxCallMethod=%d", self.event_source)
         self.assertIn("V240: TileDimensions ABI scrFloor=%d", self.event_source)
+        self.assertIn("V240: TileDimensions apply ABI scnGame=%d", self.event_source)
         self.assertIn("V240: SetText ABI scrDecorationManager=%d", self.event_source)
         self.assertIn("SetFrameRate execution backport ready", self.event_source)
         self.assertIn("opaque preserve-only mode retained", self.event_source)
