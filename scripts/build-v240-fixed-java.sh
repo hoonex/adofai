@@ -13,6 +13,7 @@ test -x "${D8}"
 
 WINDOW_COMPAT="${ROOT}/android/v240-fixed-runtime/java/com/unity3d/player/V240WindowCompat.java"
 BOOTSTRAP="${ROOT}/android/v240-fixed-runtime/java/com/unity3d/player/V240Bootstrap.java"
+COMPAT_REPORT="${ROOT}/android/v240-fixed-runtime/java/com/unity3d/player/V240CompatibilityReport.java"
 grep -Fq 'LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER' "${WINDOW_COMPAT}"
 grep -Fq 'SOFT_INPUT_ADJUST_RESIZE' "${WINDOW_COMPAT}"
 grep -Fq 'setSystemGestureExclusionRects' "${WINDOW_COMPAT}"
@@ -22,6 +23,10 @@ grep -Fq 'V240WindowCompat.apply();' "${BOOTSTRAP}"
 grep -Fq 'V240EventCompat.initialize();' "${BOOTSTRAP}"
 grep -Fq 'main.postDelayed(forceRebind, 500L);' "${BOOTSTRAP}"
 grep -Fq 'main.postDelayed(forceRebind, 1500L);' "${BOOTSTRAP}"
+[[ "$(grep -Fc 'V240CompatibilityReport.install();' "${BOOTSTRAP}")" -eq 2 ]]
+grep -Fq 'setOnLongClickListener' "${COMPAT_REPORT}"
+grep -Fq 'ClipboardManager' "${COMPAT_REPORT}"
+grep -Fq 'nativeGetCompatibilityReport' "${COMPAT_REPORT}"
 
 rm -rf "${OUT}"
 mkdir -p "${OUT}/classes" "${OUT}/dex"
@@ -46,6 +51,7 @@ for marker in \
   'Lcom/unity3d/player/V240SettingsOverlay;' \
   'Lcom/unity3d/player/V240WindowCompat;' \
   'Lcom/unity3d/player/V240EventCompat;' \
+  'Lcom/unity3d/player/V240CompatibilityReport;' \
   'Lcom/unity3d/player/V240SetFrameRateBackport;' \
   'Lcom/unity3d/player/V240LevelFolderBridge;' \
   'Lcom/unity3d/player/V240ArchiveOpenBridge;' \
