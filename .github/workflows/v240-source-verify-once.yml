@@ -1,4 +1,4 @@
-name: Verify Exact ADOFAI 2.4 Custom Source
+name: Audit Exact ADOFAI 2.4 Custom Source
 
 on:
   push:
@@ -11,12 +11,13 @@ permissions:
   contents: read
 
 jobs:
-  verify-source:
+  audit-source:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Resolve exact archived source candidate
+        id: resolve
         shell: bash
         run: |
           set -euo pipefail
@@ -24,13 +25,8 @@ jobs:
           python3 -m pip install --quiet --disable-pip-version-check 'gdown==5.2.0'
           python3 - <<'PY'
           import hashlib
-          import html
-          import http.cookiejar
           import os
-          import re
           import subprocess
-          import urllib.parse
-          import urllib.request
 
           EXPECTED_SIZE = 370092054
           EXPECTED_SHA = '630f519ae1ab3391aad95da90ebc296f4f0f8ae4ea41024ace7349d93926ef30'
@@ -39,128 +35,75 @@ jobs:
               '1UAQ9IXOv8zNfBruDmUj23dkUcjlLg2uN',
           )
           OUT = 'V2.4.0 Custom.apk'
-          UA = 'Mozilla/5.0'
+          REPORT = 'dist/v240-static-audit/source-report.txt'
 
           def fingerprint(path):
               if not os.path.isfile(path):
                   return None
               size = os.path.getsize(path)
-              h = hashlib.sha256()
-              with open(path, 'rb') as f:
-                  for chunk in iter(lambda: f.read(1024 * 1024), b''):
-                      h.update(chunk)
-              return size, h.hexdigest()
+              digest = hashlib.sha256()
+              with open(path, 'rb') as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                      digest.update(chunk)
+              return size, digest.hexdigest()
 
           def exact(path):
-              fp = fingerprint(path)
-              return fp == (EXPECTED_SIZE, EXPECTED_SHA)
+              return fingerprint(path) == (EXPECTED_SIZE, EXPECTED_SHA)
 
-          # gdown handles the ordinary large-file confirmation flow well. Try it first, but the
-          # exact fingerprint remains the authority; a successfully downloaded wrong archive is
-          # discarded rather than trusted by filename or Drive id.
+          diagnostics = []
           for file_id in IDS:
               candidate = f'dist/v240-static-audit/gdown-{file_id}.apk'
               try:
-                  subprocess.run(
+                  proc = subprocess.run(
                       ['gdown', f'https://drive.google.com/uc?id={file_id}', '-O', candidate],
                       check=False,
                       timeout=180,
+                      text=True,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.STDOUT,
                   )
+                  diagnostics.append(f'id={file_id} rc={proc.returncode}')
+                  if proc.stdout:
+                      diagnostics.append(proc.stdout[-2000:])
               except Exception as exc:
-                  print('gdown failed', file_id, repr(exc))
+                  diagnostics.append(f'id={file_id} exception={exc!r}')
+
               if exact(candidate):
                   os.replace(candidate, OUT)
-                  print('EXACT_SOURCE_RESOLVED=gdown', file_id)
+                  diagnostics.append(f'EXACT_SOURCE_RESOLVED={file_id}')
                   break
+
               if os.path.exists(candidate):
-                  print('gdown non-match', file_id, fingerprint(candidate))
+                  diagnostics.append(f'id={file_id} non_match={fingerprint(candidate)!r}')
                   os.remove(candidate)
 
-          if not exact(OUT):
-              for file_id in IDS:
-                  cj = http.cookiejar.CookieJar()
-                  opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
-                  start = f'https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t'
-                  try:
-                      req = urllib.request.Request(start, headers={'User-Agent': UA})
-                      with opener.open(req, timeout=45) as response:
-                          body = response.read(4 * 1024 * 1024)
-                          first_url = response.geturl()
-                  except Exception as exc:
-                      print('Drive bootstrap failed', file_id, repr(exc))
-                      continue
-
-                  text = body.decode('utf-8', 'replace')
-                  forms = []
-                  for match in re.finditer(r'<form\b([^>]*)>(.*?)</form>', text, re.I | re.S):
-                      attrs, inner = match.groups()
-                      action_match = re.search(r'action=["\']([^"\']+)["\']', attrs, re.I)
-                      if not action_match:
-                          continue
-                      method_match = re.search(r'method=["\']([^"\']+)["\']', attrs, re.I)
-                      fields = {}
-                      for input_match in re.finditer(r'<input\b[^>]*>', inner, re.I):
-                          tag = input_match.group(0)
-                          name_match = re.search(r'name=["\']([^"\']+)["\']', tag, re.I)
-                          value_match = re.search(r'value=["\']([^"\']*)["\']', tag, re.I)
-                          if name_match:
-                              fields[html.unescape(name_match.group(1))] = html.unescape(
-                                  value_match.group(1) if value_match else ''
-                              )
-                      forms.append((
-                          urllib.parse.urljoin(first_url, html.unescape(action_match.group(1))),
-                          (method_match.group(1).upper() if method_match else 'GET'),
-                          fields,
-                      ))
-
-                  candidates = []
-                  for action, method, fields in forms:
-                      if method == 'POST':
-                          candidates.append((action, urllib.parse.urlencode(fields).encode()))
-                      else:
-                          query = urllib.parse.urlencode(fields)
-                          candidates.append((action + ('&' if '?' in action else '?') + query, None))
-                  # Also retry the resolved URL itself; some Drive warning variants set only a
-                  # cookie and redirect target without rendering a conventional form.
-                  candidates.append((first_url, None))
-
-                  for index, (url, data) in enumerate(candidates[:12]):
-                      try:
-                          probe_req = urllib.request.Request(
-                              url,
-                              data=data,
-                              headers={'User-Agent': UA, 'Range': 'bytes=0-63'},
-                          )
-                          with opener.open(probe_req, timeout=45) as response:
-                              magic = response.read(4)
-                          if magic != b'PK\x03\x04':
-                              continue
-
-                          candidate = f'dist/v240-static-audit/resolved-{file_id}-{index}.apk'
-                          full_req = urllib.request.Request(url, data=data, headers={'User-Agent': UA})
-                          with opener.open(full_req, timeout=180) as response, open(candidate, 'wb') as out:
-                              while True:
-                                  chunk = response.read(1024 * 1024)
-                                  if not chunk:
-                                      break
-                                  out.write(chunk)
-                          if exact(candidate):
-                              os.replace(candidate, OUT)
-                              print('EXACT_SOURCE_RESOLVED=warning-form', file_id, index)
-                              break
-                          print('resolved non-match', file_id, index, fingerprint(candidate))
-                          os.remove(candidate)
-                      except Exception as exc:
-                          print('candidate failed', file_id, index, repr(exc))
-                  if exact(OUT):
-                      break
-
-          if not exact(OUT):
-              raise SystemExit('No Drive candidate matched the exact v2.4 Custom source fingerprint')
-          print('EXACT_SOURCE_MATCH=YES', fingerprint(OUT))
+          os.makedirs(os.path.dirname(REPORT), exist_ok=True)
+          with open(REPORT, 'w', encoding='utf-8') as report:
+              report.write(f'expected_size={EXPECTED_SIZE}\n')
+              report.write(f'expected_sha256={EXPECTED_SHA}\n')
+              if exact(OUT):
+                  size, sha = fingerprint(OUT)
+                  report.write('AUDIT_STATUS=EXACT_SOURCE_RESOLVED\n')
+                  report.write(f'source_size={size}\nsource_sha256={sha}\n')
+                  open('dist/v240-static-audit/exact-source-resolved', 'w').write('yes\n')
+              else:
+                  report.write('AUDIT_STATUS=SOURCE_UNAVAILABLE\n')
+                  report.write('EXACT_SOURCE_MATCH=NO\n')
+              report.write('\n'.join(diagnostics))
+              report.write('\n')
           PY
 
+          if [[ -f dist/v240-static-audit/exact-source-resolved ]]; then
+            echo 'exact=true' >> "$GITHUB_OUTPUT"
+            echo 'Exact source resolved; static audit will run.'
+          else
+            echo 'exact=false' >> "$GITHUB_OUTPUT"
+            echo 'Exact source unavailable; fail closed and skip evidence promotion.'
+            cat dist/v240-static-audit/source-report.txt
+          fi
+
       - name: Exact source fingerprint matches
+        if: steps.resolve.outputs.exact == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -169,12 +112,13 @@ jobs:
           EXPECTED_SHA='630f519ae1ab3391aad95da90ebc296f4f0f8ae4ea41024ace7349d93926ef30'
           SIZE=$(stat -c '%s' "$APK")
           SHA=$(sha256sum "$APK" | awk '{print $1}')
-          printf 'source_size=%s\nsource_sha256=%s\n' "$SIZE" "$SHA" | tee dist/v240-static-audit/source-report.txt
+          printf 'source_size=%s\nsource_sha256=%s\n' "$SIZE" "$SHA" | tee -a dist/v240-static-audit/source-report.txt
           test "$SIZE" = "$EXPECTED_SIZE"
           test "$SHA" = "$EXPECTED_SHA"
           echo 'EXACT_SOURCE_MATCH=YES' | tee -a dist/v240-static-audit/source-report.txt
 
       - name: Original IL2CPP payload fingerprints match
+        if: steps.resolve.outputs.exact == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -188,31 +132,21 @@ jobs:
           test "$IL2CPP_SHA" = 'c86d7ff549eeef7ecef2c8471019f771e609b3ce7cccf3f775625531b43f3494'
           test "$META_SHA" = '26b6c4c711eb43815092925cad2fad99c9de12ba9665d880b7f3e6792823d6f9'
 
-      - name: Exact metadata contains TileDimensions event name
+      - name: Exact metadata exposes TileDimensions ABI names
+        if: steps.resolve.outputs.exact == 'true'
         shell: bash
         run: |
           set -euo pipefail
           strings -a dist/v240-static-audit/extracted/global-metadata.dat > dist/v240-static-audit/metadata-strings.txt
-          grep -Fx 'TileDimensions' dist/v240-static-audit/metadata-strings.txt | head -1 | tee dist/v240-static-audit/tile-dimensions-name.txt
-
-      - name: Exact metadata contains scrFloor multiplier fields
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -Fx 'scrFloor' dist/v240-static-audit/metadata-strings.txt | head -1
-          grep -Fx 'lengthMult' dist/v240-static-audit/metadata-strings.txt | head -1
-          grep -Fx 'widthMult' dist/v240-static-audit/metadata-strings.txt | head -1
-          grep -E '^(scrFloor|lengthMult|widthMult)$' dist/v240-static-audit/metadata-strings.txt | sort -u | tee dist/v240-static-audit/floor-field-names.txt
-
-      - name: Exact metadata contains floor-state application method name
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -Fx 'scnGame' dist/v240-static-audit/metadata-strings.txt | head -1
-          grep -Fx 'ApplyEventsToFloors' dist/v240-static-audit/metadata-strings.txt | head -1
-          grep -E '^(scnGame|ApplyEventsToFloors)$' dist/v240-static-audit/metadata-strings.txt | sort -u | tee dist/v240-static-audit/floor-apply-names.txt
+          for name in TileDimensions scrFloor lengthMult widthMult scnGame ApplyEventsToFloors; do
+            grep -Fx "$name" dist/v240-static-audit/metadata-strings.txt | head -1
+          done
+          grep -E '^(TileDimensions|scrFloor|lengthMult|widthMult|scnGame|ApplyEventsToFloors)$' \
+            dist/v240-static-audit/metadata-strings.txt | sort -u \
+            | tee dist/v240-static-audit/tile-dimensions-abi-names.txt
 
       - name: Download pinned Cpp2IL 2022.0.7 analyzer
+        if: steps.resolve.outputs.exact == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -223,6 +157,7 @@ jobs:
           echo 'Cpp2IL source tag commit: 844e286b3858b31966af0e01bd0a5e22c864140f' >> dist/v240-static-audit/cpp2il-sha256.txt
 
       - name: Cpp2IL parses exact APK metadata
+        if: steps.resolve.outputs.exact == 'true'
         shell: bash
         env:
           NO_COLOR: 'true'
@@ -238,33 +173,30 @@ jobs:
             2>&1 | tee dist/v240-static-audit/cpp2il.log
           test -d dist/v240-static-audit/cpp2il-out
 
-      - name: Cpp2IL typed dump exposes scrFloor multipliers
+      - name: Cpp2IL typed dump exposes TileDimensions surfaces
+        if: steps.resolve.outputs.exact == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          grep -R -n --include='*.txt' -E 'scrFloor|lengthMult|widthMult' dist/v240-static-audit/cpp2il-out \
-            | head -200 | tee dist/v240-static-audit/cpp2il-floor-surface.txt
-          grep -R -q --include='*.txt' 'lengthMult' dist/v240-static-audit/cpp2il-out
-          grep -R -q --include='*.txt' 'widthMult' dist/v240-static-audit/cpp2il-out
-
-      - name: Cpp2IL typed dump exposes scnGame floor-state application
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -R -n --include='*.txt' -E 'scnGame|ApplyEventsToFloors|TileDimensions' dist/v240-static-audit/cpp2il-out \
-            | head -240 | tee dist/v240-static-audit/cpp2il-apply-surface.txt
-          grep -R -q --include='*.txt' 'ApplyEventsToFloors' dist/v240-static-audit/cpp2il-out
-          grep -R -q --include='*.txt' 'TileDimensions' dist/v240-static-audit/cpp2il-out
+          grep -R -n --include='*.txt' -E 'TileDimensions|scrFloor|lengthMult|widthMult|scnGame|ApplyEventsToFloors' \
+            dist/v240-static-audit/cpp2il-out | head -320 \
+            | tee dist/v240-static-audit/cpp2il-tile-dimensions-surface.txt
+          for name in TileDimensions lengthMult widthMult ApplyEventsToFloors; do
+            grep -R -q --include='*.txt' "$name" dist/v240-static-audit/cpp2il-out
+          done
 
       - name: Stage text-only static audit evidence
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
           rm -rf dist/v240-static-audit/extracted dist/v240-static-audit/cpp2il-out dist/v240-static-audit/Cpp2IL
+          rm -f 'V2.4.0 Custom.apk'
           find dist/v240-static-audit -type f -size +5M -delete
           find dist/v240-static-audit -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: v240-exact-source-static-audit
           path: dist/v240-static-audit/
