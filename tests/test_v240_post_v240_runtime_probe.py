@@ -3,6 +3,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 PROBE = ROOT / "android/v240-fixed-runtime/native/V240PostV240Probe.cpp"
+EVENT_NATIVE = ROOT / "android/v240-fixed-runtime/native/V240EventCompat.cpp"
 EVENT_JAVA = ROOT / "android/v240-fixed-runtime/java/com/unity3d/player/V240EventCompat.java"
 NATIVE_BUILD = ROOT / "scripts/build-v240-fixed-native.sh"
 
@@ -11,6 +12,7 @@ class V240PostV240RuntimeProbeContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.probe = PROBE.read_text(encoding="utf-8")
+        cls.event_native = EVENT_NATIVE.read_text(encoding="utf-8")
         cls.event_java = EVENT_JAVA.read_text(encoding="utf-8")
         cls.native_build = NATIVE_BUILD.read_text(encoding="utf-8")
 
@@ -82,13 +84,30 @@ class V240PostV240RuntimeProbeContract(unittest.TestCase):
         for marker in expected:
             self.assertIn(marker, self.probe)
 
-    def test_probe_has_no_automatic_registration_path(self):
+    def test_probe_has_no_self_registration_and_runs_only_from_post_bnm_callback(self):
         self.assertNotIn("nativeRegisterFeasibilityProbe", self.event_java)
         self.assertNotIn("JNIEXPORT", self.probe)
         self.assertNotIn("Loading::AddOnLoadedEvent", self.probe)
         self.assertIn('extern "C" void V240RunPostV240FeasibilityProbe()', self.probe)
         self.assertIn("std::once_flag g_postV240ProbeOnce;", self.probe)
-        self.assertIn("production runtime behavior is unchanged", self.probe)
+
+        declaration = 'extern "C" void V240RunPostV240FeasibilityProbe();'
+        self.assertIn(declaration, self.event_native)
+        callback_start = self.event_native.index("Loading::AddOnLoadedEvent([]() {")
+        callback_end = self.event_native.index("});", callback_start)
+        callback = self.event_native[callback_start:callback_end]
+        self.assertIn("V240RunPostV240FeasibilityProbe();", callback)
+        self.assertIn("ProbeAndInstallEventCompat();", callback)
+        self.assertLess(
+            callback.index("V240RunPostV240FeasibilityProbe();"),
+            callback.index("ProbeAndInstallEventCompat();"),
+            "evidence-only ABI probe must run after BNM load and before active event hook install",
+        )
+        self.assertEqual(
+            2,
+            self.event_native.count("V240RunPostV240FeasibilityProbe();"),
+            "only the declaration and one post-BNM call site are allowed",
+        )
 
     def test_native_payload_cannot_silently_drop_probe(self):
         self.assertIn("V240PostV240Probe.cpp", self.native_build)
