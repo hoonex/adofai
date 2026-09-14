@@ -43,6 +43,7 @@ public final class V240Bootstrap {
                     // transition window even if the normal retry loop ended early.
                     V240WindowCompat.apply();
                     V240SettingsOverlay.install();
+                    V240CompatibilityReport.install();
                     V240SettingsOverlay.refresh();
                 } catch (Throwable error) {
                     Log.w(TAG, "delayed mobile runtime rebind failed", error);
@@ -59,6 +60,7 @@ public final class V240Bootstrap {
                 try {
                     V240WindowCompat.apply();
                     V240SettingsOverlay.install();
+                    V240CompatibilityReport.install();
                     V240SettingsOverlay.refresh();
                     if (V240SettingsOverlay.isInstalled()) return;
                 } catch (Throwable error) {
