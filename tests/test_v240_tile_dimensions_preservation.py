@@ -60,14 +60,39 @@ class V240TileDimensionsPreservationContract(unittest.TestCase):
 
         conflict = schema["conflicting_interface"]
         self.assertEqual("conflicting_third_party_interface", conflict["grade"])
+        self.assertEqual("low_unverified_interface", conflict["weight"])
         self.assertEqual("adofaiex/ADOFAI-JS", conflict["repository"])
+        self.assertEqual(
+            "b0a922606b0dc138a66c119d5de5482e4c0c9aff",
+            conflict["introduced_in_commit"],
+        )
         self.assertIn("scale", conflict["properties"])
         self.assertIn("scaleTo", conflict["properties"])
         self.assertIn("Do not transform or execute", conflict["resolution"])
 
+        runtime = tile["runtime_evidence"]["current_multiplier_usage"]
+        self.assertEqual("strong_current_runtime_usage_evidence", runtime["grade"])
+        self.assertEqual("kkorenn/adomeji", runtime["repository"])
+        self.assertEqual(
+            "a4f22ffeed0571c35d1615f3ac86f18ed81783eb",
+            runtime["commit"],
+        )
+        self.assertEqual(
+            "95147c78be862bf17518e08f8675fd6c074f085d",
+            runtime["source_blob_sha"],
+        )
+        formulae = "\n".join(runtime["observed_formulae"])
+        self.assertIn("baseFloorDimensions.x * scrFloor.lengthMult", formulae)
+        self.assertIn("baseFloorDimensions.y * scrFloor.widthMult", formulae)
+        self.assertIn("dimensionless runtime multipliers", runtime["proves"])
+        self.assertIn("does not prove how serialized", runtime["does_not_prove"])
+
         blockers = set(tile["remaining_blockers"])
         self.assertIn("resolve serialized schema conflict", blockers)
-        self.assertIn("prove width/length units and percent-to-multiplier conversion", blockers)
+        self.assertIn(
+            "prove serialized width/length 100-to-1.0 conversion into runtime multipliers",
+            blockers,
+        )
         self.assertIn("prove floor propagation/application ordering", blockers)
         self.assertIn("prove exact v2.4 runtime fields on authoritative source or device", blockers)
 

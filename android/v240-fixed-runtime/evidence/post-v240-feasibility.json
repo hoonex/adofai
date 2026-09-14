@@ -143,6 +143,19 @@
       },
       "runtime_evidence": {
         "current_documented_behavior": "scnGame.ApplyEventsToFloors applies TileDimensions as core floor state by writing lengthMult and widthMult",
+        "current_multiplier_usage": {
+          "grade": "strong_current_runtime_usage_evidence",
+          "repository": "kkorenn/adomeji",
+          "commit": "a4f22ffeed0571c35d1615f3ac86f18ed81783eb",
+          "source_file": "src/ShimejiManager.cs",
+          "source_blob_sha": "95147c78be862bf17518e08f8675fd6c074f085d",
+          "observed_formulae": [
+            "defLen = baseFloorDimensions.x * scrFloor.lengthMult",
+            "defWid = baseFloorDimensions.y * scrFloor.widthMult"
+          ],
+          "proves": "lengthMult and widthMult are consumed as dimensionless runtime multipliers relative to base floor dimensions, so the neutral runtime meaning is multiplier-space rather than percentage-space.",
+          "does_not_prove": "This does not prove how serialized TileDimensions width/length values are converted into those multipliers, nor the exact v2.4 floor-state propagation/application ordering."
+        },
         "current_real_install_usage_stub": {
           "repository": "PrismMods/Quartz",
           "commit": "a53c00912a8e33435fa06e16c05ada63cb8260b6",
@@ -161,7 +174,7 @@
       },
       "remaining_blockers": [
         "resolve serialized schema conflict",
-        "prove width/length units and percent-to-multiplier conversion",
+        "prove serialized width/length 100-to-1.0 conversion into runtime multipliers",
         "prove floor propagation/application ordering",
         "prove exact v2.4 runtime fields on authoritative source or device"
       ],
