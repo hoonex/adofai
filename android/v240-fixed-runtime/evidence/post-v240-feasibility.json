@@ -7,6 +7,33 @@
     "sha256": "630f519ae1ab3391aad95da90ebc296f4f0f8ae4ea41024ace7349d93926ef30",
     "exact_abi_audit": "pending_runtime_file_access"
   },
+  "official_release_chronology": {
+    "v2.4.0": {
+      "released": "2023-02-16",
+      "source": "Apple App Store version history",
+      "url": "https://apps.apple.com/kr/app/a-dance-of-fire-and-ice/id1456821801",
+      "evidence_use": "anchors the shipped mobile version under repair"
+    },
+    "v2.8.0": {
+      "released": "2024-08-27",
+      "sources": [
+        {
+          "name": "7th Beat Games ADOFAI 2.8.0 (r122)",
+          "url": "https://7thbeat.notion.site/ADOFAI-Changelog-2-8-0-r122-b5f0b69cea0f4817a620cf85a4fd0ede"
+        },
+        {
+          "name": "Steam Community Announcement",
+          "url": "https://store.steampowered.com/news/posts/?enddate=1724803590&feed=steam_community_announcements"
+        }
+      ],
+      "level_editor_additions": [
+        "Advanced Filter",
+        "Particle Emitter",
+        "Set Frame Rate"
+      ],
+      "implication": "Official shipped-game chronology does not support assuming Particle Emitter or Advanced Filter substrate exists in v2.4; exact v2.4 runtime ABI evidence is still required before execution backports."
+    }
+  },
   "families": {
     "SetInputEvent": {
       "status": "preserve_only",
@@ -47,7 +74,9 @@
           "scrParticleDecoration",
           "scrParticleDecoration.particleSystem"
         ],
-        "note": "This narrows the historical gap but does not prove the exact Android v2.4 IL2CPP ABI."
+        "official_chronology_conflict": true,
+        "conflict_resolution": "Official shipped-game release chronology outranks third-party compile/reference evidence for exact-version ABI claims.",
+        "note": "The Iridium reference narrows what may have existed in adjacent development/reference assemblies, but the official v2.8 changelog introduces Particle Emitter as a new decoration type. It therefore cannot prove the shipped Android v2.4 particle ABI."
       },
       "exact_v240_abi_proven": false,
       "active_backport_allowed": false
