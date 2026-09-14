@@ -1,5 +1,6 @@
 from pathlib import Path
 import base64
+import json
 import shutil
 import subprocess
 import tempfile
@@ -13,6 +14,7 @@ OPAQUE = JAVA / "V240OpaqueEventBridge.java"
 EVENT_COMPAT = JAVA / "V240EventCompat.java"
 SET_FRAME_BACKPORT = JAVA / "V240SetFrameRateBackport.java"
 EVENT_NATIVE = ROOT / "android/v240-fixed-runtime/native/V240EventCompat.cpp"
+EVIDENCE = ROOT / "android/v240-fixed-runtime/evidence/post-v240-feasibility.json"
 
 
 class V240PostV240FeasibilityContract(unittest.TestCase):
@@ -21,6 +23,7 @@ class V240PostV240FeasibilityContract(unittest.TestCase):
         cls.scanner = SCANNER.read_text(encoding="utf-8")
         cls.opaque = OPAQUE.read_text(encoding="utf-8")
         cls.event_native = EVENT_NATIVE.read_text(encoding="utf-8")
+        cls.evidence = json.loads(EVIDENCE.read_text(encoding="utf-8"))
 
     def test_unproven_execution_families_are_explicitly_preserve_only(self):
         start = self.scanner.index("PRESERVE_ONLY_POST_V240")
@@ -66,6 +69,84 @@ class V240PostV240FeasibilityContract(unittest.TestCase):
         self.assertIn("V240SetFrameRateBackport.maybePlaceholder", self.opaque)
         self.assertIn("__V240_SET_FRAME_RATE__:", self.event_native)
         self.assertIn("g_setFrameRateBackportReady", self.event_native)
+
+    def test_authoritative_source_fingerprint_is_pinned_but_exact_abi_audit_is_pending(self):
+        source = self.evidence["authoritative_v240_source"]
+        self.assertEqual("V2.4.0 Custom.apk", source["name"])
+        self.assertEqual(370092054, source["size_bytes"])
+        self.assertEqual(
+            "630f519ae1ab3391aad95da90ebc296f4f0f8ae4ea41024ace7349d93926ef30",
+            source["sha256"],
+        )
+        self.assertNotEqual("proven", source["exact_abi_audit"])
+
+    def test_evidence_matrix_fail_closes_every_unproven_family(self):
+        self.assertEqual(
+            "fail_closed_until_exact_v240_abi_is_proven",
+            self.evidence["policy"],
+        )
+        self.assertEqual("preserve_only", self.evidence["promotion_rule"]["default"])
+        required = set(self.evidence["promotion_rule"]["all_required"])
+        self.assertEqual(
+            {
+                "exact_v240_abi_proven",
+                "scheduler_or_lifecycle_semantics_proven",
+                "lossless_fallback_preserved",
+                "production_tests_green",
+            },
+            required,
+        )
+        for event_type in (
+            "SetInputEvent",
+            "EmitParticle",
+            "SetParticle",
+            "SetFilterAdvanced",
+        ):
+            family = self.evidence["families"][event_type]
+            if not family["exact_v240_abi_proven"]:
+                self.assertFalse(
+                    family["active_backport_allowed"],
+                    event_type + " cannot execute before exact v2.4 ABI proof",
+                )
+
+    def test_emit_particle_is_ranked_candidate_not_active_backport(self):
+        emit = self.evidence["families"]["EmitParticle"]
+        self.assertEqual("candidate_preserve_only", emit["status"])
+        self.assertEqual(1, emit["candidate_rank"])
+        self.assertFalse(emit["exact_v240_abi_proven"])
+        self.assertFalse(emit["active_backport_allowed"])
+        self.assertEqual(
+            "ADOFAI.FloorFX.ffxEmitParticlePlus",
+            emit["latest_runtime_class"],
+        )
+        surfaces = set(emit["required_v240_surfaces"])
+        self.assertIn("scrDecorationManager singleton", surfaces)
+        self.assertIn(
+            "scrParticleDecoration.particleSystem : UnityEngine.ParticleSystem",
+            surfaces,
+        )
+        self.assertIn("UnityEngine.ParticleSystem.Emit(int) -> void", surfaces)
+
+        historical = emit["historical_nearby_evidence"]
+        self.assertEqual("indirect_only", historical["grade"])
+        self.assertEqual("v2.5.0", historical["adofai_version"])
+        self.assertEqual("adofaiex/Iridium", historical["repository"])
+        self.assertEqual(
+            "fe7ff015c6e28285d288d6bf58f447d5a1883aa5",
+            historical["commit"],
+        )
+        self.assertIn("v2.5.0", historical["commit_declares_support_for"])
+        self.assertIn(
+            "scrParticleDecoration.particleSystem",
+            historical["same_commit_particle_code_uses"],
+        )
+
+    def test_wider_modern_families_remain_preserve_only_in_evidence(self):
+        families = self.evidence["families"]
+        for event_type in ("SetInputEvent", "SetParticle", "SetFilterAdvanced"):
+            self.assertEqual("preserve_only", families[event_type]["status"])
+            self.assertFalse(families[event_type]["exact_v240_abi_proven"])
+            self.assertFalse(families[event_type]["active_backport_allowed"])
 
     def test_production_bridge_round_trips_representative_unproven_events_byte_exact(self):
         javac = shutil.which("javac")
