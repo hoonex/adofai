@@ -44,7 +44,7 @@ jobs:
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
           sdkmanager 'platforms;android-35' 'build-tools;36.0.0' 'ndk;29.0.14206865'
 
-      - name: Build inert arm64 cache loader
+      - name: Build BNM loader-only arm64 cache probe
         run: bash scripts/build-v240-cache-native.sh dist/v240-channel-native
 
       - name: Build hot-swappable dynamic DEX
@@ -103,7 +103,7 @@ jobs:
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --target "$GITHUB_SHA" \
               --title 'ADOFAI 2.4 Cache Runtime Channel' \
-              --notes 'Machine-consumed cache runtime channel. rollout=false candidates are downloaded by nobody; activation is controlled by the signed-in repository workflow source.'
+              --notes 'Machine-consumed cache runtime channel. Activation is controlled by the repository workflow and the stable in-app crash-loop rollback bootstrap.'
           fi
           gh release upload "$TAG" \
             dist/v240-runtime-channel/runtime.zip \
