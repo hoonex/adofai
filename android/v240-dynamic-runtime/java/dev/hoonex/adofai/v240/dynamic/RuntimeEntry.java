@@ -16,9 +16,9 @@ public final class RuntimeEntry {
     public static void install(Context context) {
         Context app = context == null ? null : context.getApplicationContext();
         Log.i(TAG, "dynamic runtime entry loaded; app=" + (app == null ? "null" : app.getPackageName()));
-        // Recovery channel v2 deliberately enables no gameplay/event/UI hooks.
-        // Its native payload probes only the BNM IL2CPP loading boundary and exposes
-        // a read-only compatibility report through the already-installed settings button.
+        // Recovery channel v3 deliberately installs no gameplay/event/UI hooks.
+        // Its native payload waits for BNM, then performs metadata-only ABI discovery
+        // for the exact v2.4 hook surfaces. It never calls or mutates managed game state.
         // System.load remains owned by the stable bootstrap/updater before this DEX runs.
     }
 }

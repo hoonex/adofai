@@ -30,15 +30,20 @@ import sys
 s = Path(sys.argv[1]).read_text(encoding='utf-8')
 for marker in (
     'JNI_OnLoad', 'GetEnv', 'universe.h', 'Loading::TryLoadByJNI',
-    'Loading::AddOnLoadedEvent',
+    'Loading::AddOnLoadedEvent', 'RunReadOnlyAbiProbe',
     'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport',
-    'nativeProbe=cache-bnm-loader-only', 'gameHooksInstalled=0',
+    'nativeProbe=cache-post-bnm-abi', 'nativeStage=post-bnm-read-only-abi',
+    'probeComplete=1', 'gameHooksInstalled=0',
+    'abi.SFB.class=', 'abi.Mobile.CanvasScaler.SetScaleFactor1=',
+    'abi.Touch.EventSystem.RaycastAll=', 'abi.FPS.Application.setTargetFrameRate1=',
+    'abi.Event.scrCamera.SetCustomFrameRateBoolInt=',
 ):
     assert marker in s, marker
 for forbidden in (
-    'BasicHook', 'InstallAllHooks', 'V240SettingsOverlay', 'V240EventCompat',
-    'V240TouchAssist', 'FileSelector', 'FindClass', 'CallStatic', 'CallObject',
-    'NewGlobalRef', 'pthread_create',
+    'BasicHook', 'InstallAllHooks', 'InstallSfbHooks', 'InstallMobileHooks',
+    'V240SettingsOverlay', 'V240EventCompat', 'V240TouchAssist', 'FileSelector',
+    'FindClass', 'CallStatic', 'CallObject', 'NewGlobalRef', 'pthread_create',
+    '.Call(', '.Set(', 'CreateNewObject',
 ):
     assert forbidden not in s, forbidden
 PY
@@ -110,10 +115,12 @@ cp "${LIB}" "${OUT}/libv240fix.so"
 readelf -h "${OUT}/libv240fix.so" | grep -q 'AArch64'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'JNI_OnLoad'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport'
-strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-bnm-loader-only'
+strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-abi'
+strings "${OUT}/libv240fix.so" | grep -q 'nativeStage=post-bnm-read-only-abi'
+strings "${OUT}/libv240fix.so" | grep -q 'abi.Touch.EventSystem.RaycastAll='
 strings "${OUT}/libv240fix.so" | grep -q 'gameHooksInstalled=0'
 if readelf -Ws "${OUT}/libv240fix.so" | grep -Eq 'Java_com_unity3d_player_V240SettingsOverlay_|Java_com_unity3d_player_V240EventCompat_'; then
-  echo 'cache BNM probe unexpectedly exported feature activation JNI' >&2
+  echo 'cache ABI probe unexpectedly exported feature activation JNI' >&2
   exit 1
 fi
 sha256sum "${OUT}/libv240fix.so" | tee "${OUT}/SHA256SUMS.txt"
