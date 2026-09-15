@@ -219,15 +219,15 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
         self.assertNotIn("Application.set_targetFrameRate", self.event_source)
         self.assertNotIn("Time.timeScale", self.event_source)
 
-    def test_bootstrap_registers_event_compat_after_native_library_load(self):
-        load = self.bootstrap.index('System.loadLibrary("v240fix");')
-        init = self.bootstrap.index("V240EventCompat.initialize();")
-        self.assertLess(load, init)
+    def test_recovery_bootstrap_does_not_eagerly_load_or_register_native_event_compat(self):
+        self.assertNotIn('System.loadLibrary("v240fix");', self.bootstrap)
+        self.assertNotIn("V240EventCompat.initialize();", self.bootstrap)
+        self.assertIn("V240RuntimeUpdater.startIfReady();", self.bootstrap)
         self.assertIn("private static native void nativeRegister();", self.event_java)
         self.assertIn("nativeIsSetFrameRateBackportReady", self.event_java)
         self.assertIn("return false;", self.event_java)
 
-    def test_event_registration_preregisters_touch_before_activity_is_ready(self):
+    def test_native_registration_preregisters_touch_when_explicitly_activated(self):
         register = self.event_source.index(
             "Java_com_unity3d_player_V240EventCompat_nativeRegister")
         touch = self.event_source.index(
@@ -237,9 +237,10 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
         early = self.event_source[touch:event]
         self.assertIn("JNI_TRUE, 0.0f", early)
 
-        init = self.bootstrap.index("V240EventCompat.initialize();")
-        mobile = self.bootstrap.index("installMobileRuntimeWhenActivityIsReady();", init)
-        self.assertLess(init, mobile)
+        self.assertNotIn("V240EventCompat.initialize();", self.bootstrap)
+        mobile = self.bootstrap.index("installMobileRuntimeWhenActivityIsReady();")
+        updater = self.bootstrap.index("V240RuntimeUpdater.startIfReady();", mobile)
+        self.assertLess(mobile, updater)
 
     def test_native_registration_is_idempotent_and_bnm_loaded_gated(self):
         self.assertIn("std::once_flag g_registerOnce;", self.event_source)
@@ -256,7 +257,8 @@ class V240EventRuntimeProbeContract(unittest.TestCase):
         self.assertIn('cp "${EVENT_COMPAT_SOURCE}" "${JNI}/V240EventCompat.cpp"', self.native_build)
         self.assertIn("V240EventCompat.cpp", self.native_build)
         self.assertIn("Java_com_unity3d_player_V240EventCompat_nativeIsSetFrameRateBackportReady", self.native_build)
-        self.assertIn("V240EventCompat.initialize();", self.java_build)
+        self.assertIn("! grep -Fq 'V240EventCompat.initialize();'", self.java_build)
+        self.assertIn("V240RuntimeUpdater.startIfReady();", self.java_build)
         self.assertIn("Lcom/unity3d/player/V240EventCompat;", self.java_build)
 
     def test_runtime_log_has_machine_searchable_capability_markers(self):
