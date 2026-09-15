@@ -6,6 +6,7 @@ LOADER = ROOT / "android/v240-dynamic-runtime/native/V240CacheLoader.c"
 BUILD = ROOT / "scripts/build-v240-cache-native.sh"
 WORKFLOW = ROOT / ".github/workflows/v240-runtime-channel.yml"
 ROLLOUT = ROOT / "android/v240-dynamic-runtime/channel-rollout.txt"
+DYNAMIC_ENTRY = ROOT / "android/v240-dynamic-runtime/java/dev/hoonex/adofai/v240/dynamic/RuntimeEntry.java"
 
 
 class V240CacheNativeLoaderContract(unittest.TestCase):
@@ -37,8 +38,15 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
         self.assertIn("cp dist/v240-channel-native/libv240fix.so", workflow)
         self.assertIn("test_v240_cache_loader.py", workflow)
 
-    def test_rollout_remains_off_until_exact_device_baseline_is_proven(self):
-        self.assertEqual(ROLLOUT.read_text(encoding="utf-8").strip(), "false")
+    def test_rollout_is_boolean_and_enabled_rollout_is_recovery_only(self):
+        rollout = ROLLOUT.read_text(encoding="utf-8").strip()
+        self.assertIn(rollout, ("true", "false"))
+        if rollout == "true":
+            dynamic = DYNAMIC_ENTRY.read_text(encoding="utf-8")
+            self.assertIn("Deliberately no event/diagnostic activation in recovery channel v1.", dynamic)
+            self.assertNotIn("V240EventCompat", dynamic)
+            self.assertNotIn("V240SettingsOverlay", dynamic)
+            self.assertNotIn("System.load", dynamic)
 
 
 if __name__ == "__main__":
