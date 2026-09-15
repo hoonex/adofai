@@ -39,7 +39,7 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
         self.assertIn('Class browser("SFB", "StandaloneFileBrowser")', source)
         self.assertIn('Class eventSystem("UnityEngine.EventSystems", "EventSystem")', source)
         self.assertIn('Class scrCamera("", "scrCamera")', source)
-        self.assertIn('GetMethod("SetCustomFrameRate", {Defaults::Get<bool>(), Defaults::Get<int>()})', source)
+        self.assertIn('"SetCustomFrameRate", {Defaults::Get<bool>(), Defaults::Get<int>()}).IsValid()', source)
 
     def test_cache_native_build_pins_bnm_but_excludes_feature_runtime(self):
         build = BUILD.read_text(encoding="utf-8")
