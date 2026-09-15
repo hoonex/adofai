@@ -59,8 +59,25 @@ EOF
 
 cp "${WORK}/libs/arm64-v8a/libv240fix.so" "${OUT}/libv240fix.so"
 test -s "${OUT}/libv240fix.so"
-"${LLVM_READELF}" -h "${OUT}/libv240fix.so" | grep -Fq 'AArch64'
-"${LLVM_NM}" -D --defined-only "${OUT}/libv240fix.so" | grep -Eq '[[:space:]]JNI_OnLoad$'
+
+# Capture complete tool output before matching. With `set -o pipefail`, using
+# `llvm-readelf|grep -q` or `llvm-nm|grep -q` can make LLVM observe SIGPIPE
+# after grep exits on the first match and incorrectly fail a valid build.
+ELF_HEADER="$("${LLVM_READELF}" -h "${OUT}/libv240fix.so")"
+DYNAMIC_SYMBOLS="$("${LLVM_NM}" -D --defined-only "${OUT}/libv240fix.so")"
+
+if ! grep -F 'AArch64' <<<"${ELF_HEADER}" >/dev/null; then
+  echo 'cache loader verification failed: output is not AArch64 ELF' >&2
+  exit 1
+fi
+if ! grep -E '[[:space:]]JNI_OnLoad$' <<<"${DYNAMIC_SYMBOLS}" >/dev/null; then
+  echo 'cache loader verification failed: JNI_OnLoad is not exported' >&2
+  exit 1
+fi
 # A cache candidate must not accidentally grow any old Java/native activation ABI.
-! "${LLVM_NM}" -D --defined-only "${OUT}/libv240fix.so" | grep -Eq 'Java_com_unity3d_player_|BasicHook|Dobby|BNM'
+if grep -E 'Java_com_unity3d_player_|BasicHook|Dobby|BNM' <<<"${DYNAMIC_SYMBOLS}" >/dev/null; then
+  echo 'cache loader verification failed: unexpected activation ABI exported' >&2
+  exit 1
+fi
+
 sha256sum "${OUT}/libv240fix.so" | tee "${OUT}/SHA256SUMS.txt"
