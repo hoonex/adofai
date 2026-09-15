@@ -4,10 +4,10 @@ on:
   push:
     branches: [fix/v240-custom-bugfix]
     paths:
-      - 'android/v240-fixed-runtime/native/**'
       - 'android/v240-dynamic-runtime/**'
-      - 'scripts/build-v240-fixed-native.sh'
+      - 'scripts/build-v240-cache-native.sh'
       - 'scripts/build-v240-dynamic-runtime.sh'
+      - 'tests/test_v240_cache_loader.py'
       - 'tests/test_v240_runtime_updater.py'
       - '.github/workflows/v240-runtime-channel.yml'
   workflow_dispatch:
@@ -31,7 +31,9 @@ jobs:
           java-version: '17'
 
       - name: Verify cache updater safety contract
-        run: python3 -m unittest discover -s tests -p 'test_v240_runtime_updater.py' -v
+        run: |
+          python3 -m unittest discover -s tests -p 'test_v240_runtime_updater.py' -v
+          python3 -m unittest discover -s tests -p 'test_v240_cache_loader.py' -v
 
       - uses: android-actions/setup-android@v3
         with:
@@ -42,8 +44,8 @@ jobs:
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
           sdkmanager 'platforms;android-35' 'build-tools;36.0.0' 'ndk;29.0.14206865'
 
-      - name: Build arm64 native candidate
-        run: bash scripts/build-v240-fixed-native.sh dist/v240-channel-native
+      - name: Build inert arm64 cache loader
+        run: bash scripts/build-v240-cache-native.sh dist/v240-channel-native
 
       - name: Build hot-swappable dynamic DEX
         run: bash scripts/build-v240-dynamic-runtime.sh dist/v240-channel-dynamic
