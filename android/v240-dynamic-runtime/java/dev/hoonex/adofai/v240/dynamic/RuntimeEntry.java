@@ -16,8 +16,9 @@ public final class RuntimeEntry {
     public static void install(Context context) {
         Context app = context == null ? null : context.getApplicationContext();
         Log.i(TAG, "dynamic runtime entry loaded; app=" + (app == null ? "null" : app.getPackageName()));
-        // Deliberately no event/diagnostic activation in recovery channel v1.
-        // Native stages are re-enabled only after exact-v2.4 device evidence identifies
-        // the crash source. Future dynamic payloads can orchestrate those stages here.
+        // Recovery channel v2 deliberately enables no gameplay/event/UI hooks.
+        // Its native payload probes only the BNM IL2CPP loading boundary and exposes
+        // a read-only compatibility report through the already-installed settings button.
+        // System.load remains owned by the stable bootstrap/updater before this DEX runs.
     }
 }
