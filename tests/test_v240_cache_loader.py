@@ -23,7 +23,8 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
     def test_cache_native_build_has_no_feature_runtime_dependency(self):
         build = BUILD.read_text(encoding="utf-8")
         self.assertIn("V240CacheLoader.c", build)
-        self.assertIn("aarch64-linux-android${API}-clang", build)
+        self.assertIn('NDK_BUILD="${NDK}/ndk-build"', build)
+        self.assertIn("APP_ABI := arm64-v8a", build)
         self.assertIn("--no-undefined", build)
         self.assertIn("JNI_OnLoad", build)
         self.assertNotIn("build-v240-fixed-native.sh", build)
