@@ -9,6 +9,7 @@ on:
       - 'android/v240-fixed-runtime/**'
       - 'scripts/build-v240-fixed-java.sh'
       - 'scripts/build-v240-fixed-native.sh'
+      - 'tests/test_v240_runtime_updater.py'
       - 'tests/test_v240_tile_dimensions_live_snapshot.py'
       - 'fixtures/device/ADOFAI_2.4_TILEDIMENSIONS_OBSERVATION_TEST.adofai'
       - '.github/workflows/v240-custom-patcher.yml'
@@ -38,6 +39,9 @@ jobs:
 
       - name: Verify TileDimensions live snapshot stays read-only
         run: python3 -m unittest discover -s tests -p 'test_v240_tile_dimensions_live_snapshot.py' -v
+
+      - name: Verify crash-safe cache updater contract
+        run: python3 -m unittest discover -s tests -p 'test_v240_runtime_updater.py' -v
 
       - uses: android-actions/setup-android@v3
         with:
@@ -79,6 +83,8 @@ jobs:
           MUT=android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/ApkMutator.java
           BOOT=android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/V240DexBootstrapPatcher.java
           MANIFEST=android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/ManifestStoragePatcher.java
+          RUNTIME_BOOT=android/v240-fixed-runtime/java/com/unity3d/player/V240Bootstrap.java
+          UPDATER=android/v240-fixed-runtime/java/com/unity3d/player/V240RuntimeUpdater.java
           APK=android/game-patcher/app/build/outputs/apk/debug/app-debug.apk
 
           grep -q 'EXPECTED_SOURCE_BYTES = 370_092_054L' "$PIPE"
@@ -94,7 +100,19 @@ jobs:
           grep -q 'UnityPlayerActivity' "$BOOT"
           grep -q 'V240Bootstrap' "$BOOT"
           grep -q 'V240PickerActivity' "$MANIFEST"
+          grep -q 'android.permission.INTERNET' "$MANIFEST"
           ! grep -q 'MANAGE_EXTERNAL_STORAGE.*patchV240' "$MANIFEST"
+
+          grep -Fq 'V240RuntimeUpdater.startIfReady();' "$RUNTIME_BOOT"
+          ! grep -Fq 'System.loadLibrary("v240fix")' "$RUNTIME_BOOT"
+          ! grep -Fq 'V240EventCompat.initialize();' "$RUNTIME_BOOT"
+          grep -Fq 'getCodeCacheDir()' "$UPDATER"
+          grep -Fq 'boot.pending' "$UPDATER"
+          grep -Fq 'DexClassLoader' "$UPDATER"
+          grep -Fq 'System.load(nativeLib.getAbsolutePath())' "$UPDATER"
+          grep -Fq 'bundleSha256' "$UPDATER"
+          grep -Fq 'rollout' "$UPDATER"
+          grep -Fq 'setReadOnly()' "$UPDATER"
 
           test -s "$APK"
           unzip -l "$APK" | grep -q 'assets/payload/v240-fixed-runtime.dex'
@@ -133,7 +151,11 @@ jobs:
           - size: 370,092,054 bytes
           - SHA-256: 630f519ae1ab3391aad95da90ebc296f4f0f8ae4ea41024ace7349d93926ef30
 
-          The patcher keeps the original game native libraries intact and adds the verified v2.4 mobile bugfix runtime. It does not redistribute the original game APK.
+          This build installs a crash-safe Java bootstrap. Experimental native/runtime code is no longer a hard dependency of UnityPlayerActivity startup.
+
+          It also installs a hash-verified app-private code_cache updater with pending-boot health markers, quarantine, and rollback. After this bootstrap is installed once, compatible future runtime fixes can be delivered through the in-game cache channel without reinstalling the patcher APK.
+
+          The patcher keeps the original game native libraries intact and does not redistribute the original game APK.
           EOF
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --title "$TITLE" --notes-file "$NOTES" --target "$GITHUB_SHA"
