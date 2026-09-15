@@ -10,38 +10,62 @@ DYNAMIC_ENTRY = ROOT / "android/v240-dynamic-runtime/java/dev/hoonex/adofai/v240
 
 
 class V240CacheNativeLoaderContract(unittest.TestCase):
-    def test_loader_runs_metadata_only_post_bnm_probe(self):
+    def test_loader_installs_only_runtime_proven_sfb_filter_hook(self):
         source = LOADER.read_text(encoding="utf-8")
         for required in (
             "JNI_OnLoad", "GetEnv", "universe.h", "Loading::TryLoadByJNI",
-            "Loading::AddOnLoadedEvent", "RunReadOnlyAbiProbe",
+            "Loading::AddOnLoadedEvent", "RunProbeAndInstallNarrowFix",
             "Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport",
-            "nativeProbe=cache-post-bnm-abi", "nativeStage=post-bnm-read-only-abi",
-            "probeComplete=1", "gameHooksInstalled=0",
-            "abi.SFB.class=", "abi.Mobile.CanvasScaler.SetScaleFactor1=",
-            "abi.Touch.EventSystem.RaycastAll=", "abi.FPS.Application.setTargetFrameRate1=",
-            "abi.Event.scrCamera.SetCustomFrameRateBoolInt=",
+            "nativeProbe=cache-post-bnm-narrow-fix", "nativeStage=post-bnm-narrow-sfb-fix",
+            "HookOpenFilePanelFilters", "FileSelector", "BasicHook",
+            "sfbOpenFiltersHookInstalled=", "abi.SFB.OpenFilePanel.filtersExact=",
+            "abi.SFB.ExtensionFilter.Name=", "abi.SFB.ExtensionFilter.Extensions=",
+            "abi.Settings.PauseMenu.ShowSettingsMenu0=",
         ):
             self.assertIn(required, source)
+        self.assertEqual(source.count("BasicHook("), 1)
         for forbidden in (
-            "BasicHook", "InstallAllHooks", "InstallSfbHooks", "InstallMobileHooks",
-            "V240SettingsOverlay", "V240EventCompat", "V240TouchAssist", "FileSelector",
-            "FindClass", "CallStatic", "CallObject", "NewGlobalRef", "pthread_create",
+            "InstallAllHooks", "InstallSfbHooks", "InstallMobileHooks",
+            "V240SettingsOverlay", "V240EventCompat", "V240TouchAssist",
+            "HookOpenString", "HookSaveString", "HookSaveFilters", "HookFolder",
+            "HookSetTargetFrameRate", "HookSetVSyncCount", "HookInsideUI",
             ".Call(", ".Set(", "CreateNewObject",
         ):
             self.assertNotIn(forbidden, source)
 
-    def test_probe_only_resolves_metadata_after_bnm_callback(self):
+    def test_sfb_hook_is_exact_overload_and_fail_closed(self):
         source = LOADER.read_text(encoding="utf-8")
-        callback = source.index("Loading::AddOnLoadedEvent")
-        probe_call = source.index("RunReadOnlyAbiProbe();", callback)
-        self.assertGreater(probe_call, callback)
-        self.assertIn('Class browser("SFB", "StandaloneFileBrowser")', source)
+        exact = '"OpenFilePanel", {"title", "directory", "extensions", "multiselect"}'
+        self.assertIn(exact, source)
+        self.assertIn('Class extensionFilter("SFB", "ExtensionFilter")', source)
+        self.assertIn('extensionFilter.GetField("Name").IsValid()', source)
+        self.assertIn('extensionFilter.GetField("Extensions").IsValid()', source)
+        self.assertIn("selectorReady && openFiltersExact", source)
+        self.assertIn("InstallExactOpenFiltersHook(browser, filterLayoutCompatible)", source)
+        self.assertIn("if (!browser || !filterLayoutCompatible) return false;", source)
+        self.assertIn("if (!method.IsValid()) return false;", source)
+
+    def test_picker_bridge_is_bounded_and_open_only(self):
+        source = LOADER.read_text(encoding="utf-8")
+        self.assertIn("kMaxExtensionFilters = 32", source)
+        self.assertIn("kMaxExtensionsPerFilter = 64", source)
+        self.assertIn("kPickerPollCount = 18000", source)
+        self.assertIn('"selectFile", "(Ljava/lang/String;Z)V"', source)
+        self.assertIn('"getFilePath", "()Ljava/lang/String;"', source)
+        self.assertIn('"isDone", "Z"', source)
+        self.assertNotIn('"saveAs"', source)
+        self.assertNotIn('"selectFolder"', source)
+
+    def test_other_abi_discovery_remains_read_only(self):
+        source = LOADER.read_text(encoding="utf-8")
         self.assertIn('Class eventSystem("UnityEngine.EventSystems", "EventSystem")', source)
         self.assertIn('Class scrCamera("", "scrCamera")', source)
         self.assertIn('"SetCustomFrameRate", {Defaults::Get<bool>(), Defaults::Get<int>()}).IsValid()', source)
+        self.assertIn('Class pauseMenu("", "PauseMenu")', source)
+        self.assertIn('pauseMenu.GetMethod("ShowSettingsMenu", 0).IsValid()', source)
+        self.assertNotIn("HookShowSettings", source)
 
-    def test_cache_native_build_pins_bnm_but_excludes_feature_runtime(self):
+    def test_cache_native_build_pins_bnm_and_contracts_narrow_hook(self):
         build = BUILD.read_text(encoding="utf-8")
         self.assertIn("V240CacheLoader.cpp", build)
         self.assertIn("HitMargin/A-Dance-of-Fire-and-Ice-Mobile---Load-Custom-Level.git", build)
@@ -49,30 +73,40 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
         self.assertIn("UNITY_VER 213", build)
         self.assertIn("UNITY_PATCH_VER 10", build)
         self.assertIn("BNM/src/Loading.cpp", build)
-        self.assertIn("nativeProbe=cache-post-bnm-abi", build)
-        self.assertIn("post-bnm-read-only-abi", build)
+        self.assertIn("nativeProbe=cache-post-bnm-narrow-fix", build)
+        self.assertIn("sfbOpenFiltersHookInstalled=", build)
+        self.assertIn("assert s.count('BasicHook(') == 1", build)
         self.assertNotIn("build-v240-fixed-native.sh", build)
         self.assertNotIn("V240Fix.cpp", build)
         self.assertNotIn("V240TouchAssist.cpp", build)
         self.assertNotIn("V240EventCompat.cpp", build)
 
-    def test_channel_packages_read_only_abi_probe_not_full_hook_runtime(self):
+    def test_dynamic_entry_only_repositions_transitional_settings_button(self):
+        dynamic = DYNAMIC_ENTRY.read_text(encoding="utf-8")
+        self.assertIn('LEGACY_GEAR_TAG = "adofai-v240-settings-button"', dynamic)
+        self.assertIn("scheduleLegacyGearRelocation", dynamic)
+        self.assertIn("Gravity.CENTER_VERTICAL | Gravity.END", dynamic)
+        self.assertIn("lp.width = dp(activity, 44)", dynamic)
+        self.assertIn("transitional placement", dynamic)
+        self.assertNotIn("V240EventCompat", dynamic)
+        self.assertNotIn("System.load(", dynamic)
+
+    def test_channel_packages_narrow_recovery_runtime(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("build-v240-cache-native.sh dist/v240-channel-native", workflow)
         self.assertNotIn("build-v240-fixed-native.sh dist/v240-channel-native", workflow)
         self.assertIn("cp dist/v240-channel-native/libv240fix.so", workflow)
         self.assertIn("test_v240_cache_loader.py", workflow)
-        self.assertIn("Build read-only post-BNM ABI cache probe", workflow)
+        self.assertIn("Build narrow SFB recovery cache runtime", workflow)
 
-    def test_rollout_is_boolean_and_enabled_rollout_stays_feature_inert(self):
+    def test_rollout_is_boolean_and_enabled_runtime_stays_narrow(self):
         rollout = ROLLOUT.read_text(encoding="utf-8").strip()
         self.assertIn(rollout, ("true", "false"))
         if rollout == "true":
             dynamic = DYNAMIC_ENTRY.read_text(encoding="utf-8")
-            self.assertIn("Recovery channel v3 deliberately installs no gameplay/event/UI hooks.", dynamic)
-            self.assertIn("metadata-only ABI discovery", dynamic)
+            self.assertIn("Recovery channel v4 activates only the exact SFB ExtensionFilter[] open overload", dynamic)
+            self.assertIn("No event, FPS, timing or gameplay hook", dynamic)
             self.assertNotIn("V240EventCompat", dynamic)
-            self.assertNotIn("V240SettingsOverlay", dynamic)
             self.assertNotIn("System.load(", dynamic)
 
 
