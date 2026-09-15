@@ -1,0 +1,116 @@
+name: Publish ADOFAI 2.4 Cache Runtime Channel
+
+on:
+  push:
+    branches: [fix/v240-custom-bugfix]
+    paths:
+      - 'android/v240-fixed-runtime/native/**'
+      - 'android/v240-dynamic-runtime/**'
+      - 'scripts/build-v240-fixed-native.sh'
+      - 'scripts/build-v240-dynamic-runtime.sh'
+      - 'tests/test_v240_runtime_updater.py'
+      - '.github/workflows/v240-runtime-channel.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: adofai-v240-runtime-channel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish-channel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Verify cache updater safety contract
+        run: python3 -m unittest discover -s tests -p 'test_v240_runtime_updater.py' -v
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install pinned Android toolchain
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager 'platforms;android-35' 'build-tools;36.0.0' 'ndk;29.0.14206865'
+
+      - name: Build arm64 native candidate
+        run: bash scripts/build-v240-fixed-native.sh dist/v240-channel-native
+
+      - name: Build hot-swappable dynamic DEX
+        run: bash scripts/build-v240-dynamic-runtime.sh dist/v240-channel-dynamic
+
+      - name: Package bounded runtime bundle and manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/v240-runtime-channel
+          cp dist/v240-channel-native/libv240fix.so dist/v240-runtime-channel/libv240fix.so
+          cp dist/v240-channel-dynamic/runtime.dex dist/v240-runtime-channel/runtime.dex
+          python3 - <<'PY'
+          import hashlib, json, pathlib, zipfile, os
+          root = pathlib.Path('dist/v240-runtime-channel')
+          native = root / 'libv240fix.so'
+          dex = root / 'runtime.dex'
+          bundle = root / 'runtime.zip'
+          def sha(path):
+              h = hashlib.sha256()
+              with path.open('rb') as f:
+                  for chunk in iter(lambda: f.read(1024 * 1024), b''):
+                      h.update(chunk)
+              return h.hexdigest()
+          with zipfile.ZipFile(bundle, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+              z.write(native, 'libv240fix.so')
+              z.write(dex, 'runtime.dex')
+          rollout = pathlib.Path('android/v240-dynamic-runtime/channel-rollout.txt').read_text().strip().lower()
+          if rollout not in ('true', 'false'):
+              raise SystemExit('channel-rollout.txt must be true or false')
+          manifest = {
+              'schema': 1,
+              'minBootstrap': 1,
+              'version': os.environ['GITHUB_SHA'],
+              'rollout': rollout == 'true',
+              'bundleUrl': 'https://github.com/hoonex/adofai/releases/download/v240-runtime-channel/runtime.zip',
+              'bundleSha256': sha(bundle),
+              'bundleBytes': bundle.stat().st_size,
+              'nativeSha256': sha(native),
+              'dexSha256': sha(dex),
+          }
+          if manifest['bundleBytes'] <= 0 or manifest['bundleBytes'] > 32 * 1024 * 1024:
+              raise SystemExit('runtime bundle outside updater size bound')
+          (root / 'manifest.json').write_text(json.dumps(manifest, separators=(',', ':')) + '\n')
+          print(json.dumps(manifest, indent=2))
+          PY
+          test -s dist/v240-runtime-channel/runtime.zip
+          test -s dist/v240-runtime-channel/manifest.json
+
+      - name: Publish stable cache-channel assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=v240-runtime-channel
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" \
+              --title 'ADOFAI 2.4 Cache Runtime Channel' \
+              --notes 'Machine-consumed cache runtime channel. rollout=false candidates are downloaded by nobody; activation is controlled by the signed-in repository workflow source.'
+          fi
+          gh release upload "$TAG" \
+            dist/v240-runtime-channel/runtime.zip \
+            dist/v240-runtime-channel/manifest.json \
+            --clobber
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adofai-v240-cache-runtime-channel
+          path: dist/v240-runtime-channel/
+          if-no-files-found: error
+          retention-days: 14

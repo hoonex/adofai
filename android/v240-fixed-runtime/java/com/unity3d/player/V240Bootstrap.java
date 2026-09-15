@@ -7,28 +7,15 @@ import android.util.Log;
 /** Entry point injected into the historical 2.4 APK. No root/Zygisk dependency. */
 public final class V240Bootstrap {
     private static final String TAG = "ADOFAI.V240Bootstrap";
-    private static boolean nativeStarted;
 
     private V240Bootstrap() {}
 
     public static synchronized void init() {
-        // The native library only needs to load once per process, but this method is
-        // injected into UnityPlayerActivity.onCreate and therefore also runs after an
-        // Activity recreation. Always re-bind the mobile compatibility layer to the
-        // current Activity.
-        if (!nativeStarted) {
-            nativeStarted = true;
-            try {
-                System.loadLibrary("v240fix");
-                Log.i(TAG, "v240fix native runtime loaded");
-            } catch (Throwable error) {
-                Log.e(TAG, "v240fix native runtime failed to load", error);
-            }
-        }
-        // Register the event-compat BNM callback as early as possible after the native
-        // library is available. The native side is idempotent, so Activity recreation
-        // also gives a failed/late bootstrap a harmless retry opportunity.
-        V240EventCompat.initialize();
+        // Recovery bootstrap rule: never make an experimental native runtime a hard
+        // dependency of UnityPlayerActivity.onCreate. V240RuntimeUpdater loads only a
+        // hash-verified app-private cached candidate with crash-loop rollback. With no
+        // healthy cached candidate the game stays in Java recovery mode instead of
+        // repeatedly loading the embedded libv240fix.so and crashing the process.
         installMobileRuntimeWhenActivityIsReady();
     }
 
@@ -37,6 +24,7 @@ public final class V240Bootstrap {
         final Runnable forceRebind = new Runnable() {
             @Override public void run() {
                 try {
+                    V240RuntimeUpdater.startIfReady();
                     // Activity recreation can leave the old overlay's process-global
                     // installed flag true before UnityPlayer.currentActivity points at
                     // the replacement Activity. Re-run idempotent binding after the
@@ -58,6 +46,7 @@ public final class V240Bootstrap {
             @Override public void run() {
                 attempts++;
                 try {
+                    V240RuntimeUpdater.startIfReady();
                     V240WindowCompat.apply();
                     V240SettingsOverlay.install();
                     V240CompatibilityReport.install();
@@ -66,7 +55,7 @@ public final class V240Bootstrap {
                 } catch (Throwable error) {
                     Log.w(TAG, "mobile runtime install attempt failed", error);
                 }
-                // init() can be injected at the first onCreate instruction. UnityPlayer.currentActivity
+                // init() is injected at the first onCreate instruction. UnityPlayer.currentActivity
                 // may not exist yet, so retry only until the overlay/runtime is actually installed.
                 if (attempts < 24) main.postDelayed(this, 250L);
             }

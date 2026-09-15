@@ -10,7 +10,7 @@ import android.widget.Toast;
 
 import java.lang.reflect.Field;
 
-/** Read-only device ABI report. Long-press the existing settings button to copy it. */
+/** Read-only device ABI/updater report. Long-press the existing settings button to copy it. */
 final class V240CompatibilityReport {
     private static final String TAG = "ADOFAI.V240CompatReport";
     private static final String SETTINGS_TAG = "adofai-v240-settings-button";
@@ -41,15 +41,28 @@ final class V240CompatibilityReport {
 
     private static void copyToClipboard(Activity owner) {
         try {
-            String report = nativeGetCompatibilityReport();
-            if (report == null || report.length() == 0) {
-                report = "V240 compatibility report\nprobe=unavailable\n";
+            StringBuilder report = new StringBuilder();
+            report.append(V240RuntimeUpdater.diagnosticText());
+            try {
+                String nativeReport = nativeGetCompatibilityReport();
+                if (nativeReport != null && nativeReport.length() > 0) {
+                    if (report.length() > 0 && report.charAt(report.length() - 1) != '\n') report.append('\n');
+                    report.append(nativeReport);
+                } else {
+                    report.append("nativeProbe=unavailable\n");
+                }
+            } catch (Throwable nativeUnavailable) {
+                // Java recovery mode intentionally has no native library loaded. The
+                // updater report remains available so a broken native candidate never
+                // removes the only on-device diagnostic path.
+                report.append("nativeProbe=not-loaded\n");
             }
 
             ClipboardManager clipboard =
                     (ClipboardManager) owner.getSystemService(Context.CLIPBOARD_SERVICE);
             if (clipboard == null) throw new IllegalStateException("clipboard unavailable");
-            clipboard.setPrimaryClip(ClipData.newPlainText("ADOFAI v2.4 compatibility report", report));
+            clipboard.setPrimaryClip(ClipData.newPlainText(
+                    "ADOFAI v2.4 compatibility report", report.toString()));
             Toast.makeText(owner, "호환성 리포트를 복사했습니다.", Toast.LENGTH_SHORT).show();
         } catch (Throwable error) {
             Log.w(TAG, "failed to copy compatibility report", error);

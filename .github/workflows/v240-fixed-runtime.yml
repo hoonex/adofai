@@ -13,6 +13,7 @@ on:
       - 'tests/test_v240_set_frame_rate_backport.py'
       - 'tests/test_v240_tile_dimensions_preservation.py'
       - 'tests/test_v240_tile_dimensions_live_snapshot.py'
+      - 'tests/test_v240_runtime_updater.py'
       - 'fixtures/device/ADOFAI_2.4_TILEDIMENSIONS_OBSERVATION_TEST.adofai'
       - 'tests/test_v240_post_v240_feasibility.py'
       - '.github/workflows/v240-fixed-runtime.yml'
@@ -48,6 +49,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_v240_tile_dimensions_live_snapshot.py' -v
       - name: Verify unproven post-v2.4 events stay preserve-only
         run: python3 -m unittest discover -s tests -p 'test_v240_post_v240_feasibility.py' -v
+      - name: Verify cache updater recovery and rollback contract
+        run: python3 -m unittest discover -s tests -p 'test_v240_runtime_updater.py' -v
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
@@ -71,7 +74,11 @@ jobs:
           grep -q 'openOutputStream(uri, "wt")' android/v240-fixed-runtime/java/com/unity3d/player/V240AndroidBridge.java
           grep -q 'openOutputStream(uri, "w")' android/v240-fixed-runtime/java/com/unity3d/player/V240AndroidBridge.java
           grep -q 'V240SettingsOverlay' android/v240-fixed-runtime/java/com/unity3d/player/V240Bootstrap.java
-          grep -q 'V240EventCompat.initialize' android/v240-fixed-runtime/java/com/unity3d/player/V240Bootstrap.java
+          grep -q 'V240RuntimeUpdater.startIfReady' android/v240-fixed-runtime/java/com/unity3d/player/V240Bootstrap.java
+          ! grep -q 'System.loadLibrary("v240fix")' android/v240-fixed-runtime/java/com/unity3d/player/V240Bootstrap.java
+          grep -q 'getCodeCacheDir' android/v240-fixed-runtime/java/com/unity3d/player/V240RuntimeUpdater.java
+          grep -q 'boot.pending' android/v240-fixed-runtime/java/com/unity3d/player/V240RuntimeUpdater.java
+          grep -q 'DexClassLoader' android/v240-fixed-runtime/java/com/unity3d/player/V240RuntimeUpdater.java
           grep -q 'nativeRegisterTileDimensionsSnapshot' android/v240-fixed-runtime/java/com/unity3d/player/V240EventCompat.java
           grep -q '__V240_SET_FRAME_RATE__:' android/v240-fixed-runtime/java/com/unity3d/player/V240SetFrameRateBackport.java
           grep -q 'preferredDisplayModeId' android/v240-fixed-runtime/java/com/unity3d/player/V240SettingsOverlay.java

@@ -11,6 +11,7 @@ final class ManifestStoragePatcher {
     static final String READ_EXTERNAL_STORAGE = "android.permission.READ_EXTERNAL_STORAGE";
     static final String WRITE_EXTERNAL_STORAGE = "android.permission.WRITE_EXTERNAL_STORAGE";
     static final String MANAGE_EXTERNAL_STORAGE = "android.permission.MANAGE_EXTERNAL_STORAGE";
+    static final String INTERNET = "android.permission.INTERNET";
     static final String V240_PICKER_ACTIVITY = "com.unity3d.player.V240PickerActivity";
 
     private static final String[] REQUIRED = {
@@ -36,11 +37,12 @@ final class ManifestStoragePatcher {
     /**
      * Exact 2.4.0 Custom path. The fixed runtime uses Storage Access Framework and
      * app-private working files, so broad MANAGE_EXTERNAL_STORAGE is deliberately not
-     * introduced. Only the internal proxy Activity required to receive SAF results is
-     * declared.
+     * introduced. The internal SAF proxy Activity and ordinary INTERNET permission are
+     * declared; INTERNET is used only by the hash-verified app-private runtime updater.
      */
     static void patchV240(File source, File output, String expectedPackage) throws Exception {
         AndroidManifestBlock manifest = loadChecked(source, expectedPackage);
+        manifest.addUsesPermission(INTERNET);
         ResXmlElement picker = manifest.getOrCreateActivity(V240_PICKER_ACTIVITY, false);
         picker.getOrCreateAndroidAttribute(
                 AndroidManifestBlock.NAME_exported,
@@ -64,6 +66,9 @@ final class ManifestStoragePatcher {
         }
         if (manifest.getActivity(V240_PICKER_ACTIVITY, true) == null) {
             throw new IllegalStateException("v2.4 picker activity lookup failed after encode");
+        }
+        if (manifest.getUsesPermission(INTERNET) == null) {
+            throw new IllegalStateException("patched v2.4 manifest missing runtime updater INTERNET permission");
         }
     }
 
