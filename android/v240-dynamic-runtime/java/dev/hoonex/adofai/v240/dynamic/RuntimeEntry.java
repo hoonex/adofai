@@ -27,10 +27,10 @@ public final class RuntimeEntry {
                 (app == null ? "null" : app.getPackageName()));
 
         // libv240fix.so is loaded by the stable parent APK class loader before this child DEX.
-        // Do not declare child-loader native methods here. Instead, temporarily publish this
-        // DexClassLoader as the thread context loader and enter native code through the stable
-        // parent V240CompatibilityReport class. Native then resolves DirectDocumentBridge by
-        // name using the context loader and reconciles SFB installation.
+        // Do not declare child-loader native methods here. Temporarily publish this DexClassLoader
+        // as the thread context loader, then reach the stable parent V240CompatibilityReport via
+        // normal parent-first delegation. Native resolves DirectDocumentBridge by name through the
+        // context loader and reconciles SFB installation.
         registerDynamicBridgeViaParent();
         scheduleLegacyGearRelocation();
     }
@@ -42,7 +42,7 @@ public final class RuntimeEntry {
         try {
             thread.setContextClassLoader(dynamic);
             Class<?> report = Class.forName("com.unity3d.player.V240CompatibilityReport", true,
-                    RuntimeEntry.class.getClassLoader().getParent());
+                    dynamic);
             Method nativeReport = report.getDeclaredMethod("nativeGetCompatibilityReport");
             nativeReport.setAccessible(true);
             Object value = nativeReport.invoke(null);
