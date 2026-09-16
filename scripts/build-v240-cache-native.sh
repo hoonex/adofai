@@ -27,11 +27,13 @@ BRIDGE="${ROOT}/android/v240-dynamic-runtime/java/dev/hoonex/adofai/v240/dynamic
 ENTRY="${ROOT}/android/v240-dynamic-runtime/java/dev/hoonex/adofai/v240/dynamic/RuntimeEntry.java"
 R10_OVERLAY="${ROOT}/scripts/apply-v240-r10-raycast-probe.py"
 R11_OVERLAY="${ROOT}/scripts/apply-v240-r11-editor-probe.py"
+R12_OVERLAY="${ROOT}/scripts/apply-v240-r12-input-calibration.py"
 test -f "${SRC}"
 test -f "${BRIDGE}"
 test -f "${ENTRY}"
 test -f "${R10_OVERLAY}"
 test -f "${R11_OVERLAY}"
+test -f "${R12_OVERLAY}"
 python3 - "${SRC}" "${BRIDGE}" "${ENTRY}" <<'PY'
 from pathlib import Path
 import sys
@@ -119,8 +121,8 @@ s = s.replace('g_dynamicDiagnostics = diagnostics;',
 p.write_text(s, encoding='utf-8')
 PY_NATIVE_NAME_FIX
 
-# r10 remains an intermediate evidence overlay. r11 then disables its broad active observation
-# path and replaces it with exact scnEditor HandleMouseActions/SelectFloor pass-through probes.
+# r10/r11 remain evidence layers. r12 adds passive legacy mouse-edge observation and a
+# separately fused calibration persistence repair without changing tile coordinates/selection.
 python3 "${R10_OVERLAY}" "${JNI}/V240CacheLoader.cpp"
 grep -q 'abiProbeRevision=10' "${JNI}/V240CacheLoader.cpp"
 grep -q 'raycastProbePolicy=pass-through-observe-only' "${JNI}/V240CacheLoader.cpp"
@@ -138,6 +140,18 @@ grep -q 'BasicHook(selectMethod, HookSelectFloor, g_oldSelectFloor)' "${JNI}/V24
 grep -q 'raycastProbePolicy=disabled-r10-superseded-by-scnEditor' "${JNI}/V240CacheLoader.cpp"
 ! grep -q 'MaybeInstallUiHook();' "${JNI}/V240CacheLoader.cpp"
 ! grep -q 'MaybeInstallRaycastProbe();' "${JNI}/V240CacheLoader.cpp"
+
+python3 "${R12_OVERLAY}" "${JNI}/V240CacheLoader.cpp"
+grep -q 'abiProbeRevision=12' "${JNI}/V240CacheLoader.cpp"
+grep -q 'nativeProbe=cache-post-bnm-scneditor-input-edge-calibration-v1' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorInputEdgePolicy=observe-only' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorMouseDownEdges=' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorSelectWhileMouseDown=' "${JNI}/V240CacheLoader.cpp"
+grep -q 'calibrationPolicy=neutralize-only-exact-game-sentinel' "${JNI}/V240CacheLoader.cpp"
+grep -q 'GetField("inputOffsetNotSet")' "${JNI}/V240CacheLoader.cpp"
+grep -q 'GetMethod("set_inputOffset", 1)' "${JNI}/V240CacheLoader.cpp"
+grep -q 'calibration-r12-write.pending' "${JNI}/V240CacheLoader.cpp"
+grep -q 'MaybeNeutralizeUnsetCalibration();' "${JNI}/V240CacheLoader.cpp"
 
 python3 - "${JNI}/BNM/include/BNM/UserSettings/GlobalSettings.hpp" <<'PY'
 from pathlib import Path
@@ -202,8 +216,10 @@ cp "${LIB}" "${OUT}/libv240fix.so"
 readelf -h "${OUT}/libv240fix.so" | grep -q 'AArch64'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'JNI_OnLoad'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport'
-strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-scneditor-input-observe-v1'
-strings "${OUT}/libv240fix.so" | grep -q 'abiProbeRevision=11'
+strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-scneditor-input-edge-calibration-v1'
+strings "${OUT}/libv240fix.so" | grep -q 'abiProbeRevision=12'
+strings "${OUT}/libv240fix.so" | grep -q 'editorInputEdgePolicy=observe-only'
+strings "${OUT}/libv240fix.so" | grep -q 'calibrationPolicy=neutralize-only-exact-game-sentinel'
 strings "${OUT}/libv240fix.so" | grep -q 'sfbHookPolicy=dynamic-document-preprocess-before-bind'
 strings "${OUT}/libv240fix.so" | grep -q 'dynamicBridgeRegistrationPath=context-classloader-parent-native'
 strings "${OUT}/libv240fix.so" | grep -q 'editorProbePolicy=scnEditor-pass-through-observe-only'
