@@ -34,8 +34,10 @@ for marker in (
     'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport',
     'nativeProbe=cache-post-bnm-narrow-fix', 'nativeStage=post-bnm-narrow-sfb-fix',
     'HookOpenFilePanelFilters', 'FileSelector', 'BasicHook',
-    'sfbOpenFiltersHookInstalled=', 'abi.SFB.OpenFilePanel.filtersExact=',
-    'abi.SFB.ExtensionFilter.Extensions=', 'abi.Settings.PauseMenu.ShowSettingsMenu0=',
+    'sfbOpenFiltersHookInstalled=', 'sfbFilterMemoryRead=0',
+    'sfbFilterPolicy=broad-safe-fallback', 'kSafeFallbackExtensions',
+    'abi.SFB.OpenFilePanel.filtersExact=', 'abi.SFB.ExtensionFilter.Extensions=',
+    'abi.Settings.PauseMenu.ShowSettingsMenu0=',
     'abi.Mobile.CanvasScaler.SetScaleFactor1=', 'abi.Touch.EventSystem.RaycastAll=',
     'abi.FPS.Application.setTargetFrameRate1=',
     'abi.Event.scrCamera.SetCustomFrameRateBoolInt=',
@@ -48,6 +50,8 @@ for forbidden in (
     'HookOpenString', 'HookSaveString', 'HookSaveFilters', 'HookFolder',
     'HookSetTargetFrameRate', 'HookSetVSyncCount', 'HookInsideUI',
     '.Call(', '.Set(', 'CreateNewObject',
+    'struct ExtensionFilterValue', 'reinterpret_cast<Array<ExtensionFilterValue>*>(',
+    'm_Items[i].Extensions', 'PickerExtensions(',
 ):
     assert forbidden not in s, forbidden
 PY
@@ -122,6 +126,8 @@ readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240Compat
 strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-narrow-fix'
 strings "${OUT}/libv240fix.so" | grep -q 'nativeStage=post-bnm-narrow-sfb-fix'
 strings "${OUT}/libv240fix.so" | grep -q 'sfbOpenFiltersHookInstalled='
+strings "${OUT}/libv240fix.so" | grep -q 'sfbFilterMemoryRead=0'
+strings "${OUT}/libv240fix.so" | grep -q 'sfbFilterPolicy=broad-safe-fallback'
 strings "${OUT}/libv240fix.so" | grep -q 'abi.SFB.OpenFilePanel.filtersExact='
 strings "${OUT}/libv240fix.so" | grep -q 'abi.Settings.PauseMenu.ShowSettingsMenu0='
 if readelf -Ws "${OUT}/libv240fix.so" | grep -Eq 'Java_com_unity3d_player_V240SettingsOverlay_|Java_com_unity3d_player_V240EventCompat_'; then

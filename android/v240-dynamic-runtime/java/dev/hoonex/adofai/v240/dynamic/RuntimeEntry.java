@@ -29,10 +29,10 @@ public final class RuntimeEntry {
         Log.i(TAG, "dynamic runtime entry loaded; app=" +
                 (app == null ? "null" : app.getPackageName()));
 
-        // Recovery channel v4 activates only the exact SFB ExtensionFilter[] open overload
-        // proven by the v2.4 runtime exception. The native side remains fail-closed when the
-        // expected metadata/FileSelector ABI is absent. No event, FPS, timing or gameplay hook
-        // is enabled by this cache update.
+        // Recovery channel v5 activates only the exact SFB ExtensionFilter[] open overload
+        // proven by the v2.4 runtime probe, but deliberately never reads the incoming managed
+        // value-type array memory. Until its native layout is proven, the hook sends a bounded
+        // broad filter to the Java SAF bridge. No event, FPS, timing or gameplay hook is enabled.
         //
         // The embedded bootstrap still creates a temporary Android gear button. Until the
         // original Unity settings-menu ABI is proven and hooked, move that legacy entry point

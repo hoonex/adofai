@@ -18,9 +18,10 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
             "Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport",
             "nativeProbe=cache-post-bnm-narrow-fix", "nativeStage=post-bnm-narrow-sfb-fix",
             "HookOpenFilePanelFilters", "FileSelector", "BasicHook",
-            "sfbOpenFiltersHookInstalled=", "abi.SFB.OpenFilePanel.filtersExact=",
-            "abi.SFB.ExtensionFilter.Name=", "abi.SFB.ExtensionFilter.Extensions=",
-            "abi.Settings.PauseMenu.ShowSettingsMenu0=",
+            "sfbOpenFiltersHookInstalled=", "sfbFilterMemoryRead=0",
+            "sfbFilterPolicy=broad-safe-fallback",
+            "abi.SFB.OpenFilePanel.filtersExact=", "abi.SFB.ExtensionFilter.Name=",
+            "abi.SFB.ExtensionFilter.Extensions=", "abi.Settings.PauseMenu.ShowSettingsMenu0=",
         ):
             self.assertIn(required, source)
         self.assertEqual(source.count("BasicHook("), 1)
@@ -41,15 +42,31 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
         self.assertIn('extensionFilter.GetField("Name").IsValid()', source)
         self.assertIn('extensionFilter.GetField("Extensions").IsValid()', source)
         self.assertIn("selectorReady && openFiltersExact", source)
-        self.assertIn("InstallExactOpenFiltersHook(browser, filterLayoutCompatible)", source)
-        self.assertIn("if (!browser || !filterLayoutCompatible) return false;", source)
+        self.assertIn("InstallExactOpenFiltersHook(browser, filterMetadataSurface)", source)
+        self.assertIn("if (!browser || !filterMetadataSurface) return false;", source)
         self.assertIn("if (!method.IsValid()) return false;", source)
+
+    def test_extension_filter_value_layout_is_never_dereferenced(self):
+        source = LOADER.read_text(encoding="utf-8")
+        self.assertIn("kSafeFallbackExtensions", source)
+        self.assertIn('"adofai,zip,json,ogg,mp3,wav,png,jpg,jpeg"', source)
+        self.assertIn("RunOpenPicker(kSafeFallbackExtensions, multiselect)", source)
+        self.assertIn("sfbFilterMemoryRead=0", source)
+        self.assertIn("sfbFilterPolicy=broad-safe-fallback", source)
+        for forbidden in (
+            "struct ExtensionFilterValue",
+            "reinterpret_cast<Array<ExtensionFilterValue>*>(",
+            "m_Items[i].Extensions",
+            "PickerExtensions(",
+            "kMaxExtensionFilters",
+            "kMaxExtensionsPerFilter",
+        ):
+            self.assertNotIn(forbidden, source)
 
     def test_picker_bridge_is_bounded_and_open_only(self):
         source = LOADER.read_text(encoding="utf-8")
-        self.assertIn("kMaxExtensionFilters = 32", source)
-        self.assertIn("kMaxExtensionsPerFilter = 64", source)
         self.assertIn("kPickerPollCount = 18000", source)
+        self.assertIn("kPickerPollMs = 50", source)
         self.assertIn('"selectFile", "(Ljava/lang/String;Z)V"', source)
         self.assertIn('"getFilePath", "()Ljava/lang/String;"', source)
         self.assertIn('"isDone", "Z"', source)
@@ -104,7 +121,8 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
         self.assertIn(rollout, ("true", "false"))
         if rollout == "true":
             dynamic = DYNAMIC_ENTRY.read_text(encoding="utf-8")
-            self.assertIn("Recovery channel v4 activates only the exact SFB ExtensionFilter[] open overload", dynamic)
+            self.assertIn("Recovery channel v5 activates only the exact SFB ExtensionFilter[] open overload", dynamic)
+            self.assertIn("never reads the incoming managed", dynamic)
             self.assertIn("No event, FPS, timing or gameplay hook", dynamic)
             self.assertNotIn("V240EventCompat", dynamic)
             self.assertNotIn("System.load(", dynamic)

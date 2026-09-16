@@ -1,7 +1,6 @@
 #include <jni.h>
 #include <android/log.h>
 
-#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <mutex>
@@ -17,9 +16,9 @@ using namespace BNM::Structures::Mono;
 
 namespace {
 constexpr const char* kLogTag = "ADOFAI.V240Cache";
+constexpr const char* kSafeFallbackExtensions =
+        "adofai,zip,json,ogg,mp3,wav,png,jpg,jpeg";
 constexpr char kPickerPathSeparator = '\x1f';
-constexpr std::size_t kMaxExtensionFilters = 32;
-constexpr std::size_t kMaxExtensionsPerFilter = 64;
 constexpr int kPickerPollCount = 18000;
 constexpr int kPickerPollMs = 50;
 
@@ -43,12 +42,9 @@ std::string g_report =
         "bnmLoadedCallback=0\n"
         "probeComplete=0\n"
         "gameHooksInstalled=0\n"
-        "sfbOpenFiltersHookInstalled=0\n";
-
-struct ExtensionFilterValue {
-    String* Name;
-    Array<String*>* Extensions;
-};
+        "sfbOpenFiltersHookInstalled=0\n"
+        "sfbFilterMemoryRead=0\n"
+        "sfbFilterPolicy=broad-safe-fallback\n";
 
 void LogWarn(const char* message) {
     __android_log_print(ANDROID_LOG_WARN, kLogTag, "%s", message);
@@ -147,53 +143,9 @@ bool InitSelector(JNIEnv* env) {
     return true;
 }
 
-std::string NormalizeExtension(String* value) {
-    if (value == nullptr) return "";
-    std::string extension = value->str();
-    while (!extension.empty() && (extension[0] == '.' || extension[0] == '*')) {
-        extension.erase(extension.begin());
-    }
-    return extension;
-}
-
-void AppendUniqueExtension(std::vector<std::string>& values, String* extension) {
-    std::string normalized = NormalizeExtension(extension);
-    if (normalized.empty()) return;
-    if (std::find(values.begin(), values.end(), normalized) == values.end()) {
-        values.push_back(normalized);
-    }
-}
-
-std::string PickerExtensions(void* rawFilters) {
-    std::vector<std::string> values;
-    if (rawFilters != nullptr) {
-        auto* filters = reinterpret_cast<Array<ExtensionFilterValue>*>(rawFilters);
-        const std::size_t filterCount = static_cast<std::size_t>(filters->capacity);
-        if (filterCount > 0 && filterCount <= kMaxExtensionFilters) {
-            for (std::size_t i = 0; i < filterCount; ++i) {
-                Array<String*>* extensions = filters->m_Items[i].Extensions;
-                if (extensions == nullptr) continue;
-                const std::size_t count = static_cast<std::size_t>(extensions->capacity);
-                if (count > kMaxExtensionsPerFilter) continue;
-                for (std::size_t j = 0; j < count; ++j) {
-                    AppendUniqueExtension(values, extensions->m_Items[j]);
-                }
-            }
-        }
-    }
-
-    std::string joined;
-    for (const std::string& value : values) {
-        if (value.empty()) continue;
-        if (!joined.empty()) joined += ',';
-        joined += value;
-    }
-    return joined.empty() ? "adofai,zip,json,ogg,mp3,wav,png,jpg,jpeg" : joined;
-}
-
-std::string RunOpenPicker(const std::string& extensions, bool multiselect) {
+std::string RunOpenPicker(const char* extensions, bool multiselect) {
     std::lock_guard<std::mutex> serialized(g_pickerCallMutex);
-    if (g_vm == nullptr) return "";
+    if (g_vm == nullptr || extensions == nullptr) return "";
 
     JNIEnv* env = nullptr;
     bool attached = false;
@@ -210,7 +162,7 @@ std::string RunOpenPicker(const std::string& extensions, bool multiselect) {
         return "";
     }
 
-    jstring filter = env->NewStringUTF(extensions.c_str());
+    jstring filter = env->NewStringUTF(extensions);
     if (filter == nullptr) {
         if (attached) g_vm->DetachCurrentThread();
         return "";
@@ -284,12 +236,16 @@ Array<String*>* ToStringArray(const std::string& encodedPaths) {
 }
 
 Array<String*>* HookOpenFilePanelFilters(
-        String*, String*, void* filters, bool multiselect) {
-    return ToStringArray(RunOpenPicker(PickerExtensions(filters), multiselect));
+        String*, String*, void*, bool multiselect) {
+    // ExtensionFilter is a managed value type. Field existence does not prove its
+    // native array element layout, so this recovery hook must never reinterpret or
+    // dereference the incoming ExtensionFilter[] storage. The Java SAF picker gets a
+    // bounded broad allow-list until an exact field-offset/layout proof exists.
+    return ToStringArray(RunOpenPicker(kSafeFallbackExtensions, multiselect));
 }
 
-bool InstallExactOpenFiltersHook(Class& browser, bool filterLayoutCompatible) {
-    if (!browser || !filterLayoutCompatible) return false;
+bool InstallExactOpenFiltersHook(Class& browser, bool filterMetadataSurface) {
+    if (!browser || !filterMetadataSurface) return false;
     auto method = browser.GetMethod(
             "OpenFilePanel", {"title", "directory", "extensions", "multiselect"});
     if (!method.IsValid()) return false;
@@ -330,7 +286,7 @@ void RunProbeAndInstallNarrowFix() {
 
     const bool filterNameField = extensionFilter && extensionFilter.GetField("Name").IsValid();
     const bool filterExtensionsField = extensionFilter && extensionFilter.GetField("Extensions").IsValid();
-    const bool filterLayoutCompatible = extensionFilter && filterNameField && filterExtensionsField;
+    const bool filterMetadataSurface = extensionFilter && filterNameField && filterExtensionsField;
 
     const bool setScaleFactor1 = canvasScaler && canvasScaler.GetMethod("SetScaleFactor", 1).IsValid();
     const bool getAxis1 = input && input.GetMethod("GetAxis", 1).IsValid();
@@ -373,7 +329,7 @@ void RunProbeAndInstallNarrowFix() {
     }
 
     const bool hookInstalled = selectorReady && openFiltersExact &&
-            InstallExactOpenFiltersHook(browser, filterLayoutCompatible);
+            InstallExactOpenFiltersHook(browser, filterMetadataSurface);
 
     std::ostringstream out;
     out << "nativeProbe=cache-post-bnm-narrow-fix\n"
@@ -383,6 +339,8 @@ void RunProbeAndInstallNarrowFix() {
         << "probeComplete=1\n"
         << "gameHooksInstalled=" << (hookInstalled ? 1 : 0) << '\n'
         << "sfbOpenFiltersHookInstalled=" << (hookInstalled ? 1 : 0) << '\n'
+        << "sfbFilterMemoryRead=0\n"
+        << "sfbFilterPolicy=broad-safe-fallback\n"
         << "abi.SFB.class=" << (browser ? 1 : 0) << '\n'
         << "abi.SFB.OpenFilePanel4=" << (openFile4 ? 1 : 0) << '\n'
         << "abi.SFB.OpenFilePanel.filtersExact=" << (openFiltersExact ? 1 : 0) << '\n'
@@ -431,7 +389,9 @@ std::string CurrentReport() {
                "bnmLoadedCallback=0\n"
                "probeComplete=0\n"
                "gameHooksInstalled=0\n"
-               "sfbOpenFiltersHookInstalled=0\n";
+               "sfbOpenFiltersHookInstalled=0\n"
+               "sfbFilterMemoryRead=0\n"
+               "sfbFilterPolicy=broad-safe-fallback\n";
     }
     if (!g_bnmLoadedCallback.load(std::memory_order_acquire)) {
         return "nativeProbe=cache-post-bnm-narrow-fix\n"
@@ -440,7 +400,9 @@ std::string CurrentReport() {
                "bnmLoadedCallback=0\n"
                "probeComplete=0\n"
                "gameHooksInstalled=0\n"
-               "sfbOpenFiltersHookInstalled=0\n";
+               "sfbOpenFiltersHookInstalled=0\n"
+               "sfbFilterMemoryRead=0\n"
+               "sfbFilterPolicy=broad-safe-fallback\n";
     }
     std::lock_guard<std::mutex> lock(g_reportMutex);
     return g_report;
