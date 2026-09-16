@@ -29,15 +29,15 @@ public final class RuntimeEntry {
         Log.i(TAG, "dynamic runtime entry loaded; app=" +
                 (app == null ? "null" : app.getPackageName()));
 
-        // Recovery channel v5 activates only the exact SFB ExtensionFilter[] open overload
-        // proven by the v2.4 runtime probe, but deliberately never reads the incoming managed
-        // value-type array memory. Until its native layout is proven, the hook sends a bounded
-        // broad filter to the Java SAF bridge. No event, FPS, timing or gameplay hook is enabled.
+        // Recovery channel v6 is deliberately activation-free on the native side.
+        // The native payload waits for BNM, then performs metadata-only ABI discovery.
+        // It installs no BasicHook, invokes no managed game method, and mutates no game
+        // state. SFB ExtensionFilter[] remains diagnostic-only until its exact call ABI
+        // and value layout are proven on the target v2.4 runtime.
         //
-        // The embedded bootstrap still creates a temporary Android gear button. Until the
-        // original Unity settings-menu ABI is proven and hooked, move that legacy entry point
-        // away from the editor's top toolbar so it cannot cover play/stop controls. This is
-        // deliberately a transitional placement, not the final settings UX.
+        // The embedded bootstrap still creates a temporary Android gear button. Move
+        // that Java-owned entry point away from the editor's top toolbar. This is only
+        // a fail-open UI relocation; it does not activate any native gameplay hook.
         scheduleLegacyGearRelocation();
     }
 

@@ -30,28 +30,26 @@ import sys
 s = Path(sys.argv[1]).read_text(encoding='utf-8')
 for marker in (
     'JNI_OnLoad', 'GetEnv', 'universe.h', 'Loading::TryLoadByJNI',
-    'Loading::AddOnLoadedEvent', 'RunProbeAndInstallNarrowFix',
+    'Loading::AddOnLoadedEvent', 'RunReadOnlyAbiProbe',
     'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport',
-    'nativeProbe=cache-post-bnm-narrow-fix', 'nativeStage=post-bnm-narrow-sfb-fix',
-    'HookOpenFilePanelFilters', 'FileSelector', 'BasicHook',
-    'sfbOpenFiltersHookInstalled=', 'sfbFilterMemoryRead=0',
-    'sfbFilterPolicy=broad-safe-fallback', 'kSafeFallbackExtensions',
-    'abi.SFB.OpenFilePanel.filtersExact=', 'abi.SFB.ExtensionFilter.Extensions=',
-    'abi.Settings.PauseMenu.ShowSettingsMenu0=',
+    'nativeProbe=cache-post-bnm-probe-only-v2', 'nativeStage=post-bnm-read-only-abi',
+    'probeComplete=1', 'gameHooksInstalled=0', 'sfbOpenFiltersHookInstalled=0',
+    'sfbFilterMemoryRead=0', 'sfbHookPolicy=disabled-unproven-call-abi',
+    'abi.SFB.OpenFilePanel.filtersExact=', 'abi.SFB.ExtensionFilter.Name=',
+    'abi.SFB.ExtensionFilter.Extensions=', 'abi.Settings.PauseMenu.ShowSettingsMenu0=',
     'abi.Mobile.CanvasScaler.SetScaleFactor1=', 'abi.Touch.EventSystem.RaycastAll=',
     'abi.FPS.Application.setTargetFrameRate1=',
     'abi.Event.scrCamera.SetCustomFrameRateBoolInt=',
 ):
     assert marker in s, marker
-assert s.count('BasicHook(') == 1, 'cache runtime must install exactly one native hook'
 for forbidden in (
-    'InstallAllHooks', 'InstallSfbHooks', 'InstallMobileHooks',
-    'V240SettingsOverlay', 'V240EventCompat', 'V240TouchAssist',
-    'HookOpenString', 'HookSaveString', 'HookSaveFilters', 'HookFolder',
-    'HookSetTargetFrameRate', 'HookSetVSyncCount', 'HookInsideUI',
+    'BasicHook', 'InstallAllHooks', 'InstallSfbHooks', 'InstallMobileHooks',
+    'InstallExactOpenFiltersHook', 'HookOpenFilePanelFilters',
+    'V240SettingsOverlay', 'V240EventCompat', 'V240TouchAssist', 'FileSelector',
+    'FindClass', 'CallStatic', 'CallObject', 'NewGlobalRef', 'pthread_create',
     '.Call(', '.Set(', 'CreateNewObject',
     'struct ExtensionFilterValue', 'reinterpret_cast<Array<ExtensionFilterValue>*>(',
-    'm_Items[i].Extensions', 'PickerExtensions(',
+    'm_Items[i].Extensions', 'RunOpenPicker(',
 ):
     assert forbidden not in s, forbidden
 PY
@@ -123,15 +121,14 @@ cp "${LIB}" "${OUT}/libv240fix.so"
 readelf -h "${OUT}/libv240fix.so" | grep -q 'AArch64'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'JNI_OnLoad'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport'
-strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-narrow-fix'
-strings "${OUT}/libv240fix.so" | grep -q 'nativeStage=post-bnm-narrow-sfb-fix'
-strings "${OUT}/libv240fix.so" | grep -q 'sfbOpenFiltersHookInstalled='
-strings "${OUT}/libv240fix.so" | grep -q 'sfbFilterMemoryRead=0'
-strings "${OUT}/libv240fix.so" | grep -q 'sfbFilterPolicy=broad-safe-fallback'
+strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-probe-only-v2'
+strings "${OUT}/libv240fix.so" | grep -q 'nativeStage=post-bnm-read-only-abi'
+strings "${OUT}/libv240fix.so" | grep -q 'sfbHookPolicy=disabled-unproven-call-abi'
 strings "${OUT}/libv240fix.so" | grep -q 'abi.SFB.OpenFilePanel.filtersExact='
 strings "${OUT}/libv240fix.so" | grep -q 'abi.Settings.PauseMenu.ShowSettingsMenu0='
+strings "${OUT}/libv240fix.so" | grep -q 'gameHooksInstalled=0'
 if readelf -Ws "${OUT}/libv240fix.so" | grep -Eq 'Java_com_unity3d_player_V240SettingsOverlay_|Java_com_unity3d_player_V240EventCompat_'; then
-  echo 'cache runtime unexpectedly exported unrelated feature activation JNI' >&2
+  echo 'cache ABI probe unexpectedly exported feature activation JNI' >&2
   exit 1
 fi
 sha256sum "${OUT}/libv240fix.so" | tee "${OUT}/SHA256SUMS.txt"
