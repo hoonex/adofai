@@ -7,6 +7,7 @@
 #include "universe.h"
 
 using namespace BNM;
+using namespace BNM::Structures::Mono;
 
 namespace {
 std::atomic<bool> g_bnmLoadRequested{false};
