@@ -12,6 +12,7 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 
 /** Hot-swappable entrypoint loaded from app-private code_cache by the stable bootstrap. */
 public final class RuntimeEntry {
@@ -20,28 +21,42 @@ public final class RuntimeEntry {
 
     private RuntimeEntry() {}
 
-    private static native void nativeRegisterDynamicBridge(Class<?> bridgeClass);
-    private static native void nativeReconcileDynamicRuntime();
-
     public static void install(Context context) {
         Context app = context == null ? null : context.getApplicationContext();
         Log.i(TAG, "dynamic runtime entry loaded; app=" +
                 (app == null ? "null" : app.getPackageName()));
 
-        // The native library is loaded by the stable bootstrap before this DEX. Register the
-        // hot-swappable document importer, then reconcile hook installation regardless of whether
-        // BNM or the DEX became ready first. No System.load is performed here.
-        try {
-            nativeRegisterDynamicBridge(DirectDocumentBridge.class);
-            nativeReconcileDynamicRuntime();
-            Log.i(TAG, "dynamic document bridge registered");
-        } catch (Throwable error) {
-            // Fail open: native SFB installation is gated on successful registration, while the
-            // rest of the historical game remains usable if this optional runtime path is absent.
-            Log.w(TAG, "dynamic document bridge registration failed", error);
-        }
-
+        // libv240fix.so is loaded by the stable parent APK class loader before this child DEX.
+        // Do not declare child-loader native methods here. Instead, temporarily publish this
+        // DexClassLoader as the thread context loader and enter native code through the stable
+        // parent V240CompatibilityReport class. Native then resolves DirectDocumentBridge by
+        // name using the context loader and reconciles SFB installation.
+        registerDynamicBridgeViaParent();
         scheduleLegacyGearRelocation();
+    }
+
+    private static void registerDynamicBridgeViaParent() {
+        final Thread thread = Thread.currentThread();
+        final ClassLoader previous = thread.getContextClassLoader();
+        final ClassLoader dynamic = RuntimeEntry.class.getClassLoader();
+        try {
+            thread.setContextClassLoader(dynamic);
+            Class<?> report = Class.forName("com.unity3d.player.V240CompatibilityReport", true,
+                    RuntimeEntry.class.getClassLoader().getParent());
+            Method nativeReport = report.getDeclaredMethod("nativeGetCompatibilityReport");
+            nativeReport.setAccessible(true);
+            Object value = nativeReport.invoke(null);
+            Log.i(TAG, "dynamic document bridge parent reconcile=" +
+                    (value instanceof String ? "ok" : "empty"));
+        } catch (Throwable error) {
+            // Fail open. Native SFB installation remains gated on successful bridge resolution.
+            Log.w(TAG, "dynamic document bridge parent registration failed", error);
+        } finally {
+            try {
+                thread.setContextClassLoader(previous);
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
     private static void scheduleLegacyGearRelocation() {
