@@ -23,64 +23,69 @@ git -C "${UPSTREAM}" clean -fdx
 [[ "$(git -C "${UPSTREAM}" rev-parse HEAD)" == "${UPSTREAM_SHA}" ]]
 
 SRC="${ROOT}/android/v240-dynamic-runtime/native/V240CacheLoader.cpp"
+BRIDGE="${ROOT}/android/v240-dynamic-runtime/java/dev/hoonex/adofai/v240/dynamic/DirectDocumentBridge.java"
+ENTRY="${ROOT}/android/v240-dynamic-runtime/java/dev/hoonex/adofai/v240/dynamic/RuntimeEntry.java"
 test -f "${SRC}"
-python3 - "${SRC}" <<'PY'
+test -f "${BRIDGE}"
+test -f "${ENTRY}"
+python3 - "${SRC}" "${BRIDGE}" "${ENTRY}" <<'PY'
 from pathlib import Path
 import sys
 s = Path(sys.argv[1]).read_text(encoding='utf-8')
+j = Path(sys.argv[2]).read_text(encoding='utf-8')
+e = Path(sys.argv[3]).read_text(encoding='utf-8')
 for marker in (
     'JNI_OnLoad', 'g_vm = vm', 'universe.h', 'Loading::TryLoadByJNI',
-    'Loading::AddOnLoadedEvent', 'RunAbiProbeAndMaybeInstallCanary',
+    'Loading::AddOnLoadedEvent', 'ReconcileInstallState',
     'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport',
-    'nativeProbe=cache-post-bnm-sfb-saf-direct-v1',
-    'nativeStage=post-bnm-sfb-saf-direct-document', 'abiProbeRevision=8',
-    'sfbHookPolicy=bootstrap1-self-fused-saf-direct-document',
-    'sfbPickerBackend=direct-document', 'sfbFileSelectorBypassed=1',
-    'sfbCanarySelfFuse=1', 'sfbCanaryMarkerReady=', 'sfbCanaryRecoveryState=',
-    'sfbCanaryHiddenMethodInfo=1', 'sfbSafBridgeReady=', 'sfbOriginalCallUsed=0',
-    'sfbSafPickerCalls=', 'sfbSafPickerReturns=', 'sfbSafLastState=', 'sfbLastMime=',
-    'sfbOpenFiltersCanaryCalls=', 'sfbOpenFiltersCanaryReturns=',
-    'sfbCanaryMarkerWriteFailures=', 'sfbFilterMemoryRead=1',
-    'sfbFilterReadBounded=1', 'sfbFilterReadAttempts=', 'sfbFilterReadSuccess=',
-    'sfbFilterFallbacks=', 'sfbFilterCount=', 'sfbExtensionCount=', 'sfbLastExtensions=',
-    'struct ExtensionFilterValue', 'IL2CPP::MethodInfo* methodInfo',
+    'Java_dev_hoonex_adofai_v240_dynamic_RuntimeEntry_nativeRegisterDynamicBridge',
+    'Java_dev_hoonex_adofai_v240_dynamic_RuntimeEntry_nativeReconcileDynamicRuntime',
+    'nativeProbe=cache-post-bnm-sfb-dynamic-import-uihit-v1',
+    'nativeStage=post-bnm-dynamic-document-and-uihit', 'abiProbeRevision=9',
+    'sfbHookPolicy=dynamic-document-preprocess-before-bind',
+    'sfbPickerBackend=dynamic-document', 'sfbEmbeddedBridgeBypassed=1',
+    'uiHitPolicy=pinned-upstream-eventsystem-raycast',
+    'uiHitSourceCommit=74bcc7a0d8c8be1267504e21e28a35e199b5d4eb',
     'BasicHook(openFilters, HookOpenFilePanelFilters, g_oldOpenFilters)',
-    'ReadFilterExtensions', 'filters->capacity', 'filters->m_Items[i].Extensions',
-    'extensions->capacity', 'extensions->m_Items[j]', 'NormalizeExtension',
-    'ResolvePickerExtensions(filters)', 'RunSafPicker(multiselect, extensions)',
-    'ToManagedStringArray', 'CreateMonoString',
-    'V240AndroidBridge', 'beginOpen', 'await', 'CallStaticIntMethod', 'CallStaticObjectMethod',
-    'NewGlobalRef', 'ResolvePickerMime',
-    'dladdr(', 'sfb-canary-r8-install.pending', 'sfb-canary-r8-call.pending',
+    'BasicHook(uiMethod, HookUiHit, g_oldUiHit)',
+    'ReadFilterExtensions', 'filters->m_Items[i].Extensions',
+    'RunDynamicPicker(multiselect, extensions)',
+    'g_pointerPosition[eventData].Set(position)',
+    'g_raycastAll[eventSystem].Call(eventData, results)',
+    'sfb-r9-install.pending', 'sfb-r9-call.pending',
+    'uihit-r9-install.pending', 'uihit-r9-call.pending',
     'O_CREAT | O_EXCL | O_CLOEXEC', 'fsync(fd)',
 ):
     assert marker in s, marker
-assert s.count('BasicHook(') == 1
-assert 'original(title, directory, filters, multiselect, methodInfo)' not in s
+assert s.count('BasicHook(') == 2
 assert 'g_oldOpenFilters(' not in s
 assert '"com/unity3d/player/FileSelector"' not in s
-assert 'GetStaticBooleanField' not in s
-for forbidden in (
-    'InstallAllHooks', 'InstallSfbHooks', 'InstallMobileHooks',
-    'V240SettingsOverlay', 'V240EventCompat', 'V240TouchAssist',
-    '.Call(', '.Set(', 'CreateNewObject', 'RunOpenPicker(',
-    'cache-post-bnm-sfb-saf-v1', 'bootstrap1-self-fused-saf-broad-open',
-):
+assert '"com/unity3d/player/V240AndroidBridge"' not in s
+for forbidden in ('InstallAllHooks', 'InstallSfbHooks', 'InstallMobileHooks', 'V240SettingsOverlay', 'V240EventCompat'):
     assert forbidden not in s, forbidden
-hook = s[s.index('Array<String*>* HookOpenFilePanelFilters'):]
-hook = hook[:hook.index('\n}\n') + 2]
-assert hook.index('WriteMarker(g_callMarker)') < hook.index('ResolvePickerExtensions(filters)')
-for forbidden in ('original(', 'g_oldOpenFilters('):
-    assert forbidden not in hook, forbidden
-read = s[s.index('bool ReadFilterExtensions'):]
-read = read[:read.index('\n}\n\nbool JoinExtensions') + 2]
-assert '.Name' not in read
+for marker in (
+    'Intent.ACTION_OPEN_DOCUMENT', 'V240ChartBackport', 'V240HallLegacyFix',
+    'V240OpaqueEventBridge', 'V240MapCompatibility', 'V240AndroidBridge',
+    'backportForV240', 'applyIfNeeded', 'prepareForV240', 'repairMap', 'bindSave',
+    'BIND_SAVE.setAccessible(true)', 'MAX_FILES = 128',
+    'MAX_BYTES = 512L * 1024L * 1024L',
+    'directBridge=dynamic-document-v1',
+):
+    assert marker in j, marker
+assert 'Intent.ACTION_OPEN_DOCUMENT_TREE' not in j
+assert j.index('invokeBoolean(BACKPORT') < j.index('BIND_SAVE.invoke')
+assert j.index('invokeBoolean(HALL_FIX') < j.index('BIND_SAVE.invoke')
+assert j.index('invokeBoolean(OPAQUE_PREPARE') < j.index('BIND_SAVE.invoke')
+assert j.index('invokeVoid(MAP_REPAIR') < j.index('BIND_SAVE.invoke')
+for marker in ('nativeRegisterDynamicBridge(DirectDocumentBridge.class)', 'nativeReconcileDynamicRuntime()'):
+    assert marker in e, marker
+assert 'System.load(' not in e
+assert 'System.loadLibrary(' not in e
 PY
 
 JNI="${UPSTREAM}/app/src/main/jni"
 cp "${SRC}" "${JNI}/V240CacheLoader.cpp"
 
-# Match the exact audited APK: Unity 2021.3.10f1.
 python3 - "${JNI}/BNM/include/BNM/UserSettings/GlobalSettings.hpp" <<'PY'
 from pathlib import Path
 import sys
@@ -144,22 +149,10 @@ cp "${LIB}" "${OUT}/libv240fix.so"
 readelf -h "${OUT}/libv240fix.so" | grep -q 'AArch64'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'JNI_OnLoad'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport'
-strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-sfb-saf-direct-v1'
-strings "${OUT}/libv240fix.so" | grep -q 'nativeStage=post-bnm-sfb-saf-direct-document'
-strings "${OUT}/libv240fix.so" | grep -q 'sfbHookPolicy=bootstrap1-self-fused-saf-direct-document'
-strings "${OUT}/libv240fix.so" | grep -q 'sfbPickerBackend=direct-document'
-strings "${OUT}/libv240fix.so" | grep -q 'sfbFileSelectorBypassed=1'
-strings "${OUT}/libv240fix.so" | grep -q 'sfbSafBridgeReady='
-strings "${OUT}/libv240fix.so" | grep -q 'sfbOriginalCallUsed=0'
-strings "${OUT}/libv240fix.so" | grep -q 'sfbSafPickerCalls='
-strings "${OUT}/libv240fix.so" | grep -q 'sfbSafPickerReturns='
-strings "${OUT}/libv240fix.so" | grep -q 'sfbFilterMemoryRead=1'
-strings "${OUT}/libv240fix.so" | grep -q 'sfbFilterReadBounded=1'
-strings "${OUT}/libv240fix.so" | grep -q 'sfbFilterReadAttempts='
-strings "${OUT}/libv240fix.so" | grep -q 'sfbLastExtensions='
-strings "${OUT}/libv240fix.so" | grep -q 'sfbLastMime='
-if readelf -Ws "${OUT}/libv240fix.so" | grep -Eq 'Java_com_unity3d_player_V240SettingsOverlay_|Java_com_unity3d_player_V240EventCompat_'; then
-  echo 'cache SAF runtime unexpectedly exported feature activation JNI' >&2
-  exit 1
-fi
+readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_dev_hoonex_adofai_v240_dynamic_RuntimeEntry_nativeRegisterDynamicBridge'
+readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_dev_hoonex_adofai_v240_dynamic_RuntimeEntry_nativeReconcileDynamicRuntime'
+strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-sfb-dynamic-import-uihit-v1'
+strings "${OUT}/libv240fix.so" | grep -q 'sfbHookPolicy=dynamic-document-preprocess-before-bind'
+strings "${OUT}/libv240fix.so" | grep -q 'uiHitPolicy=pinned-upstream-eventsystem-raycast'
+strings "${OUT}/libv240fix.so" | grep -q 'uiHitSourceCommit=74bcc7a0d8c8be1267504e21e28a35e199b5d4eb'
 sha256sum "${OUT}/libv240fix.so" | tee "${OUT}/SHA256SUMS.txt"

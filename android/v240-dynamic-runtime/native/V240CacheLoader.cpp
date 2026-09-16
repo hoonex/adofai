@@ -13,30 +13,42 @@
 
 using namespace BNM;
 using namespace BNM::Structures::Mono;
+using namespace BNM::Structures::Unity;
 
 namespace {
 JavaVM* g_vm = nullptr;
-jclass g_bridgeClass = nullptr;
-jmethodID g_beginOpen = nullptr;
-jmethodID g_await = nullptr;
 Class g_stringClass;
-std::mutex g_bridgeMutex;
+
+// Dynamic DEX picker bridge. Registered by RuntimeEntry after DexClassLoader activation.
+jclass g_dynamicBridgeClass = nullptr;
+jmethodID g_dynamicBegin = nullptr;
+jmethodID g_dynamicAwait = nullptr;
+jmethodID g_dynamicDiagnostics = nullptr;
+std::mutex g_dynamicBridgeMutex;
+
+std::mutex g_installMutex;
 std::mutex g_pickerMutex;
 std::mutex g_reportMutex;
-std::mutex g_filterTextMutex;
+std::mutex g_textMutex;
+std::mutex g_uiFirstCallMutex;
 
 std::atomic<bool> g_bnmLoadRequested{false};
 std::atomic<bool> g_bnmLoadedCallback{false};
 std::atomic<bool> g_probeComplete{false};
-std::atomic<bool> g_hookInstalled{false};
-std::atomic<bool> g_markerReady{false};
-std::atomic<bool> g_installAttempted{false};
-std::atomic<bool> g_safBridgeReady{false};
-std::atomic<int> g_recoveryState{0};
-std::atomic<int> g_calls{0};
-std::atomic<int> g_returns{0};
-std::atomic<int> g_callsInFlight{0};
+std::atomic<bool> g_dynamicBridgeReady{false};
+std::atomic<bool> g_sfbHookInstalled{false};
+std::atomic<bool> g_uiHookInstalled{false};
+std::atomic<bool> g_sfbInstallAttempted{false};
+std::atomic<bool> g_uiInstallAttempted{false};
+std::atomic<bool> g_sfbMarkerReady{false};
+std::atomic<bool> g_uiMarkerReady{false};
+std::atomic<bool> g_uiFirstCallProven{false};
+std::atomic<int> g_sfbRecoveryState{0};
+std::atomic<int> g_uiRecoveryState{0};
 std::atomic<int> g_markerWriteFailures{0};
+std::atomic<int> g_sfbCalls{0};
+std::atomic<int> g_sfbReturns{0};
+std::atomic<int> g_sfbCallsInFlight{0};
 std::atomic<int> g_safPickerCalls{0};
 std::atomic<int> g_safPickerReturns{0};
 std::atomic<int> g_safLastState{0};
@@ -45,10 +57,22 @@ std::atomic<int> g_filterReadSuccess{0};
 std::atomic<int> g_filterFallbacks{0};
 std::atomic<int> g_filterCount{0};
 std::atomic<int> g_extensionCount{0};
+std::atomic<int> g_uiHitCalls{0};
+std::atomic<int> g_uiHitTrue{0};
+std::atomic<int> g_uiHitFalse{0};
+std::atomic<int> g_uiLastX100{0};
+std::atomic<int> g_uiLastY100{0};
+std::atomic<int> g_uiGuardValue{0};
+std::atomic<int> g_uiOriginalCalls{0};
+
 std::string g_lastExtensions = "<none>";
 std::string g_lastMime = "<none>";
-std::string g_installMarker;
-std::string g_callMarker;
+std::string g_dynamicDiagnostics = "directBridge=not-run";
+std::string g_report;
+std::string g_sfbInstallMarker;
+std::string g_sfbCallMarker;
+std::string g_uiInstallMarker;
+std::string g_uiCallMarker;
 
 constexpr std::size_t kMaxExtensionFilters = 32;
 constexpr std::size_t kMaxExtensionsPerFilter = 64;
@@ -56,27 +80,6 @@ constexpr std::size_t kMaxUniqueExtensions = 128;
 constexpr int kMaxExtensionChars = 32;
 constexpr std::size_t kMaxJoinedExtensions = 512;
 constexpr const char* kBroadExtensions = "adofai,zip,json,ogg,mp3,wav,png,jpg,jpeg";
-
-std::string g_report =
-        "nativeProbe=cache-post-bnm-sfb-saf-direct-v1\n"
-        "nativeStage=post-bnm-sfb-saf-direct-document\n"
-        "abiProbeRevision=8\n"
-        "bnmLoadRequested=0\n"
-        "bnmLoadedCallback=0\n"
-        "probeComplete=0\n"
-        "gameHooksInstalled=0\n"
-        "sfbOpenFiltersHookInstalled=0\n"
-        "sfbFilterMemoryRead=1\n"
-        "sfbFilterReadBounded=1\n"
-        "sfbHookPolicy=bootstrap1-self-fused-saf-direct-document\n"
-        "sfbCanarySelfFuse=1\n"
-        "sfbCanaryMarkerReady=0\n"
-        "sfbCanaryRecoveryState=0\n"
-        "sfbCanaryAbiGuard=0\n"
-        "sfbSafBridgeReady=0\n"
-        "sfbOriginalCallUsed=0\n"
-        "sfbPickerBackend=direct-document\n"
-        "sfbFileSelectorBypassed=1\n";
 
 struct ExtensionFilterValue {
     String* Name;
@@ -88,6 +91,15 @@ static_assert(sizeof(ExtensionFilterValue) == sizeof(void*) * 2,
 using OpenFiltersFn = Array<String*>* (*)(
         String*, String*, Array<ExtensionFilterValue>*, bool, IL2CPP::MethodInfo*);
 OpenFiltersFn g_oldOpenFilters = nullptr;
+
+using UiHitFn = bool (*)(IL2CPP::Il2CppObject*, Vector2, IL2CPP::MethodInfo*);
+UiHitFn g_oldUiHit = nullptr;
+Property<IL2CPP::Il2CppObject*> g_eventSystemCurrent;
+Class g_pointerEventDataClass;
+Class g_listRaycastResultClass;
+Property<Vector2> g_pointerPosition;
+Property<int> g_listCount;
+Method<void> g_raycastAll;
 
 bool SameClass(const Class& a, const Class& b) {
     return a && b && a.GetClass() == b.GetClass();
@@ -126,17 +138,33 @@ bool WriteMarker(const std::string& path) {
 void ClearMarker(const std::string& path) {
     if (!path.empty()) unlink(path.c_str());
 }
-bool PrepareSelfFuse() {
+
+bool PrepareSfbFuse() {
     const std::string dir = RuntimeDir();
-    if (dir.empty()) { g_recoveryState.store(3); return false; }
-    g_installMarker = dir + "/sfb-canary-r8-install.pending";
-    g_callMarker = dir + "/sfb-canary-r8-call.pending";
-    g_markerReady.store(true);
-    if (MarkerExists(g_installMarker)) { g_recoveryState.store(1); return false; }
-    if (MarkerExists(g_callMarker)) { g_recoveryState.store(2); return false; }
-    const std::string probe = dir + "/sfb-canary-r8-marker-probe.tmp";
+    if (dir.empty()) { g_sfbRecoveryState.store(3); return false; }
+    g_sfbInstallMarker = dir + "/sfb-r9-install.pending";
+    g_sfbCallMarker = dir + "/sfb-r9-call.pending";
+    g_sfbMarkerReady.store(true);
+    if (MarkerExists(g_sfbInstallMarker)) { g_sfbRecoveryState.store(1); return false; }
+    if (MarkerExists(g_sfbCallMarker)) { g_sfbRecoveryState.store(2); return false; }
+    const std::string probe = dir + "/sfb-r9-probe.tmp";
     ClearMarker(probe);
-    if (!WriteMarker(probe)) { g_markerReady.store(false); g_recoveryState.store(3); return false; }
+    if (!WriteMarker(probe)) { g_sfbMarkerReady.store(false); g_sfbRecoveryState.store(3); return false; }
+    ClearMarker(probe);
+    return true;
+}
+
+bool PrepareUiFuse() {
+    const std::string dir = RuntimeDir();
+    if (dir.empty()) { g_uiRecoveryState.store(3); return false; }
+    g_uiInstallMarker = dir + "/uihit-r9-install.pending";
+    g_uiCallMarker = dir + "/uihit-r9-call.pending";
+    g_uiMarkerReady.store(true);
+    if (MarkerExists(g_uiInstallMarker)) { g_uiRecoveryState.store(1); return false; }
+    if (MarkerExists(g_uiCallMarker)) { g_uiRecoveryState.store(2); return false; }
+    const std::string probe = dir + "/uihit-r9-probe.tmp";
+    ClearMarker(probe);
+    if (!WriteMarker(probe)) { g_uiMarkerReady.store(false); g_uiRecoveryState.store(3); return false; }
     ClearMarker(probe);
     return true;
 }
@@ -153,75 +181,37 @@ bool GetEnv(JNIEnv** env, bool* attached) {
     return true;
 }
 
-jclass LoadAppClass(JNIEnv* env, const char* slashName, const char* dotName) {
-    jclass direct = env->FindClass(slashName);
-    if (direct != nullptr && !env->ExceptionCheck()) return direct;
-    if (env->ExceptionCheck()) env->ExceptionClear();
-
-    jclass threadClass = env->FindClass("android/app/ActivityThread");
-    if (threadClass == nullptr) { if (env->ExceptionCheck()) env->ExceptionClear(); return nullptr; }
-    jmethodID currentApplication = env->GetStaticMethodID(
-            threadClass, "currentApplication", "()Landroid/app/Application;");
-    jobject app = currentApplication == nullptr ? nullptr : env->CallStaticObjectMethod(threadClass, currentApplication);
-    if (app == nullptr || env->ExceptionCheck()) {
-        if (env->ExceptionCheck()) env->ExceptionClear();
-        env->DeleteLocalRef(threadClass);
-        return nullptr;
-    }
-    jclass appClass = env->GetObjectClass(app);
-    jmethodID getClassLoader = appClass == nullptr ? nullptr
-            : env->GetMethodID(appClass, "getClassLoader", "()Ljava/lang/ClassLoader;");
-    jobject loader = getClassLoader == nullptr ? nullptr : env->CallObjectMethod(app, getClassLoader);
-    jclass loaderClass = env->FindClass("java/lang/ClassLoader");
-    jmethodID loadClass = loaderClass == nullptr ? nullptr
-            : env->GetMethodID(loaderClass, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
-    jclass result = nullptr;
-    if (loader != nullptr && loadClass != nullptr && !env->ExceptionCheck()) {
-        jstring name = env->NewStringUTF(dotName);
-        jobject clazz = name == nullptr ? nullptr : env->CallObjectMethod(loader, loadClass, name);
-        if (name) env->DeleteLocalRef(name);
-        if (clazz != nullptr && !env->ExceptionCheck()) result = reinterpret_cast<jclass>(clazz);
-    }
-    if (env->ExceptionCheck()) env->ExceptionClear();
-    if (loaderClass) env->DeleteLocalRef(loaderClass);
-    if (loader) env->DeleteLocalRef(loader);
-    if (appClass) env->DeleteLocalRef(appClass);
-    env->DeleteLocalRef(app);
-    env->DeleteLocalRef(threadClass);
-    return result;
+bool DynamicBridgeReady() {
+    std::lock_guard<std::mutex> lock(g_dynamicBridgeMutex);
+    return g_dynamicBridgeClass != nullptr && g_dynamicBegin != nullptr &&
+            g_dynamicAwait != nullptr && g_dynamicDiagnostics != nullptr;
 }
 
-bool InitBridge(JNIEnv* env) {
-    std::lock_guard<std::mutex> lock(g_bridgeMutex);
-    if (g_bridgeClass && g_beginOpen && g_await) return true;
-    jclass local = LoadAppClass(env,
-            "com/unity3d/player/V240AndroidBridge",
-            "com.unity3d.player.V240AndroidBridge");
-    if (local == nullptr) return false;
-    jmethodID beginOpen = env->GetStaticMethodID(local, "beginOpen", "(Ljava/lang/String;Z)I");
-    jmethodID await = env->GetStaticMethodID(local, "await", "(IJ)Ljava/lang/String;");
-    if (env->ExceptionCheck()) env->ExceptionClear();
-    if (beginOpen == nullptr || await == nullptr) {
-        env->DeleteLocalRef(local);
-        return false;
+void RefreshDynamicDiagnostics(JNIEnv* env) {
+    if (env == nullptr) return;
+    jclass bridgeClass = nullptr;
+    jmethodID diagnostics = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_dynamicBridgeMutex);
+        bridgeClass = g_dynamicBridgeClass;
+        diagnostics = g_dynamicDiagnostics;
     }
-    jclass global = reinterpret_cast<jclass>(env->NewGlobalRef(local));
-    env->DeleteLocalRef(local);
-    if (global == nullptr) return false;
-    g_bridgeClass = global;
-    g_beginOpen = beginOpen;
-    g_await = await;
-    return true;
-}
-
-bool ProbeSafBridge() {
-    JNIEnv* env = nullptr;
-    bool attached = false;
-    if (!GetEnv(&env, &attached)) return false;
-    const bool ready = InitBridge(env);
-    if (attached) g_vm->DetachCurrentThread();
-    g_safBridgeReady.store(ready);
-    return ready;
+    if (!bridgeClass || !diagnostics) return;
+    jstring value = reinterpret_cast<jstring>(env->CallStaticObjectMethod(
+            bridgeClass, diagnostics));
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return;
+    }
+    if (value) {
+        const char* chars = env->GetStringUTFChars(value, nullptr);
+        if (chars) {
+            std::lock_guard<std::mutex> textLock(g_textMutex);
+            g_dynamicDiagnostics.assign(chars);
+            env->ReleaseStringUTFChars(value, chars);
+        }
+        env->DeleteLocalRef(value);
+    }
 }
 
 bool ContainsExtension(const std::vector<std::string>& values, const std::string& candidate) {
@@ -248,8 +238,8 @@ bool NormalizeExtension(String* value, std::string* out) {
     std::string normalized = ascii.substr(start);
     if (normalized.empty() || normalized.size() > static_cast<std::size_t>(kMaxExtensionChars)) return false;
     for (char c : normalized) {
-        const bool valid = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
-                || c == '_' || c == '-' || c == '+';
+        const bool valid = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+                c == '_' || c == '-' || c == '+';
         if (!valid) return false;
     }
     *out = normalized;
@@ -302,19 +292,19 @@ bool JoinExtensions(const std::vector<std::string>& values, std::string* joined)
 }
 
 void SetLastExtensions(const std::string& value) {
-    std::lock_guard<std::mutex> lock(g_filterTextMutex);
+    std::lock_guard<std::mutex> lock(g_textMutex);
     g_lastExtensions = value;
 }
 void SetLastMime(const std::string& value) {
-    std::lock_guard<std::mutex> lock(g_filterTextMutex);
+    std::lock_guard<std::mutex> lock(g_textMutex);
     g_lastMime = value;
 }
 
 std::string ResolvePickerExtensions(Array<ExtensionFilterValue>* filters) {
     std::vector<std::string> values;
     std::string joined;
-    if (ReadFilterExtensions(filters, &values) && !values.empty()
-            && JoinExtensions(values, &joined) && !joined.empty()) {
+    if (ReadFilterExtensions(filters, &values) && !values.empty() &&
+            JoinExtensions(values, &joined) && !joined.empty()) {
         SetLastExtensions(joined);
         return joined;
     }
@@ -353,12 +343,12 @@ std::string ResolvePickerMime(const std::string& extensions) {
     return common.empty() ? "*/*" : common;
 }
 
-std::string RunSafPicker(bool multiselect, const std::string& extensions) {
-    std::lock_guard<std::mutex> lock(g_pickerMutex);
+std::string RunDynamicPicker(bool multiselect, const std::string& extensions) {
+    std::lock_guard<std::mutex> serialized(g_pickerMutex);
     g_safPickerCalls.fetch_add(1);
     JNIEnv* env = nullptr;
     bool attached = false;
-    if (!GetEnv(&env, &attached) || !InitBridge(env)) {
+    if (!GetEnv(&env, &attached) || !DynamicBridgeReady()) {
         g_safLastState.store(1);
         if (attached) g_vm->DetachCurrentThread();
         return "";
@@ -367,15 +357,37 @@ std::string RunSafPicker(bool multiselect, const std::string& extensions) {
     const std::string mime = ResolvePickerMime(extensions);
     SetLastMime(mime);
     jstring jmime = env->NewStringUTF(mime.c_str());
-    if (jmime == nullptr) {
+    jstring jextensions = env->NewStringUTF(extensions.c_str());
+    if (jmime == nullptr || jextensions == nullptr) {
         if (env->ExceptionCheck()) env->ExceptionClear();
+        if (jmime) env->DeleteLocalRef(jmime);
+        if (jextensions) env->DeleteLocalRef(jextensions);
         g_safLastState.store(2);
         if (attached) g_vm->DetachCurrentThread();
         return "";
     }
-    const jint requestId = env->CallStaticIntMethod(
-            g_bridgeClass, g_beginOpen, jmime, multiselect ? JNI_TRUE : JNI_FALSE);
+
+    jclass bridgeClass = nullptr;
+    jmethodID beginMethod = nullptr;
+    jmethodID awaitMethod = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_dynamicBridgeMutex);
+        bridgeClass = g_dynamicBridgeClass;
+        beginMethod = g_dynamicBegin;
+        awaitMethod = g_dynamicAwait;
+    }
+    if (!bridgeClass || !beginMethod || !awaitMethod) {
+        env->DeleteLocalRef(jmime);
+        env->DeleteLocalRef(jextensions);
+        g_safLastState.store(1);
+        if (attached) g_vm->DetachCurrentThread();
+        return "";
+    }
+    const jint requestId = env->CallStaticIntMethod(bridgeClass, beginMethod,
+                                                     jmime, jextensions,
+                                                     multiselect ? JNI_TRUE : JNI_FALSE);
     env->DeleteLocalRef(jmime);
+    env->DeleteLocalRef(jextensions);
     if (env->ExceptionCheck() || requestId <= 0) {
         if (env->ExceptionCheck()) env->ExceptionClear();
         g_safLastState.store(2);
@@ -384,7 +396,7 @@ std::string RunSafPicker(bool multiselect, const std::string& extensions) {
     }
 
     jstring state = reinterpret_cast<jstring>(env->CallStaticObjectMethod(
-            g_bridgeClass, g_await, requestId, static_cast<jlong>(600000)));
+            bridgeClass, awaitMethod, requestId, static_cast<jlong>(600000)));
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
         g_safLastState.store(2);
@@ -411,6 +423,7 @@ std::string RunSafPicker(bool multiselect, const std::string& extensions) {
     } else {
         g_safLastState.store(2);
     }
+    RefreshDynamicDiagnostics(env);
     if (attached) g_vm->DetachCurrentThread();
     g_safPickerReturns.fetch_add(1);
     return encoded;
@@ -440,21 +453,135 @@ Array<String*>* HookOpenFilePanelFilters(
     (void)directory;
     (void)methodInfo;
     if (g_oldOpenFilters == nullptr) return nullptr;
-    g_calls.fetch_add(1);
-    const int previous = g_callsInFlight.fetch_add(1);
-    if (previous == 0 && !WriteMarker(g_callMarker)) {
+    g_sfbCalls.fetch_add(1);
+    const int previous = g_sfbCallsInFlight.fetch_add(1);
+    if (previous == 0 && !WriteMarker(g_sfbCallMarker)) {
         g_markerWriteFailures.fetch_add(1);
-        g_callsInFlight.fetch_sub(1);
+        g_sfbCallsInFlight.fetch_sub(1);
         return nullptr;
     }
     const std::string extensions = ResolvePickerExtensions(filters);
-    Array<String*>* result = ToManagedStringArray(RunSafPicker(multiselect, extensions));
-    g_returns.fetch_add(1);
-    if (g_callsInFlight.fetch_sub(1) == 1) ClearMarker(g_callMarker);
+    Array<String*>* result = ToManagedStringArray(RunDynamicPicker(multiselect, extensions));
+    g_sfbReturns.fetch_add(1);
+    if (g_sfbCallsInFlight.fetch_sub(1) == 1) ClearMarker(g_sfbCallMarker);
     return result;
 }
 
-void RunAbiProbeAndMaybeInstallCanary() {
+bool CustomUiHit(Vector2 position) {
+    IL2CPP::Il2CppObject* eventSystem = g_eventSystemCurrent.IsValid()
+            ? g_eventSystemCurrent.Get() : nullptr;
+    if (!eventSystem || !g_pointerEventDataClass || !g_listRaycastResultClass ||
+        !g_pointerPosition.IsValid() || !g_listCount.IsValid() || !g_raycastAll.IsValid()) {
+        return false;
+    }
+    IL2CPP::Il2CppObject* eventData = g_pointerEventDataClass.CreateNewObjectParameters(eventSystem);
+    if (!eventData) return false;
+    g_pointerPosition[eventData].Set(position);
+    IL2CPP::Il2CppObject* results = g_listRaycastResultClass.CreateNewObjectParameters();
+    if (!results) return false;
+    g_raycastAll[eventSystem].Call(eventData, results);
+    return g_listCount[results].Get() > 0;
+}
+
+bool HookUiHit(IL2CPP::Il2CppObject* self, Vector2 position, IL2CPP::MethodInfo* methodInfo) {
+    (void)self;
+    (void)methodInfo;
+    g_uiHitCalls.fetch_add(1);
+    g_uiLastX100.store(static_cast<int>(position.x * 100.0f));
+    g_uiLastY100.store(static_cast<int>(position.y * 100.0f));
+
+    bool firstCanary = false;
+    if (!g_uiFirstCallProven.load(std::memory_order_acquire)) {
+        std::lock_guard<std::mutex> lock(g_uiFirstCallMutex);
+        if (!g_uiFirstCallProven.load(std::memory_order_relaxed)) {
+            if (!WriteMarker(g_uiCallMarker)) {
+                g_markerWriteFailures.fetch_add(1);
+                if (g_oldUiHit) {
+                    g_uiOriginalCalls.fetch_add(1);
+                    return g_oldUiHit(self, position, methodInfo);
+                }
+                return false;
+            }
+            firstCanary = true;
+        }
+    }
+
+    const bool hit = CustomUiHit(position);
+    if (hit) g_uiHitTrue.fetch_add(1);
+    else g_uiHitFalse.fetch_add(1);
+
+    if (firstCanary) {
+        ClearMarker(g_uiCallMarker);
+        g_uiFirstCallProven.store(true, std::memory_order_release);
+    }
+    return hit;
+}
+
+bool ResolveUiSurface(MethodBase* uiMethod) {
+    Class controller("", "scrController");
+    Class vector2("UnityEngine", "Vector2");
+    Class boolClass = Defaults::Get<bool>();
+    if (!controller || !vector2 || !boolClass) return false;
+
+    MethodBase method = controller.GetMethod("IsScreenPointInsideUIElements", 1);
+    IL2CPP::MethodInfo* info = method.IsValid() ? method.GetInfo() : nullptr;
+    const bool abi = method.IsValid() && info && info->methodPointer && !method._isStatic &&
+            info->parameters_count == 1 && info->parameters &&
+            SameClass(Class(info->parameters[0]), vector2) && TypeByRef(info->parameters[0]) == 0 &&
+            info->return_type && SameClass(Class(info->return_type), boolClass);
+    g_uiGuardValue.store(abi ? 1 : 0);
+    if (!abi) return false;
+
+    Class eventSystem("UnityEngine.EventSystems", "EventSystem");
+    Class pointerEventData("UnityEngine.EventSystems", "PointerEventData");
+    Class raycastResult("UnityEngine.EventSystems", "RaycastResult");
+    Class list("System.Collections.Generic", "List`1");
+    if (!eventSystem || !pointerEventData || !raycastResult || !list) return false;
+    Class listRaycast = list.GetGeneric({raycastResult.GetCompileTimeClass()});
+    if (!listRaycast) return false;
+
+    g_eventSystemCurrent = eventSystem.GetProperty("current");
+    g_pointerEventDataClass = pointerEventData;
+    g_listRaycastResultClass = listRaycast;
+    g_pointerPosition = pointerEventData.GetProperty("position");
+    g_listCount = listRaycast.GetProperty("Count");
+    g_raycastAll = eventSystem.GetMethod("RaycastAll");
+    const bool surface = g_eventSystemCurrent.IsValid() && g_pointerPosition.IsValid() &&
+            g_listCount.IsValid() && g_raycastAll.IsValid();
+    if (surface && uiMethod) *uiMethod = method;
+    return surface;
+}
+
+void MaybeInstallUiHook() {
+    if (!g_bnmLoadedCallback.load(std::memory_order_acquire) ||
+        g_uiHookInstalled.load(std::memory_order_acquire) ||
+        g_uiRecoveryState.load() != 0) return;
+    std::lock_guard<std::mutex> lock(g_installMutex);
+    if (g_uiHookInstalled.load() || g_uiInstallAttempted.load()) return;
+
+    MethodBase uiMethod;
+    if (!ResolveUiSurface(&uiMethod) || !PrepareUiFuse()) return;
+    if (!WriteMarker(g_uiInstallMarker)) {
+        g_uiMarkerReady.store(false);
+        g_uiRecoveryState.store(3);
+        return;
+    }
+    g_uiInstallAttempted.store(true);
+    BasicHook(uiMethod, HookUiHit, g_oldUiHit);
+    const bool installed = g_oldUiHit != nullptr;
+    g_uiHookInstalled.store(installed);
+    if (installed) ClearMarker(g_uiInstallMarker);
+    else g_uiRecoveryState.store(4);
+}
+
+void MaybeInstallSfbHook() {
+    if (!g_bnmLoadedCallback.load(std::memory_order_acquire) ||
+        !g_dynamicBridgeReady.load(std::memory_order_acquire) ||
+        g_sfbHookInstalled.load(std::memory_order_acquire) ||
+        g_sfbRecoveryState.load() != 0) return;
+    std::lock_guard<std::mutex> lock(g_installMutex);
+    if (g_sfbHookInstalled.load() || g_sfbInstallAttempted.load()) return;
+
     Class browser("SFB", "StandaloneFileBrowser");
     Class extensionFilter("SFB", "ExtensionFilter");
     MethodBase openFilters = browser ? browser.GetMethod(
@@ -464,7 +591,7 @@ void RunAbiProbeAndMaybeInstallCanary() {
     Class boolClass = Defaults::Get<bool>();
     Class stringArrayClass = stringClass ? stringClass.GetArray() : Class{};
     Class filterArrayClass = extensionFilter ? extensionFilter.GetArray() : Class{};
-    const bool params4 = info != nullptr && info->parameters_count == 4;
+    const bool params4 = info != nullptr && info->parameters_count == 4 && info->parameters;
     const IL2CPP::Il2CppType* p0 = params4 ? info->parameters[0] : nullptr;
     const IL2CPP::Il2CppType* p1 = params4 ? info->parameters[1] : nullptr;
     const IL2CPP::Il2CppType* p2 = params4 ? info->parameters[2] : nullptr;
@@ -477,120 +604,103 @@ void RunAbiProbeAndMaybeInstallCanary() {
     const uint32_t expectedBoxedSize =
             static_cast<uint32_t>(sizeof(IL2CPP::Il2CppObject) + sizeof(ExtensionFilterValue));
 
-    const bool abiGuard =
-            openFilters.IsValid() && info && info->methodPointer && openFilters._isStatic && params4 &&
-            SameClass(returnClass, stringArrayClass) && SameClass(Class(p0), stringClass) &&
-            SameClass(Class(p1), stringClass) && SameClass(Class(p2), filterArrayClass) &&
-            SameClass(Class(p3), boolClass) && TypeByRef(p2) == 0 && TypeValueType(p2) == 0 &&
-            filterType && filterType->valuetype && filterClass &&
-            filterClass->instance_size == expectedBoxedSize && filterClass->actualSize == expectedBoxedSize &&
-            nameField.IsValid() && extensionsField.IsValid() && nameField.GetOffset() == 0 &&
+    const bool abiGuard = openFilters.IsValid() && info && info->methodPointer &&
+            openFilters._isStatic && params4 && SameClass(returnClass, stringArrayClass) &&
+            SameClass(Class(p0), stringClass) && SameClass(Class(p1), stringClass) &&
+            SameClass(Class(p2), filterArrayClass) && SameClass(Class(p3), boolClass) &&
+            TypeByRef(p2) == 0 && TypeValueType(p2) == 0 && filterType && filterType->valuetype &&
+            filterClass && filterClass->instance_size == expectedBoxedSize &&
+            filterClass->actualSize == expectedBoxedSize && nameField.IsValid() &&
+            extensionsField.IsValid() && nameField.GetOffset() == 0 &&
             extensionsField.GetOffset() == static_cast<int32_t>(sizeof(void*)) &&
             SameClass(nameField.GetType(), stringClass) &&
             SameClass(extensionsField.GetType(), stringArrayClass);
 
     g_stringClass = stringClass;
-    const bool safReady = ProbeSafBridge();
-    const bool fuseReady = PrepareSelfFuse();
-    if (abiGuard && safReady && fuseReady && WriteMarker(g_installMarker)) {
-        g_installAttempted.store(true);
-        BasicHook(openFilters, HookOpenFilePanelFilters, g_oldOpenFilters);
-        const bool installed = g_oldOpenFilters != nullptr;
-        g_hookInstalled.store(installed);
-        if (installed) ClearMarker(g_installMarker);
-        else g_recoveryState.store(4);
-    } else if (abiGuard && safReady && fuseReady) {
-        g_markerReady.store(false);
-        g_recoveryState.store(3);
+    if (!abiGuard || !PrepareSfbFuse()) return;
+    if (!WriteMarker(g_sfbInstallMarker)) {
+        g_sfbMarkerReady.store(false);
+        g_sfbRecoveryState.store(3);
+        return;
     }
+    g_sfbInstallAttempted.store(true);
+    BasicHook(openFilters, HookOpenFilePanelFilters, g_oldOpenFilters);
+    const bool installed = g_oldOpenFilters != nullptr;
+    g_sfbHookInstalled.store(installed);
+    if (installed) ClearMarker(g_sfbInstallMarker);
+    else g_sfbRecoveryState.store(4);
+}
 
+void BuildStaticReport() {
     std::ostringstream out;
-    out << "nativeProbe=cache-post-bnm-sfb-saf-direct-v1\n"
-        << "nativeStage=post-bnm-sfb-saf-direct-document\n"
-        << "abiProbeRevision=8\n"
-        << "bnmLoadRequested=1\n"
-        << "bnmLoadedCallback=1\n"
+    out << "nativeProbe=cache-post-bnm-sfb-dynamic-import-uihit-v1\n"
+        << "nativeStage=post-bnm-dynamic-document-and-uihit\n"
+        << "abiProbeRevision=9\n"
+        << "bnmLoadRequested=" << (g_bnmLoadRequested.load() ? 1 : 0) << '\n'
+        << "bnmLoadedCallback=" << (g_bnmLoadedCallback.load() ? 1 : 0) << '\n'
         << "probeComplete=1\n"
-        << "gameHooksInstalled=" << (g_hookInstalled.load() ? 1 : 0) << '\n'
-        << "sfbOpenFiltersHookInstalled=" << (g_hookInstalled.load() ? 1 : 0) << '\n'
+        << "gameHooksInstalled=" << ((g_sfbHookInstalled.load() ? 1 : 0) +
+                                        (g_uiHookInstalled.load() ? 1 : 0)) << '\n'
+        << "sfbOpenFiltersHookInstalled=" << (g_sfbHookInstalled.load() ? 1 : 0) << '\n'
         << "sfbFilterMemoryRead=1\n"
         << "sfbFilterReadBounded=1\n"
         << "sfbFilterReadMaxFilters=" << kMaxExtensionFilters << '\n'
         << "sfbFilterReadMaxExtensionsPerFilter=" << kMaxExtensionsPerFilter << '\n'
-        << "sfbHookPolicy=bootstrap1-self-fused-saf-direct-document\n"
+        << "sfbHookPolicy=dynamic-document-preprocess-before-bind\n"
+        << "sfbPickerBackend=dynamic-document\n"
+        << "sfbFileSelectorBypassed=1\n"
+        << "sfbEmbeddedBridgeBypassed=1\n"
+        << "sfbDynamicBridgeReady=" << (g_dynamicBridgeReady.load() ? 1 : 0) << '\n'
+        << "sfbOriginalCallUsed=0\n"
         << "sfbCanarySelfFuse=1\n"
-        << "sfbCanaryMarkerReady=" << (g_markerReady.load() ? 1 : 0) << '\n'
-        << "sfbCanaryRecoveryState=" << g_recoveryState.load() << '\n'
-        << "sfbCanaryInstallAttempted=" << (g_installAttempted.load() ? 1 : 0) << '\n'
-        << "sfbCanaryAbiGuard=" << (abiGuard ? 1 : 0) << '\n'
+        << "sfbCanaryMarkerReady=" << (g_sfbMarkerReady.load() ? 1 : 0) << '\n'
+        << "sfbCanaryRecoveryState=" << g_sfbRecoveryState.load() << '\n'
+        << "sfbCanaryInstallAttempted=" << (g_sfbInstallAttempted.load() ? 1 : 0) << '\n'
         << "sfbCanaryOriginalCaptured=" << (g_oldOpenFilters ? 1 : 0) << '\n'
         << "sfbCanaryHiddenMethodInfo=1\n"
-        << "sfbSafBridgeReady=" << (safReady ? 1 : 0) << '\n'
-        << "sfbOriginalCallUsed=0\n"
-        << "sfbPickerBackend=direct-document\n"
-        << "sfbFileSelectorBypassed=1\n"
-        << "abi.SFB.class=" << (browser ? 1 : 0) << '\n'
-        << "abi.SFB.OpenFilePanel.filtersExact=" << (openFilters.IsValid() ? 1 : 0) << '\n'
-        << "abi.SFB.OpenFilePanel.static=" << ((info && openFilters._isStatic) ? 1 : 0) << '\n'
-        << "abi.SFB.OpenFilePanel.methodPointer=" << ((info && info->methodPointer) ? 1 : 0) << '\n'
-        << "abi.SFB.OpenFilePanel.parameterCount4=" << (params4 ? 1 : 0) << '\n'
-        << "abi.SFB.OpenFilePanel.return.StringArray=" << (SameClass(returnClass, stringArrayClass) ? 1 : 0) << '\n'
-        << "abi.SFB.OpenFilePanel.param0.String=" << ((p0 && SameClass(Class(p0), stringClass)) ? 1 : 0) << '\n'
-        << "abi.SFB.OpenFilePanel.param1.String=" << ((p1 && SameClass(Class(p1), stringClass)) ? 1 : 0) << '\n'
-        << "abi.SFB.OpenFilePanel.param2.ExtensionFilterArray=" << ((p2 && SameClass(Class(p2), filterArrayClass)) ? 1 : 0) << '\n'
-        << "abi.SFB.OpenFilePanel.param3.Boolean=" << ((p3 && SameClass(Class(p3), boolClass)) ? 1 : 0) << '\n'
-        << "abi.SFB.OpenFilePanel.param0.typeCode=" << TypeCode(p0) << '\n'
-        << "abi.SFB.OpenFilePanel.param1.typeCode=" << TypeCode(p1) << '\n'
-        << "abi.SFB.OpenFilePanel.param2.typeCode=" << TypeCode(p2) << '\n'
-        << "abi.SFB.OpenFilePanel.param3.typeCode=" << TypeCode(p3) << '\n'
-        << "abi.SFB.OpenFilePanel.param2.byref=" << TypeByRef(p2) << '\n'
-        << "abi.SFB.OpenFilePanel.param2.valuetype=" << TypeValueType(p2) << '\n'
-        << "abi.SFB.ExtensionFilter.valueType=" << ((filterType && filterType->valuetype) ? 1 : 0) << '\n'
-        << "abi.SFB.ExtensionFilter.instanceSize=" << (filterClass ? filterClass->instance_size : 0) << '\n'
-        << "abi.SFB.ExtensionFilter.actualSize=" << (filterClass ? filterClass->actualSize : 0) << '\n'
-        << "abi.SFB.ExtensionFilter.expectedBoxedSize=" << expectedBoxedSize << '\n'
-        << "abi.SFB.ExtensionFilter.payloadSize=" << sizeof(ExtensionFilterValue) << '\n'
-        << "abi.SFB.ExtensionFilter.Name.offset=" << (nameField.IsValid() ? nameField.GetOffset() : -1) << '\n'
-        << "abi.SFB.ExtensionFilter.Extensions.offset=" << (extensionsField.IsValid() ? extensionsField.GetOffset() : -1) << '\n';
-    {
-        std::lock_guard<std::mutex> lock(g_reportMutex);
-        g_report = out.str();
-    }
+        << "uiHitHookInstalled=" << (g_uiHookInstalled.load() ? 1 : 0) << '\n'
+        << "uiHitAbiGuard=" << g_uiGuardValue.load() << '\n'
+        << "uiHitPolicy=pinned-upstream-eventsystem-raycast\n"
+        << "uiHitSourceCommit=74bcc7a0d8c8be1267504e21e28a35e199b5d4eb\n"
+        << "uiHitOriginalCalled=" << (g_uiOriginalCalls.load() > 0 ? 1 : 0) << '\n'
+        << "uiHitOriginalCalls=" << g_uiOriginalCalls.load() << '\n'
+        << "uiHitSelfFuse=1\n"
+        << "uiHitMarkerReady=" << (g_uiMarkerReady.load() ? 1 : 0) << '\n'
+        << "uiHitRecoveryState=" << g_uiRecoveryState.load() << '\n'
+        << "uiHitInstallAttempted=" << (g_uiInstallAttempted.load() ? 1 : 0) << '\n'
+        << "uiHitOriginalCaptured=" << (g_oldUiHit ? 1 : 0) << '\n';
+    std::lock_guard<std::mutex> lock(g_reportMutex);
+    g_report = out.str();
     g_probeComplete.store(true);
 }
 
-std::string CurrentReport() {
-    std::ostringstream out;
-    if (!g_bnmLoadRequested.load()) out << g_report;
-    else if (!g_bnmLoadedCallback.load()) {
-        out << "nativeProbe=cache-post-bnm-sfb-saf-direct-v1\n"
-            << "nativeStage=post-bnm-sfb-saf-direct-document\n"
-            << "abiProbeRevision=8\n"
-            << "bnmLoadRequested=1\n"
-            << "bnmLoadedCallback=0\n"
-            << "probeComplete=0\n"
-            << "gameHooksInstalled=0\n"
-            << "sfbOpenFiltersHookInstalled=0\n"
-            << "sfbFilterMemoryRead=1\n"
-            << "sfbFilterReadBounded=1\n"
-            << "sfbHookPolicy=bootstrap1-self-fused-saf-direct-document\n"
-            << "sfbSafBridgeReady=0\n"
-            << "sfbOriginalCallUsed=0\n"
-            << "sfbPickerBackend=direct-document\n"
-            << "sfbFileSelectorBypassed=1\n";
-    } else {
+void ReconcileInstallState() {
+    MaybeInstallUiHook();
+    MaybeInstallSfbHook();
+    BuildStaticReport();
+}
+
+std::string CurrentReport(JNIEnv* env) {
+    if (env) RefreshDynamicDiagnostics(env);
+    BuildStaticReport();
+    std::string base;
+    {
         std::lock_guard<std::mutex> lock(g_reportMutex);
-        out << g_report;
+        base = g_report;
     }
     std::string lastExtensions;
     std::string lastMime;
+    std::string dynamicDiag;
     {
-        std::lock_guard<std::mutex> lock(g_filterTextMutex);
+        std::lock_guard<std::mutex> lock(g_textMutex);
         lastExtensions = g_lastExtensions;
         lastMime = g_lastMime;
+        dynamicDiag = g_dynamicDiagnostics;
     }
-    out << "sfbOpenFiltersCanaryCalls=" << g_calls.load() << '\n'
-        << "sfbOpenFiltersCanaryReturns=" << g_returns.load() << '\n'
+    std::ostringstream out;
+    out << base
+        << "sfbOpenFiltersCanaryCalls=" << g_sfbCalls.load() << '\n'
+        << "sfbOpenFiltersCanaryReturns=" << g_sfbReturns.load() << '\n'
         << "sfbCanaryMarkerWriteFailures=" << g_markerWriteFailures.load() << '\n'
         << "sfbSafPickerCalls=" << g_safPickerCalls.load() << '\n'
         << "sfbSafPickerReturns=" << g_safPickerReturns.load() << '\n'
@@ -601,7 +711,15 @@ std::string CurrentReport() {
         << "sfbFilterCount=" << g_filterCount.load() << '\n'
         << "sfbExtensionCount=" << g_extensionCount.load() << '\n'
         << "sfbLastExtensions=" << lastExtensions << '\n'
-        << "sfbLastMime=" << lastMime << '\n';
+        << "sfbLastMime=" << lastMime << '\n'
+        << dynamicDiag;
+    if (!dynamicDiag.empty() && dynamicDiag.back() != '\n') out << '\n';
+    out << "uiHitCalls=" << g_uiHitCalls.load() << '\n'
+        << "uiHitTrue=" << g_uiHitTrue.load() << '\n'
+        << "uiHitFalse=" << g_uiHitFalse.load() << '\n'
+        << "uiHitFirstCallProven=" << (g_uiFirstCallProven.load() ? 1 : 0) << '\n'
+        << "uiHitLastX100=" << g_uiLastX100.load() << '\n'
+        << "uiHitLastY100=" << g_uiLastY100.load() << '\n';
     return out.str();
 }
 } // namespace
@@ -615,14 +733,46 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     Loading::TryLoadByJNI(env);
     Loading::AddOnLoadedEvent([]() {
         g_bnmLoadedCallback.store(true);
-        RunAbiProbeAndMaybeInstallCanary();
+        ReconcileInstallState();
     });
     return JNI_VERSION_1_6;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_hoonex_adofai_v240_dynamic_RuntimeEntry_nativeRegisterDynamicBridge(
+        JNIEnv* env, jclass, jclass bridgeClass) {
+    if (env == nullptr || bridgeClass == nullptr) return;
+    std::lock_guard<std::mutex> lock(g_dynamicBridgeMutex);
+    if (g_dynamicBridgeClass != nullptr) return;
+    jmethodID begin = env->GetStaticMethodID(
+            bridgeClass, "begin", "(Ljava/lang/String;Ljava/lang/String;Z)I");
+    jmethodID await = env->GetStaticMethodID(
+            bridgeClass, "await", "(IJ)Ljava/lang/String;");
+    jmethodID diagnostics = env->GetStaticMethodID(
+            bridgeClass, "diagnostics", "()Ljava/lang/String;");
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    if (begin == nullptr || await == nullptr || diagnostics == nullptr) return;
+    jclass global = reinterpret_cast<jclass>(env->NewGlobalRef(bridgeClass));
+    if (global == nullptr) return;
+    g_dynamicBridgeClass = global;
+    g_dynamicBegin = begin;
+    g_dynamicAwait = await;
+    g_dynamicDiagnostics = diagnostics;
+    g_dynamicBridgeReady.store(true, std::memory_order_release);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_hoonex_adofai_v240_dynamic_RuntimeEntry_nativeReconcileDynamicRuntime(
+        JNIEnv*, jclass) {
+    // RuntimeEntry calls this immediately after bridge registration so SFB installation
+    // does not depend on the user opening the diagnostics panel first.
+    ReconcileInstallState();
 }
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport(JNIEnv* env, jclass) {
     if (env == nullptr) return nullptr;
-    const std::string report = CurrentReport();
+    ReconcileInstallState();
+    const std::string report = CurrentReport(env);
     return env->NewStringUTF(report.c_str());
 }

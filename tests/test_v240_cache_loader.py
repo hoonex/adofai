@@ -2,203 +2,160 @@ from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-LOADER = ROOT / "android/v240-dynamic-runtime/native/V240CacheLoader.cpp"
-BUILD = ROOT / "scripts/build-v240-cache-native.sh"
-WORKFLOW = ROOT / ".github/workflows/v240-runtime-channel.yml"
-ROLLOUT = ROOT / "android/v240-dynamic-runtime/channel-rollout.txt"
-DYNAMIC_ENTRY = ROOT / "android/v240-dynamic-runtime/java/dev/hoonex/adofai/v240/dynamic/RuntimeEntry.java"
+LOADER = ROOT / 'android/v240-dynamic-runtime/native/V240CacheLoader.cpp'
+BRIDGE = ROOT / 'android/v240-dynamic-runtime/java/dev/hoonex/adofai/v240/dynamic/DirectDocumentBridge.java'
+ENTRY = ROOT / 'android/v240-dynamic-runtime/java/dev/hoonex/adofai/v240/dynamic/RuntimeEntry.java'
+BUILD = ROOT / 'scripts/build-v240-cache-native.sh'
+WORKFLOW = ROOT / '.github/workflows/v240-runtime-channel.yml'
+ROLLOUT = ROOT / 'android/v240-dynamic-runtime/channel-rollout.txt'
 
 
-class V240CacheNativeLoaderContract(unittest.TestCase):
-    def test_loader_installs_only_direct_document_saf_hook(self):
-        source = LOADER.read_text(encoding="utf-8")
-        for required in (
-            "JNI_OnLoad", "g_vm = vm", "universe.h", "Loading::TryLoadByJNI",
-            "Loading::AddOnLoadedEvent", "RunAbiProbeAndMaybeInstallCanary",
-            "Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport",
-            "nativeProbe=cache-post-bnm-sfb-saf-direct-v1",
-            "nativeStage=post-bnm-sfb-saf-direct-document",
-            "abiProbeRevision=8",
-            "sfbHookPolicy=bootstrap1-self-fused-saf-direct-document",
-            "sfbPickerBackend=direct-document", "sfbFileSelectorBypassed=1",
-            "sfbCanarySelfFuse=1", "sfbCanaryMarkerReady=",
-            "sfbCanaryRecoveryState=", "sfbCanaryHiddenMethodInfo=1",
-            "sfbSafBridgeReady=", "sfbOriginalCallUsed=0",
-            "sfbSafPickerCalls=", "sfbSafPickerReturns=", "sfbSafLastState=",
-            "sfbLastMime=", "sfbOpenFiltersCanaryCalls=", "sfbOpenFiltersCanaryReturns=",
-            "sfbCanaryMarkerWriteFailures=", "sfbFilterMemoryRead=1",
-            "sfbFilterReadBounded=1", "sfbFilterReadAttempts=",
-            "sfbFilterReadSuccess=", "sfbFilterFallbacks=",
-            "sfbFilterCount=", "sfbExtensionCount=", "sfbLastExtensions=",
-            "struct ExtensionFilterValue", "String* Name;",
-            "Array<String*>* Extensions;", "IL2CPP::MethodInfo* methodInfo",
-            "HookOpenFilePanelFilters", "g_oldOpenFilters",
-            "BasicHook(openFilters, HookOpenFilePanelFilters, g_oldOpenFilters)",
+class RuntimeR9Contract(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.native = LOADER.read_text(encoding='utf-8')
+        cls.bridge = BRIDGE.read_text(encoding='utf-8')
+        cls.entry = ENTRY.read_text(encoding='utf-8')
+
+    def test_revision_and_scope(self):
+        s = self.native
+        for marker in (
+            'nativeProbe=cache-post-bnm-sfb-dynamic-import-uihit-v1',
+            'nativeStage=post-bnm-dynamic-document-and-uihit',
+            'abiProbeRevision=9',
+            'sfbHookPolicy=dynamic-document-preprocess-before-bind',
+            'sfbPickerBackend=dynamic-document',
+            'sfbEmbeddedBridgeBypassed=1',
+            'uiHitPolicy=pinned-upstream-eventsystem-raycast',
+            'uiHitSourceCommit=74bcc7a0d8c8be1267504e21e28a35e199b5d4eb',
         ):
-            self.assertIn(required, source)
-        self.assertEqual(source.count("BasicHook("), 1)
-        for forbidden in (
-            "InstallAllHooks", "InstallSfbHooks", "InstallMobileHooks",
-            "V240SettingsOverlay", "V240EventCompat", "V240TouchAssist",
-            ".Call(", ".Set(", "CreateNewObject", "RunOpenPicker(",
-            "cache-post-bnm-sfb-saf-v1", "bootstrap1-self-fused-saf-broad-open",
-        ):
-            self.assertNotIn(forbidden, source)
+            self.assertIn(marker, s)
+        self.assertEqual(s.count('BasicHook('), 2)
+        self.assertNotIn('InstallAllHooks', s)
+        self.assertNotIn('InstallSfbHooks', s)
+        self.assertNotIn('InstallMobileHooks', s)
 
-    def test_direct_bridge_bypasses_file_selector_tree_policy(self):
-        source = LOADER.read_text(encoding="utf-8")
-        for required in (
-            '"com/unity3d/player/V240AndroidBridge"',
-            '"com.unity3d.player.V240AndroidBridge"',
-            '"beginOpen", "(Ljava/lang/String;Z)I"',
+    def test_dynamic_bridge_is_registered_before_sfb_install(self):
+        s = self.native
+        for marker in (
+            'Java_dev_hoonex_adofai_v240_dynamic_RuntimeEntry_nativeRegisterDynamicBridge',
+            'Java_dev_hoonex_adofai_v240_dynamic_RuntimeEntry_nativeReconcileDynamicRuntime',
+            '"begin", "(Ljava/lang/String;Ljava/lang/String;Z)I"',
             '"await", "(IJ)Ljava/lang/String;"',
-            "CallStaticIntMethod", "CallStaticObjectMethod",
-            "sfbPickerBackend=direct-document", "sfbFileSelectorBypassed=1",
-            "ResolvePickerMime", "sfbLastMime=",
+            '"diagnostics", "()Ljava/lang/String;"',
+            'g_dynamicBridgeReady.store(true, std::memory_order_release)',
+            '!g_dynamicBridgeReady.load(std::memory_order_acquire)',
         ):
-            self.assertIn(required, source)
-        self.assertNotIn('"com/unity3d/player/FileSelector"', source)
-        self.assertNotIn('"selectFile", "(Ljava/lang/String;Z)V"', source)
-        self.assertNotIn("GetStaticBooleanField", source)
+            self.assertIn(marker, s)
+        self.assertNotIn('"com/unity3d/player/FileSelector"', s)
+        self.assertNotIn('"com/unity3d/player/V240AndroidBridge"', s)
 
-    def test_filter_read_is_bounded_and_falls_back_broad(self):
-        source = LOADER.read_text(encoding="utf-8")
-        for required in (
-            "kMaxExtensionFilters = 32", "kMaxExtensionsPerFilter = 64",
-            "kMaxUniqueExtensions = 128", "kMaxExtensionChars = 32",
-            "kMaxJoinedExtensions = 512", "ReadFilterExtensions",
-            "filters->capacity", "filters->m_Items[i].Extensions",
-            "extensions->capacity", "extensions->m_Items[j]",
-            "NormalizeExtension", "ContainsExtension", "JoinExtensions",
-            "ResolvePickerExtensions", "g_filterFallbacks.fetch_add(1)",
-            "return kBroadExtensions;",
+    def test_sfb_abi_and_filter_read_are_bounded(self):
+        s = self.native
+        for marker in (
+            'Array<String*>* (*)(\n        String*, String*, Array<ExtensionFilterValue>*, bool, IL2CPP::MethodInfo*)',
+            'kMaxExtensionFilters = 32', 'kMaxExtensionsPerFilter = 64',
+            'kMaxUniqueExtensions = 128', 'kMaxExtensionChars = 32',
+            'kMaxJoinedExtensions = 512', 'filters->m_Items[i].Extensions',
+            'extensions->m_Items[j]', 'ResolvePickerExtensions(filters)',
+            'sfbOriginalCallUsed=0',
         ):
-            self.assertIn(required, source)
-        read_start = source.index("bool ReadFilterExtensions")
-        read_end = source.index("\n}\n\nbool JoinExtensions", read_start) + 2
-        read_body = source[read_start:read_end]
-        self.assertNotIn(".Name", read_body)
-        self.assertIn("if (filterCount > kMaxExtensionFilters) return false;", read_body)
-        self.assertIn("if (extensionCount > kMaxExtensionsPerFilter) return false;", read_body)
+            self.assertIn(marker, s)
+        hook = s[s.index('Array<String*>* HookOpenFilePanelFilters'):]
+        hook = hook[:hook.index('\n}\n') + 2]
+        self.assertIn('RunDynamicPicker(multiselect, extensions)', hook)
+        self.assertNotIn('g_oldOpenFilters(', hook)
+        self.assertNotIn('original(', hook)
 
-    def test_mime_mapping_keeps_custom_level_on_document_picker(self):
-        source = LOADER.read_text(encoding="utf-8")
-        for required in (
-            'if (extension == "png") return "image/png";',
-            'if (extension == "jpg" || extension == "jpeg") return "image/jpeg";',
-            'if (extension == "ogg") return "audio/ogg";',
-            'if (extension == "mp3") return "audio/mpeg";',
-            'if (extension == "wav") return "audio/wav";',
-            'if (extension == "zip" || extension == "adozip") return "application/zip";',
-            'if (extension == "json") return "application/json";',
-            'return "*/*";',
+    def test_two_independent_self_fuses(self):
+        s = self.native
+        for marker in (
+            'sfb-r9-install.pending', 'sfb-r9-call.pending', 'sfb-r9-probe.tmp',
+            'uihit-r9-install.pending', 'uihit-r9-call.pending', 'uihit-r9-probe.tmp',
+            'WriteMarker(g_sfbInstallMarker)', 'WriteMarker(g_sfbCallMarker)',
+            'WriteMarker(g_uiInstallMarker)', 'WriteMarker(g_uiCallMarker)',
+            'fsync(fd)',
         ):
-            self.assertIn(required, source)
-        # .adofai deliberately has no fake MIME mapping; it must stay a normal */* document open.
-        self.assertNotIn('extension == "adofai") return', source)
+            self.assertIn(marker, s)
 
-    def test_hook_marks_abort_boundary_before_filter_read_and_never_calls_original(self):
-        source = LOADER.read_text(encoding="utf-8")
-        hook_start = source.index("Array<String*>* HookOpenFilePanelFilters")
-        hook_end = source.index("\n}\n", hook_start) + 2
-        hook = source[hook_start:hook_end]
-        self.assertIn("WriteMarker(g_callMarker)", hook)
-        self.assertIn("ResolvePickerExtensions(filters)", hook)
-        self.assertIn("RunSafPicker(multiselect, extensions)", hook)
-        self.assertLess(hook.index("WriteMarker(g_callMarker)"), hook.index("ResolvePickerExtensions(filters)"))
-        self.assertNotIn("original(", hook)
-        self.assertNotIn("g_oldOpenFilters(", hook)
-
-    def test_hidden_methodinfo_signature_is_preserved(self):
-        source = LOADER.read_text(encoding="utf-8")
-        self.assertIn(
-            "Array<String*>* (*)(\n        String*, String*, Array<ExtensionFilterValue>*, bool, IL2CPP::MethodInfo*)",
-            source,
-        )
-        self.assertIn("bool multiselect, IL2CPP::MethodInfo* methodInfo)", source)
-        self.assertIn("(void)methodInfo;", source)
-
-    def test_hook_is_runtime_guarded_by_proven_v240_abi_and_bridge(self):
-        source = LOADER.read_text(encoding="utf-8")
-        for required in (
-            'browser.GetMethod(\n            "OpenFilePanel", {"title", "directory", "extensions", "multiselect"})',
-            "info && info->methodPointer", "openFilters._isStatic",
-            "info->parameters_count == 4", "SameClass(returnClass, stringArrayClass)",
-            "SameClass(Class(p0), stringClass)", "SameClass(Class(p1), stringClass)",
-            "SameClass(Class(p2), filterArrayClass)", "SameClass(Class(p3), boolClass)",
-            "TypeByRef(p2) == 0", "TypeValueType(p2) == 0",
-            "filterType->valuetype", "sizeof(IL2CPP::Il2CppObject) + sizeof(ExtensionFilterValue)",
-            "filterClass->instance_size == expectedBoxedSize", "filterClass->actualSize == expectedBoxedSize",
-            "nameField.GetOffset() == 0",
-            "extensionsField.GetOffset() == static_cast<int32_t>(sizeof(void*))",
-            "SameClass(nameField.GetType(), stringClass)",
-            "SameClass(extensionsField.GetType(), stringArrayClass)", "ProbeSafBridge()",
-            "abiGuard && safReady && fuseReady",
+    def test_ui_hook_matches_pinned_upstream_algorithm(self):
+        s = self.native
+        for marker in (
+            'Class controller("", "scrController")',
+            'controller.GetMethod("IsScreenPointInsideUIElements", 1)',
+            'Class eventSystem("UnityEngine.EventSystems", "EventSystem")',
+            'Class pointerEventData("UnityEngine.EventSystems", "PointerEventData")',
+            'Class raycastResult("UnityEngine.EventSystems", "RaycastResult")',
+            'g_eventSystemCurrent = eventSystem.GetProperty("current")',
+            'g_pointerPosition[eventData].Set(position)',
+            'g_raycastAll[eventSystem].Call(eventData, results)',
+            'return g_listCount[results].Get() > 0',
+            'BasicHook(uiMethod, HookUiHit, g_oldUiHit)',
+            'uiHitOriginalCalls=',
         ):
-            self.assertIn(required, source)
+            self.assertIn(marker, s)
+        self.assertEqual(s.count('g_oldUiHit(self, position, methodInfo)'), 1)
 
-    def test_self_fuse_covers_install_filter_read_and_direct_picker_boundaries(self):
-        source = LOADER.read_text(encoding="utf-8")
-        for required in (
-            "dladdr(", "sfb-canary-r8-install.pending", "sfb-canary-r8-call.pending",
-            "sfb-canary-r8-marker-probe.tmp", "O_CREAT | O_EXCL | O_CLOEXEC",
-            "fsync(fd)", "MarkerExists(g_installMarker)",
-            "MarkerExists(g_callMarker)", "WriteMarker(g_installMarker)",
-            "ClearMarker(g_installMarker)", "WriteMarker(g_callMarker)",
-            "ClearMarker(g_callMarker)", "g_callsInFlight",
+    def test_dynamic_import_preprocesses_before_save_binding(self):
+        j = self.bridge
+        for marker in (
+            'Intent.ACTION_OPEN_DOCUMENT',
+            'V240ChartBackport', 'V240HallLegacyFix', 'V240OpaqueEventBridge',
+            'V240MapCompatibility', 'V240AndroidBridge',
+            'backportForV240', 'applyIfNeeded', 'prepareForV240', 'repairMap', 'bindSave',
+            'BIND_SAVE.setAccessible(true)',
+            'MAX_FILES = 128', 'MAX_BYTES = 512L * 1024L * 1024L',
         ):
-            self.assertIn(required, source)
+            self.assertIn(marker, j)
+        self.assertNotIn('Intent.ACTION_OPEN_DOCUMENT_TREE', j)
+        self.assertLess(j.index('invokeBoolean(BACKPORT'), j.index('BIND_SAVE.invoke'))
+        self.assertLess(j.index('invokeBoolean(HALL_FIX'), j.index('BIND_SAVE.invoke'))
+        self.assertLess(j.index('invokeBoolean(OPAQUE_PREPARE'), j.index('BIND_SAVE.invoke'))
+        self.assertLess(j.index('invokeVoid(MAP_REPAIR'), j.index('BIND_SAVE.invoke'))
 
-    def test_cache_native_build_pins_bnm_and_enforces_direct_document_scope(self):
-        build = BUILD.read_text(encoding="utf-8")
-        self.assertIn("V240CacheLoader.cpp", build)
-        self.assertIn("HitMargin/A-Dance-of-Fire-and-Ice-Mobile---Load-Custom-Level.git", build)
-        self.assertIn("74bcc7a0d8c8be1267504e21e28a35e199b5d4eb", build)
-        self.assertIn("UNITY_VER 213", build)
-        self.assertIn("UNITY_PATCH_VER 10", build)
-        self.assertIn("BNM/src/Loading.cpp", build)
-        self.assertIn("cache-post-bnm-sfb-saf-direct-v1", build)
-        self.assertIn("bootstrap1-self-fused-saf-direct-document", build)
-        self.assertIn("assert s.count('BasicHook(') == 1", build)
-        self.assertIn("ReadFilterExtensions", build)
-        self.assertIn("V240AndroidBridge", build)
-        self.assertIn("CallStaticIntMethod", build)
-        self.assertIn("CreateMonoString", build)
-        self.assertNotIn("build-v240-fixed-native.sh", build)
-        self.assertNotIn("V240Fix.cpp", build)
-        self.assertNotIn("V240TouchAssist.cpp", build)
-        self.assertNotIn("V240EventCompat.cpp", build)
+    def test_level_open_allows_sibling_asset_selection_without_changing_sfb_return_shape(self):
+        j = self.bridge
+        self.assertIn('final boolean bundleMode = isOnlyLevelExtension(safeExtensions);', j)
+        self.assertIn('final boolean allowMultiple = requestedMultiselect || bundleMode;', j)
+        self.assertIn('intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple);', j)
+        self.assertIn('if (!requestedMulti && chosenChart != null)', j)
+        self.assertIn('encoded = chosenChart.file.getAbsolutePath();', j)
+        for marker in ('directFilesCopied=', 'directChartCount=', 'directBundleMode=',
+                       'directMultiAssetSelection=', 'directBackportChanged=',
+                       'directOpaquePrepared=', 'directSaveBound=', 'directImportErrors='):
+            self.assertIn(marker, j)
 
-    def test_dynamic_entry_remains_java_only(self):
-        dynamic = DYNAMIC_ENTRY.read_text(encoding="utf-8")
-        self.assertIn('LEGACY_GEAR_TAG = "adofai-v240-settings-button"', dynamic)
-        self.assertIn("scheduleLegacyGearRelocation", dynamic)
-        self.assertIn("Gravity.CENTER_VERTICAL | Gravity.END", dynamic)
-        self.assertNotIn("V240EventCompat", dynamic)
-        self.assertNotIn("System.load(", dynamic)
+    def test_runtime_entry_registers_bridge_without_loading_native_again(self):
+        j = self.entry
+        for marker in (
+            'nativeRegisterDynamicBridge(DirectDocumentBridge.class)',
+            'nativeReconcileDynamicRuntime()',
+            'public static void install(Context context)',
+            'scheduleLegacyGearRelocation()',
+        ):
+            self.assertIn(marker, j)
+        self.assertNotIn('System.load(', j)
+        self.assertNotIn('System.loadLibrary(', j)
 
-    def test_channel_delivers_runtime_to_bootstrap1(self):
-        workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("build-v240-cache-native.sh dist/v240-channel-native", workflow)
-        self.assertNotIn("build-v240-fixed-native.sh dist/v240-channel-native", workflow)
-        self.assertIn("cp dist/v240-channel-native/libv240fix.so", workflow)
-        self.assertIn("test_v240_cache_loader.py", workflow)
+    def test_build_and_channel_preserve_pinned_toolchain_and_hot_swap(self):
+        build = BUILD.read_text(encoding='utf-8')
+        workflow = WORKFLOW.read_text(encoding='utf-8')
+        self.assertIn('74bcc7a0d8c8be1267504e21e28a35e199b5d4eb', build)
+        self.assertIn('UNITY_VER 213', build)
+        self.assertIn('UNITY_PATCH_VER 10', build)
+        self.assertIn("assert s.count('BasicHook(') == 2", build)
+        self.assertIn('build-v240-cache-native.sh dist/v240-channel-native', workflow)
+        self.assertIn('build-v240-dynamic-runtime.sh dist/v240-channel-dynamic', workflow)
         self.assertIn("'minBootstrap': 1", workflow)
 
-    def test_rollout_is_boolean_and_scope_stays_single_hook(self):
-        rollout = ROLLOUT.read_text(encoding="utf-8").strip()
-        self.assertIn(rollout, ("true", "false"))
-        if rollout == "true":
-            loader = LOADER.read_text(encoding="utf-8")
-            dynamic = DYNAMIC_ENTRY.read_text(encoding="utf-8")
-            self.assertEqual(loader.count("BasicHook("), 1)
-            self.assertIn("sfbFilterMemoryRead=1", loader)
-            self.assertIn("sfbFilterReadBounded=1", loader)
-            self.assertIn("sfbOriginalCallUsed=0", loader)
-            self.assertIn("sfbFileSelectorBypassed=1", loader)
-            self.assertIn("bootstrap1-self-fused-saf-direct-document", loader)
-            self.assertNotIn("System.load(", dynamic)
+    def test_rollout_scope(self):
+        rollout = ROLLOUT.read_text(encoding='utf-8').strip()
+        self.assertIn(rollout, ('true', 'false'))
+        if rollout == 'true':
+            self.assertEqual(self.native.count('BasicHook('), 2)
+            self.assertIn('sfbOriginalCallUsed=0', self.native)
+            self.assertNotIn('System.load(', self.entry)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

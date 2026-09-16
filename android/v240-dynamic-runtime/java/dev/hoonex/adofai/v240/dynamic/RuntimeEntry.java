@@ -13,31 +13,34 @@ import android.widget.FrameLayout;
 
 import java.lang.reflect.Field;
 
-/**
- * Unique-name entrypoint loaded from app-private code_cache by the stable bootstrap.
- * Keep this package out of the embedded runtime so DexClassLoader can replace it on
- * future channel updates without reinstalling the APK.
- */
+/** Hot-swappable entrypoint loaded from app-private code_cache by the stable bootstrap. */
 public final class RuntimeEntry {
     private static final String TAG = "ADOFAI.V240Dynamic";
     private static final String LEGACY_GEAR_TAG = "adofai-v240-settings-button";
 
     private RuntimeEntry() {}
 
+    private static native void nativeRegisterDynamicBridge(Class<?> bridgeClass);
+    private static native void nativeReconcileDynamicRuntime();
+
     public static void install(Context context) {
         Context app = context == null ? null : context.getApplicationContext();
         Log.i(TAG, "dynamic runtime entry loaded; app=" +
                 (app == null ? "null" : app.getPackageName()));
 
-        // Recovery channel v6 is deliberately activation-free on the native side.
-        // The native payload waits for BNM, then performs metadata-only ABI discovery.
-        // It installs no BasicHook, invokes no managed game method, and mutates no game
-        // state. SFB ExtensionFilter[] remains diagnostic-only until its exact call ABI
-        // and value layout are proven on the target v2.4 runtime.
-        //
-        // The embedded bootstrap still creates a temporary Android gear button. Move
-        // that Java-owned entry point away from the editor's top toolbar. This is only
-        // a fail-open UI relocation; it does not activate any native gameplay hook.
+        // The native library is loaded by the stable bootstrap before this DEX. Register the
+        // hot-swappable document importer, then reconcile hook installation regardless of whether
+        // BNM or the DEX became ready first. No System.load is performed here.
+        try {
+            nativeRegisterDynamicBridge(DirectDocumentBridge.class);
+            nativeReconcileDynamicRuntime();
+            Log.i(TAG, "dynamic document bridge registered");
+        } catch (Throwable error) {
+            // Fail open: native SFB installation is gated on successful registration, while the
+            // rest of the historical game remains usable if this optional runtime path is absent.
+            Log.w(TAG, "dynamic document bridge registration failed", error);
+        }
+
         scheduleLegacyGearRelocation();
     }
 
