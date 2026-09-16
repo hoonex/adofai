@@ -17,47 +17,24 @@ def replace_once(old: str, new: str) -> None:
     s = s.replace(old, new, 1)
 
 
-# r13 follows real-device r12 evidence:
-# - Android touch -> legacy mouse down/up edges are present, so do not synthesize clicks.
-# - selection is rare after the edge, so observe the screen->world->floor hit path read-only.
-# - r12 calibration guard was impossible because BNM marks const fields _isConst=1 and
-#   deliberately _isStatic=0. Accept the literal-const representation but still write only
-#   when Persistence.get_inputOffset() exactly equals the game's own sentinel value.
+# r14 follows the real-device r13 evidence while deliberately keeping the existing
+# r13 build/channel markers so no unrelated release plumbing has to change:
+# - Android touch -> legacy mouse edges are device-proven.
+# - the guessed RDUtils.GetFloorAtPosition(Vector2) resolver is absent/different.
+# - Persistence.inputOffsetNotSet exists, but Persistence get/set_inputOffset do not.
+# Therefore this layer disables both guessed execution paths and performs only a
+# bounded metadata inventory. No new hook, managed invocation, field value read,
+# calibration write, or synthesized selection is introduced here.
 
 replace_once(
-    "thread_local bool g_editorCurrentTouchActive = false;\n\n",
-    "thread_local bool g_editorCurrentTouchActive = false;\n"
-    "thread_local IL2CPP::Il2CppObject* g_editorCurrentHitFloor = nullptr;\n\n"
-    "Field<IL2CPP::Il2CppObject*> g_editorHitCameraField;\n"
-    "Method<IL2CPP::Il2CppObject*> g_editorHitGetMainCamera;\n"
-    "Method<Vector3> g_editorHitScreenToWorld;\n"
-    "Method<IL2CPP::Il2CppObject*> g_editorHitGetFloorAtPosition;\n"
-    "std::mutex g_editorHitFirstCallMutex;\n"
-    "std::atomic<bool> g_editorHitFirstCallProven{false};\n"
+    "std::string g_calibrationMarker;\n",
+    "std::string g_calibrationMarker;\n\n"
+    "std::atomic<bool> g_metadataInventoryReady{false};\n"
     "std::atomic<int> g_editorHitAbiGuard{0};\n"
     "std::atomic<int> g_editorHitCameraFieldGuard{0};\n"
     "std::atomic<int> g_editorHitMainCameraGuard{0};\n"
     "std::atomic<int> g_editorHitScreenToWorldGuard{0};\n"
     "std::atomic<int> g_editorHitFloorMethodGuard{0};\n"
-    "std::atomic<int> g_editorHitMarkerReady{0};\n"
-    "std::atomic<int> g_editorHitRecoveryState{0};\n"
-    "std::atomic<int> g_editorHitProbeCalls{0};\n"
-    "std::atomic<int> g_editorHitProbeDownCalls{0};\n"
-    "std::atomic<int> g_editorHitFloorFound{0};\n"
-    "std::atomic<int> g_editorHitDownFloorFound{0};\n"
-    "std::atomic<int> g_editorHitHeldFloorFound{0};\n"
-    "std::atomic<int> g_editorHitCameraSource{0};\n"
-    "std::atomic<int> g_editorHitLastWorldX100{0};\n"
-    "std::atomic<int> g_editorHitLastWorldY100{0};\n"
-    "std::atomic<int> g_editorHitLastFloorNonNull{0};\n"
-    "std::atomic<int> g_editorSelectWhileHitFound{0};\n"
-    "std::atomic<int> g_editorSelectMatchesHit{0};\n"
-    "std::string g_editorHitCallMarker;\n\n"
-)
-
-replace_once(
-    "std::atomic<int> g_calibrationAfterX100{0};\n",
-    "std::atomic<int> g_calibrationAfterX100{0};\n"
     "std::atomic<int> g_calibrationSentinelValid{0};\n"
     "std::atomic<int> g_calibrationSentinelConst{0};\n"
     "std::atomic<int> g_calibrationSentinelStatic{0};\n"
@@ -65,205 +42,245 @@ replace_once(
     "std::atomic<int> g_calibrationGetterResolved{0};\n"
     "std::atomic<int> g_calibrationSetterResolved{0};\n"
     "std::atomic<int> g_calibrationSaveResolved{0};\n"
+    "std::string g_metadataInventory = \"metadataInventoryReady=0\\n\";\n"
+    "std::string g_editorHitCallMarker = \"editor-r13-hit.pending\";\n"
 )
 
-hit_probe_code = r'''
-bool PrepareEditorHitFuse() {
-    const std::string dir = RuntimeDir();
-    if (dir.empty()) { g_editorHitRecoveryState.store(3); return false; }
-    g_editorHitCallMarker = dir + "/editor-r13-hit.pending";
-    g_editorHitMarkerReady.store(1);
-    if (MarkerExists(g_editorHitCallMarker)) {
-        g_editorHitRecoveryState.store(1);
-        return false;
+metadata_code = r'''
+constexpr size_t kMetadataMaxMethodsPerClass = 12;
+constexpr size_t kMetadataMaxFieldsPerClass = 12;
+constexpr size_t kMetadataMaxNameChars = 48;
+constexpr size_t kMetadataMaxTypeChars = 56;
+
+std::string ClipMetadataText(const char* value, size_t maxChars) {
+    if (value == nullptr) return "?";
+    std::string out(value);
+    if (out.size() > maxChars) out.resize(maxChars);
+    for (char& ch : out) {
+        if (ch == '\n' || ch == '\r' || ch == ';' || ch == '|') ch = '_';
     }
-    const std::string probe = dir + "/editor-r13-hit-probe.tmp";
-    ClearMarker(probe);
-    if (!WriteMarker(probe)) {
-        g_editorHitMarkerReady.store(0);
-        g_editorHitRecoveryState.store(3);
-        return false;
-    }
-    ClearMarker(probe);
-    return true;
+    return out;
 }
 
-bool ResolveEditorHitProbe() {
-    Class editor("", "scnEditor");
-    Class camera("UnityEngine", "Camera");
+std::string LowerMetadataName(const char* value) {
+    std::string out = value == nullptr ? "" : std::string(value);
+    for (char& ch : out) {
+        if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
+    }
+    return out;
+}
+
+bool MetadataNameMatches(const char* value, bool calibrationSide) {
+    const std::string name = LowerMetadataName(value);
+    if (name.empty()) return false;
+    static constexpr const char* kEditorTokens[] = {
+        "floor", "position", "point", "mouse", "tile", "hit", "select", "ray", "camera"
+    };
+    static constexpr const char* kCalibrationTokens[] = {
+        "offset", "calibr", "preset", "latency", "input", "audio", "timing"
+    };
+    if (calibrationSide) {
+        for (const char* token : kCalibrationTokens) {
+            if (name.find(token) != std::string::npos) return true;
+        }
+        return false;
+    }
+    for (const char* token : kEditorTokens) {
+        if (name.find(token) != std::string::npos) return true;
+    }
+    return false;
+}
+
+std::string MetadataTypeName(const IL2CPP::Il2CppType* type) {
+    if (type == nullptr) return "?";
+    Class cls(type);
+    IL2CPP::Il2CppClass* klass = cls ? cls.GetClass() : nullptr;
+    if (klass == nullptr || klass->name == nullptr) return "?";
+    std::string out;
+    if (klass->namespaze != nullptr && klass->namespaze[0] != '\0') {
+        out += ClipMetadataText(klass->namespaze, 24);
+        out += '.';
+    }
+    out += ClipMetadataText(klass->name, kMetadataMaxTypeChars);
+    if (TypeByRef(type) != 0) out += '&';
+    if (out.size() > kMetadataMaxTypeChars) out.resize(kMetadataMaxTypeChars);
+    return out;
+}
+
+void AppendMetadataClass(std::ostringstream& out, const char* key, const Class& cls,
+                         bool calibrationSide) {
+    out << "meta." << key << ".present=" << (cls ? 1 : 0) << '\n';
+    if (!cls) return;
+
+    const auto methods = cls.GetMethods(false);
+    const auto fields = cls.GetFields(false);
+    size_t matchingMethods = 0;
+    size_t emittedMethods = 0;
+    std::ostringstream methodLine;
+    for (const MethodBase& method : methods) {
+        IL2CPP::MethodInfo* info = method.IsValid() ? method.GetInfo() : nullptr;
+        if (info == nullptr || info->name == nullptr || !MetadataNameMatches(info->name, calibrationSide)) continue;
+        ++matchingMethods;
+        if (emittedMethods >= kMetadataMaxMethodsPerClass) continue;
+        if (emittedMethods != 0) methodLine << ';';
+        methodLine << ClipMetadataText(info->name, kMetadataMaxNameChars)
+                   << '(';
+        const uint8_t count = info->parameters_count;
+        for (uint8_t i = 0; i < count; ++i) {
+            if (i != 0) methodLine << ',';
+            const IL2CPP::Il2CppType* p = info->parameters != nullptr ? info->parameters[i] : nullptr;
+            methodLine << MetadataTypeName(p);
+        }
+        methodLine << ")->" << MetadataTypeName(info->return_type)
+                   << "[S" << (method._isStatic ? 1 : 0)
+                   << "P" << (info->methodPointer != nullptr ? 1 : 0) << ']';
+        ++emittedMethods;
+    }
+    out << "meta." << key << ".methodTotal=" << methods.size() << '\n'
+        << "meta." << key << ".methodMatches=" << matchingMethods << '\n'
+        << "meta." << key << ".methods="
+        << (emittedMethods == 0 ? "<none>" : methodLine.str()) << '\n';
+
+    size_t matchingFields = 0;
+    size_t emittedFields = 0;
+    std::ostringstream fieldLine;
+    for (const FieldBase& field : fields) {
+        IL2CPP::FieldInfo* info = field.IsValid() ? field.GetInfo() : nullptr;
+        if (info == nullptr || info->name == nullptr || !MetadataNameMatches(info->name, calibrationSide)) continue;
+        ++matchingFields;
+        if (emittedFields >= kMetadataMaxFieldsPerClass) continue;
+        if (emittedFields != 0) fieldLine << ';';
+        fieldLine << ClipMetadataText(info->name, kMetadataMaxNameChars)
+                  << ':' << MetadataTypeName(info->type)
+                  << "[S" << (field._isStatic ? 1 : 0)
+                  << "C" << (field._isConst ? 1 : 0)
+                  << "T" << (field._isThreadStatic ? 1 : 0)
+                  << "O" << field.GetOffset() << ']';
+        ++emittedFields;
+    }
+    out << "meta." << key << ".fieldTotal=" << fields.size() << '\n'
+        << "meta." << key << ".fieldMatches=" << matchingFields << '\n'
+        << "meta." << key << ".fields="
+        << (emittedFields == 0 ? "<none>" : fieldLine.str()) << '\n';
+}
+
+void CollectV240MetadataInventory() {
+    if (!g_bnmLoadedCallback.load(std::memory_order_acquire) ||
+        g_metadataInventoryReady.load(std::memory_order_acquire)) return;
+    std::lock_guard<std::mutex> lock(g_installMutex);
+    if (g_metadataInventoryReady.load(std::memory_order_relaxed)) return;
+
     Class rdUtils("", "RDUtils");
+    Class editor("", "scnEditor");
     Class floor("", "scrFloor");
+    Class persistence("", "Persistence");
+    Class conductor("", "scrConductor");
+    Class controller("", "scrController");
+    Class calibrationPreset("", "CalibrationPreset");
+    Class camera("UnityEngine", "Camera");
     Class vector2 = Defaults::Get<Vector2>();
     Class vector3 = Defaults::Get<Vector3>();
-    if (!editor || !camera || !rdUtils || !floor || !vector2 || !vector3) return false;
+    Class floatClass = Defaults::Get<float>();
+    Class playerPrefs("UnityEngine", "PlayerPrefs");
 
-    FieldBase cameraField = editor.GetField("camera");
+    // Retain the r13 exact guesses as metadata facts only. Nothing below invokes them.
+    FieldBase cameraField = editor ? editor.GetField("camera") : FieldBase{};
     const bool cameraFieldAbi = cameraField.IsValid() && !cameraField._isStatic &&
-            !cameraField._isThreadStatic && !cameraField._isConst &&
+            !cameraField._isThreadStatic && !cameraField._isConst && camera &&
             SameClass(cameraField.GetType(), camera);
     g_editorHitCameraFieldGuard.store(cameraFieldAbi ? 1 : 0);
 
-    MethodBase mainBase = camera.GetMethod("get_main", 0);
+    MethodBase mainBase = camera ? camera.GetMethod("get_main", 0) : MethodBase{};
     IL2CPP::MethodInfo* mainInfo = mainBase.IsValid() ? mainBase.GetInfo() : nullptr;
     const bool mainAbi = mainInfo != nullptr && mainInfo->methodPointer != nullptr &&
-            mainBase._isStatic && mainInfo->parameters_count == 0 &&
+            mainBase._isStatic && mainInfo->parameters_count == 0 && camera &&
             SameClass(Class(mainInfo->return_type), camera);
     g_editorHitMainCameraGuard.store(mainAbi ? 1 : 0);
 
-    MethodBase screenBase = camera.GetMethod("ScreenToWorldPoint", 1);
+    MethodBase screenBase = camera ? camera.GetMethod("ScreenToWorldPoint", 1) : MethodBase{};
     IL2CPP::MethodInfo* screenInfo = screenBase.IsValid() ? screenBase.GetInfo() : nullptr;
     const bool screenParam = screenInfo != nullptr && screenInfo->parameters_count == 1 &&
             screenInfo->parameters != nullptr && screenInfo->parameters[0] != nullptr;
     const bool screenAbi = screenInfo != nullptr && screenInfo->methodPointer != nullptr &&
-            !screenBase._isStatic && screenParam &&
+            !screenBase._isStatic && screenParam && vector3 &&
             SameClass(Class(screenInfo->parameters[0]), vector3) &&
             TypeByRef(screenInfo->parameters[0]) == 0 &&
             SameClass(Class(screenInfo->return_type), vector3);
     g_editorHitScreenToWorldGuard.store(screenAbi ? 1 : 0);
 
-    MethodBase floorBase = rdUtils.GetMethod("GetFloorAtPosition", 1);
+    MethodBase floorBase = rdUtils ? rdUtils.GetMethod("GetFloorAtPosition", 1) : MethodBase{};
     IL2CPP::MethodInfo* floorInfo = floorBase.IsValid() ? floorBase.GetInfo() : nullptr;
     const bool floorParam = floorInfo != nullptr && floorInfo->parameters_count == 1 &&
             floorInfo->parameters != nullptr && floorInfo->parameters[0] != nullptr;
     const bool floorAbi = floorInfo != nullptr && floorInfo->methodPointer != nullptr &&
-            floorBase._isStatic && floorParam &&
+            floorBase._isStatic && floorParam && vector2 && floor &&
             SameClass(Class(floorInfo->parameters[0]), vector2) &&
             TypeByRef(floorInfo->parameters[0]) == 0 &&
             SameClass(Class(floorInfo->return_type), floor);
     g_editorHitFloorMethodGuard.store(floorAbi ? 1 : 0);
+    g_editorHitAbiGuard.store(((cameraFieldAbi || mainAbi) && screenAbi && floorAbi) ? 1 : 0);
 
-    const bool abi = (cameraFieldAbi || mainAbi) && screenAbi && floorAbi;
-    g_editorHitAbiGuard.store(abi ? 1 : 0);
-    if (!abi) return false;
+    FieldBase sentinelBase = persistence ? persistence.GetField("inputOffsetNotSet") : FieldBase{};
+    MethodBase getterBase = persistence ? persistence.GetMethod("get_inputOffset", 0) : MethodBase{};
+    MethodBase setterBase = persistence ? persistence.GetMethod("set_inputOffset", 1) : MethodBase{};
+    MethodBase saveBase = playerPrefs ? playerPrefs.GetMethod("Save", 0) : MethodBase{};
+    IL2CPP::MethodInfo* getterInfo = getterBase.IsValid() ? getterBase.GetInfo() : nullptr;
+    IL2CPP::MethodInfo* setterInfo = setterBase.IsValid() ? setterBase.GetInfo() : nullptr;
+    IL2CPP::MethodInfo* saveInfo = saveBase.IsValid() ? saveBase.GetInfo() : nullptr;
+    const bool setterParam = setterInfo != nullptr && setterInfo->parameters_count == 1 &&
+            setterInfo->parameters != nullptr && setterInfo->parameters[0] != nullptr;
+    g_calibrationSentinelValid.store(sentinelBase.IsValid() ? 1 : 0);
+    g_calibrationSentinelConst.store(sentinelBase.IsValid() && sentinelBase._isConst ? 1 : 0);
+    g_calibrationSentinelStatic.store(sentinelBase.IsValid() && sentinelBase._isStatic ? 1 : 0);
+    g_calibrationSentinelTypeFloat.store(
+            sentinelBase.IsValid() && floatClass && SameClass(sentinelBase.GetType(), floatClass) ? 1 : 0);
+    g_calibrationGetterResolved.store(getterInfo != nullptr && getterInfo->methodPointer != nullptr ? 1 : 0);
+    g_calibrationSetterResolved.store(setterInfo != nullptr && setterInfo->methodPointer != nullptr ? 1 : 0);
+    g_calibrationSaveResolved.store(saveInfo != nullptr && saveInfo->methodPointer != nullptr ? 1 : 0);
+    const bool calibrationAbi = sentinelBase.IsValid() && sentinelBase._isConst &&
+            !sentinelBase._isThreadStatic && floatClass && SameClass(sentinelBase.GetType(), floatClass) &&
+            getterInfo != nullptr && getterInfo->methodPointer != nullptr && getterBase._isStatic &&
+            getterInfo->parameters_count == 0 && SameClass(Class(getterInfo->return_type), floatClass) &&
+            setterInfo != nullptr && setterInfo->methodPointer != nullptr && setterBase._isStatic &&
+            setterParam && SameClass(Class(setterInfo->parameters[0]), floatClass) &&
+            saveInfo != nullptr && saveInfo->methodPointer != nullptr && saveBase._isStatic &&
+            saveInfo->parameters_count == 0;
+    g_calibrationAbiGuard.store(calibrationAbi ? 1 : 0);
 
-    if (cameraFieldAbi) g_editorHitCameraField = Field<IL2CPP::Il2CppObject*>(cameraField);
-    if (mainAbi) g_editorHitGetMainCamera = Method<IL2CPP::Il2CppObject*>(mainBase);
-    g_editorHitScreenToWorld = Method<Vector3>(screenBase);
-    g_editorHitGetFloorAtPosition = Method<IL2CPP::Il2CppObject*>(floorBase);
-    return PrepareEditorHitFuse();
-}
-
-void ProbeEditorFloorHit(IL2CPP::Il2CppObject* editorSelf, bool down, int touchCount) {
-    g_editorCurrentHitFloor = nullptr;
-    if (editorSelf == nullptr || touchCount <= 0 ||
-        g_editorHitAbiGuard.load(std::memory_order_acquire) == 0 ||
-        g_editorHitRecoveryState.load(std::memory_order_acquire) != 0) return;
-
-    bool firstCanary = false;
-    if (!g_editorHitFirstCallProven.load(std::memory_order_acquire)) {
-        std::lock_guard<std::mutex> lock(g_editorHitFirstCallMutex);
-        if (!g_editorHitFirstCallProven.load(std::memory_order_relaxed)) {
-            if (!WriteMarker(g_editorHitCallMarker)) {
-                g_markerWriteFailures.fetch_add(1);
-                g_editorHitRecoveryState.store(3);
-                return;
-            }
-            firstCanary = true;
-        }
-    }
-
-    g_editorHitProbeCalls.fetch_add(1);
-    if (down) g_editorHitProbeDownCalls.fetch_add(1);
-
-    IL2CPP::Il2CppObject* cameraObject = nullptr;
-    int cameraSource = 0;
-    if (g_editorHitCameraField.IsValid()) {
-        Field<IL2CPP::Il2CppObject*> cameraField(g_editorHitCameraField);
-        cameraObject = cameraField[editorSelf].Get();
-        if (cameraObject != nullptr) cameraSource = 1;
-    }
-    if (cameraObject == nullptr && g_editorHitGetMainCamera.IsValid()) {
-        cameraObject = g_editorHitGetMainCamera.Call();
-        if (cameraObject != nullptr) cameraSource = 2;
-    }
-    g_editorHitCameraSource.store(cameraSource);
-
-    if (cameraObject != nullptr && g_editorGetMousePosition.IsValid()) {
-        const Vector3 mouse = g_editorGetMousePosition.Call();
-        Method<Vector3> screenToWorld(g_editorHitScreenToWorld);
-        const Vector3 world = screenToWorld[cameraObject].Call(mouse);
-        const Vector2 point{world.x, world.y};
-        IL2CPP::Il2CppObject* floor = g_editorHitGetFloorAtPosition.Call(point);
-        g_editorCurrentHitFloor = floor;
-        g_editorHitLastWorldX100.store(static_cast<int>(world.x * 100.0f));
-        g_editorHitLastWorldY100.store(static_cast<int>(world.y * 100.0f));
-        g_editorHitLastFloorNonNull.store(floor != nullptr ? 1 : 0);
-        if (floor != nullptr) {
-            g_editorHitFloorFound.fetch_add(1);
-            if (down) g_editorHitDownFloorFound.fetch_add(1);
-            else g_editorHitHeldFloorFound.fetch_add(1);
-        }
-    } else {
-        g_editorHitLastFloorNonNull.store(0);
-    }
-
-    if (firstCanary) {
-        ClearMarker(g_editorHitCallMarker);
-        g_editorHitFirstCallProven.store(true, std::memory_order_release);
-    }
+    std::ostringstream out;
+    out << "metadataInventoryReady=1\n"
+        << "metadataInventoryRevision=1\n"
+        << "metadataInventoryPolicy=bounded-read-only-no-invoke\n"
+        << "metadataInventoryMethodCalls=0\n"
+        << "metadataInventoryFieldValueReads=0\n"
+        << "metadataInventoryWrites=0\n"
+        << "metadataInventoryMaxMethodsPerClass=" << kMetadataMaxMethodsPerClass << '\n'
+        << "metadataInventoryMaxFieldsPerClass=" << kMetadataMaxFieldsPerClass << '\n';
+    AppendMetadataClass(out, "RDUtils", rdUtils, false);
+    AppendMetadataClass(out, "scnEditor", editor, false);
+    AppendMetadataClass(out, "scrFloor", floor, false);
+    AppendMetadataClass(out, "Persistence", persistence, true);
+    AppendMetadataClass(out, "scrConductor", conductor, true);
+    AppendMetadataClass(out, "scrController", controller, true);
+    AppendMetadataClass(out, "CalibrationPreset", calibrationPreset, true);
+    g_metadataInventory = out.str();
+    g_metadataInventoryReady.store(true, std::memory_order_release);
 }
 
 '''
-replace_once("void SnapshotEditorInput() {\n", hit_probe_code + "void SnapshotEditorInput(IL2CPP::Il2CppObject* editorSelf) {\n")
+replace_once("bool PrepareCalibrationFuse() {\n", metadata_code + "bool PrepareCalibrationFuse() {\n")
 
-replace_once(
-    "        if (g_editorGetScreenHeight.IsValid()) g_editorScreenHeight.store(g_editorGetScreenHeight.Call());\n"
-    "    }\n"
-    "}\n\n"
-    "void HookEditorMouse",
-    "        if (g_editorGetScreenHeight.IsValid()) g_editorScreenHeight.store(g_editorGetScreenHeight.Call());\n"
-    "    }\n"
-    "    ProbeEditorFloorHit(editorSelf, down, touchCount);\n"
-    "}\n\n"
-    "void HookEditorMouse"
-)
-
-replace_once("    SnapshotEditorInput();\n", "    SnapshotEditorInput(self);\n")
-replace_once(
-    "    g_editorCurrentMouseDown = false;\n"
-    "    g_editorCurrentTouchActive = false;\n",
-    "    g_editorCurrentMouseDown = false;\n"
-    "    g_editorCurrentTouchActive = false;\n"
-    "    g_editorCurrentHitFloor = nullptr;\n"
-)
-
-replace_once(
-    "    if (g_editorCurrentMouseDown) g_editorSelectWhileMouseDown.fetch_add(1);\n"
-    "    if (g_editorCurrentTouchActive) g_editorSelectWhileTouch.fetch_add(1);\n"
-    "    g_editorLastFloorNonNull.store(floor != nullptr ? 1 : 0);\n",
-    "    if (g_editorCurrentMouseDown) g_editorSelectWhileMouseDown.fetch_add(1);\n"
-    "    if (g_editorCurrentTouchActive) g_editorSelectWhileTouch.fetch_add(1);\n"
-    "    if (g_editorCurrentHitFloor != nullptr) {\n"
-    "        g_editorSelectWhileHitFound.fetch_add(1);\n"
-    "        if (floor == g_editorCurrentHitFloor) g_editorSelectMatchesHit.fetch_add(1);\n"
-    "    }\n"
-    "    g_editorLastFloorNonNull.store(floor != nullptr ? 1 : 0);\n"
-)
-
-replace_once(
-    "    if (!ResolveEditorProbe(&handleMethod, &selectMethod) || !PrepareEditorFuse()) return;\n",
-    "    if (!ResolveEditorProbe(&handleMethod, &selectMethod) || !PrepareEditorFuse()) return;\n"
-    "    ResolveEditorHitProbe();\n"
-)
-
-# Fix the exact r12 calibration guard bug exposed on-device. BNM literal constants are
-# intentionally marked const/non-static; Field<T>::Get handles _isConst through the static-value API.
+# Fix r12's impossible BNM literal-constant guard for diagnostics only. The write routine
+# remains compiled for historical comparison but is no longer called by ReconcileInstallState.
 replace_once(
     "    const bool abi = sentinelBase.IsValid() && sentinelBase._isStatic && sentinelBase._isConst &&\n",
-    "    g_calibrationSentinelValid.store(sentinelBase.IsValid() ? 1 : 0);\n"
-    "    g_calibrationSentinelConst.store(sentinelBase._isConst ? 1 : 0);\n"
-    "    g_calibrationSentinelStatic.store(sentinelBase._isStatic ? 1 : 0);\n"
-    "    g_calibrationSentinelTypeFloat.store(\n"
-    "            sentinelBase.IsValid() && SameClass(sentinelBase.GetType(), floatClass) ? 1 : 0);\n"
-    "    g_calibrationGetterResolved.store(\n"
-    "            getterInfo != nullptr && getterInfo->methodPointer != nullptr ? 1 : 0);\n"
-    "    g_calibrationSetterResolved.store(\n"
-    "            setterInfo != nullptr && setterInfo->methodPointer != nullptr ? 1 : 0);\n"
-    "    g_calibrationSaveResolved.store(\n"
-    "            saveInfo != nullptr && saveInfo->methodPointer != nullptr ? 1 : 0);\n"
     "    const bool abi = sentinelBase.IsValid() && sentinelBase._isConst &&\n"
     "            !sentinelBase._isThreadStatic &&\n"
 )
+
+# Disable both unproven active paths. Metadata collection runs before the existing pass-through
+# editor hooks are installed; no guessed hit resolver or calibration writer is executed.
+replace_once("    MaybeNeutralizeUnsetCalibration();\n", "    CollectV240MetadataInventory();\n")
 
 replace_once(
     "nativeProbe=cache-post-bnm-scneditor-input-edge-calibration-v1\\n",
@@ -274,35 +291,38 @@ replace_once(
     "nativeStage=post-bnm-scneditor-world-hit-and-calibration\\n"
 )
 replace_once("abiProbeRevision=12\\n", "abiProbeRevision=13\\n")
+
 replace_once(
     '        << "editorInputEdgePolicy=observe-only" << \'\\n\'\n',
     '        << "editorInputEdgePolicy=observe-only" << \'\\n\'\n'
     '        << "editorHitPolicy=screen-to-world-rdutils-observe-only" << \'\\n\'\n'
     '        << "editorHitMutation=0" << \'\\n\'\n'
+    '        << "editorHitExecution=disabled-r14-metadata-inventory" << \'\\n\'\n'
     '        << "editorHitAbiGuard=" << g_editorHitAbiGuard.load() << \'\\n\'\n'
     '        << "editorHitCameraFieldGuard=" << g_editorHitCameraFieldGuard.load() << \'\\n\'\n'
     '        << "editorHitMainCameraGuard=" << g_editorHitMainCameraGuard.load() << \'\\n\'\n'
     '        << "editorHitScreenToWorldGuard=" << g_editorHitScreenToWorldGuard.load() << \'\\n\'\n'
     '        << "editorHitFloorMethodGuard=" << g_editorHitFloorMethodGuard.load() << \'\\n\'\n'
-    '        << "editorHitMarkerReady=" << g_editorHitMarkerReady.load() << \'\\n\'\n'
-    '        << "editorHitRecoveryState=" << g_editorHitRecoveryState.load() << \'\\n\'\n'
-    '        << "editorHitFirstCallProven=" << (g_editorHitFirstCallProven.load() ? 1 : 0) << \'\\n\'\n'
-    '        << "editorHitProbeCalls=" << g_editorHitProbeCalls.load() << \'\\n\'\n'
-    '        << "editorHitProbeDownCalls=" << g_editorHitProbeDownCalls.load() << \'\\n\'\n'
-    '        << "editorHitFloorFound=" << g_editorHitFloorFound.load() << \'\\n\'\n'
-    '        << "editorHitDownFloorFound=" << g_editorHitDownFloorFound.load() << \'\\n\'\n'
-    '        << "editorHitHeldFloorFound=" << g_editorHitHeldFloorFound.load() << \'\\n\'\n'
-    '        << "editorHitCameraSource=" << g_editorHitCameraSource.load() << \'\\n\'\n'
-    '        << "editorHitLastWorldX100=" << g_editorHitLastWorldX100.load() << \'\\n\'\n'
-    '        << "editorHitLastWorldY100=" << g_editorHitLastWorldY100.load() << \'\\n\'\n'
-    '        << "editorHitLastFloorNonNull=" << g_editorHitLastFloorNonNull.load() << \'\\n\'\n'
-    '        << "editorSelectWhileHitFound=" << g_editorSelectWhileHitFound.load() << \'\\n\'\n'
-    '        << "editorSelectMatchesHit=" << g_editorSelectMatchesHit.load() << \'\\n\'\n'
+    '        << "editorHitMarkerReady=0" << \'\\n\'\n'
+    '        << "editorHitRecoveryState=0" << \'\\n\'\n'
+    '        << "editorHitFirstCallProven=0" << \'\\n\'\n'
+    '        << "editorHitProbeCalls=0" << \'\\n\'\n'
+    '        << "editorHitProbeDownCalls=0" << \'\\n\'\n'
+    '        << "editorHitFloorFound=0" << \'\\n\'\n'
+    '        << "editorHitDownFloorFound=0" << \'\\n\'\n'
+    '        << "editorHitHeldFloorFound=0" << \'\\n\'\n'
+    '        << "editorHitCameraSource=0" << \'\\n\'\n'
+    '        << "editorHitLastWorldX100=0" << \'\\n\'\n'
+    '        << "editorHitLastWorldY100=0" << \'\\n\'\n'
+    '        << "editorHitLastFloorNonNull=0" << \'\\n\'\n'
+    '        << "editorSelectWhileHitFound=0" << \'\\n\'\n'
+    '        << "editorSelectMatchesHit=0" << \'\\n\'\n'
 )
 
 replace_once(
     '        << "calibrationPolicy=neutralize-only-exact-game-sentinel" << \'\\n\'\n',
     '        << "calibrationPolicy=neutralize-only-exact-game-sentinel-bnm-const-v2" << \'\\n\'\n'
+    '        << "calibrationExecution=disabled-r14-metadata-inventory" << \'\\n\'\n'
 )
 replace_once(
     '        << "calibrationAfterX100=" << g_calibrationAfterX100.load() << \'\\n\'\n',
@@ -314,6 +334,7 @@ replace_once(
     '        << "calibrationGetterResolved=" << g_calibrationGetterResolved.load() << \'\\n\'\n'
     '        << "calibrationSetterResolved=" << g_calibrationSetterResolved.load() << \'\\n\'\n'
     '        << "calibrationSaveResolved=" << g_calibrationSaveResolved.load() << \'\\n\'\n'
+    '        << g_metadataInventory'
 )
 
 for marker in (
@@ -325,21 +346,27 @@ for marker in (
     'Class rdUtils("", "RDUtils")',
     'rdUtils.GetMethod("GetFloorAtPosition", 1)',
     'camera.GetMethod("ScreenToWorldPoint", 1)',
-    'editor.GetField("camera")',
     "editor-r13-hit.pending",
-    "editorHitFloorFound=",
-    "editorSelectMatchesHit=",
     "calibrationPolicy=neutralize-only-exact-game-sentinel-bnm-const-v2",
     "sentinelBase.IsValid() && sentinelBase._isConst",
-    "!sentinelBase._isThreadStatic",
-    "calibrationSentinelConst=",
+    "metadataInventoryRevision=1",
+    "metadataInventoryPolicy=bounded-read-only-no-invoke",
+    "metadataInventoryMethodCalls=0",
+    "metadataInventoryFieldValueReads=0",
+    "metadataInventoryWrites=0",
+    "CollectV240MetadataInventory();",
+    'AppendMetadataClass(out, "RDUtils"',
+    'AppendMetadataClass(out, "Persistence"',
+    'AppendMetadataClass(out, "CalibrationPreset"',
 ):
     if marker not in s:
-        raise SystemExit(f"r13 marker missing after overlay: {marker}")
+        raise SystemExit(f"r14 metadata marker missing after transform: {marker}")
 
 if "sentinelBase.IsValid() && sentinelBase._isStatic && sentinelBase._isConst" in s:
     raise SystemExit("r12 impossible const/static calibration guard survived")
-if "g_oldEditorMouse(self, methodInfo)" not in s or "g_oldSelectFloor(self, floor, cameraJump, methodInfo)" not in s:
-    raise SystemExit("r13 must preserve editor pass-through originals")
+if "    MaybeNeutralizeUnsetCalibration();\n" in s:
+    raise SystemExit("unproven calibration writer must not execute in r14 metadata inventory")
+if s.count("BasicHook(") != 5:
+    raise SystemExit(f"r14 must not add hooks; expected five compiled hook sites, got {s.count('BasicHook(')}")
 
 path.write_text(s, encoding="utf-8")
