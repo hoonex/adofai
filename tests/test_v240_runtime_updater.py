@@ -29,19 +29,19 @@ class V240RuntimeUpdaterContractTest(unittest.TestCase):
         self.assertNotIn("Environment.", source)
         self.assertNotIn("/sdcard", source)
 
-    def test_update_is_hash_gated_bounded_and_https_only(self):
+    def test_update_is_hash_gated_bounded_https_and_repo_pinned(self):
         source = self.text(UPDATER)
         for marker in (
-            "MAX_MANIFEST_BYTES",
-            "MAX_BUNDLE_BYTES",
-            "MAX_ENTRY_BYTES",
-            "bundleSha256",
-            "nativeSha256",
-            "dexSha256",
+            "MAX_MANIFEST_BYTES", "MAX_BUNDLE_BYTES", "MAX_ENTRY_BYTES",
+            "bundleSha256", "nativeSha256", "dexSha256",
             "MessageDigest.getInstance(\"SHA-256\")",
             '"https".equalsIgnoreCase(url.getProtocol())',
-            "requireReleaseUrl(bundleUrl)",
-            "too many redirects",
+            "requireReleaseUrl(bundleUrl)", "too many redirects",
+            'SOURCE_REPOSITORY = "hoonex/adofai"',
+            'manifest.optString("sourceRepository", "")',
+            'manifest.optString("sourceCommit", "")',
+            "isImmutableRuntimeVersion(version)",
+            'expectedAsset = "/runtime-" + version + ".zip"',
         ):
             self.assertIn(marker, source)
         self.assertNotIn("setInstanceFollowRedirects(true)", source)
@@ -56,12 +56,31 @@ class V240RuntimeUpdaterContractTest(unittest.TestCase):
     def test_crash_loop_has_pending_marker_quarantine_and_rollback(self):
         source = self.text(UPDATER)
         for marker in (
-            '"boot.pending"',
-            "recoverInterruptedBoot()",
-            "quarantineVersion(active, \"boot_crash\")",
-            "restorePreviousPointer()",
-            'new File(rootDir, "previous")',
-            "HEALTH_DELAY_MS",
+            '"boot.pending"', "recoverInterruptedBoot(app)",
+            'quarantineVersion(active, "boot_crash")', "restorePreviousPointer()",
+            '"quarantine-" + version + ".txt"', "isVersionQuarantined(version)",
+            'recordRollback(app, "boot_crash:" + active)', "HEALTH_DELAY_MS",
+        ):
+            self.assertIn(marker, source)
+
+    def test_quarantined_version_is_never_downloaded_again(self):
+        source = self.text(UPDATER)
+        check = source[source.index("private static void checkForUpdate"):]
+        quarantine = check.index("if (isVersionQuarantined(version))")
+        download = check.index("downloadFile(bundleUrl")
+        self.assertLess(quarantine, download)
+        self.assertIn('channelState = "quarantined-skip:" + version', check)
+
+    def test_diagnostics_cover_channel_download_hash_and_rollback_state(self):
+        source = self.text(UPDATER)
+        for marker in (
+            '"channel=" + CHANNEL', '"availableVersion=" + availableVersion',
+            '"downloadedVersion=" + downloadedVersion',
+            '"loadedVersion=" + loadedVersion', '"activeVersion=" + active',
+            '"previousVersion=" + previous',
+            '"cachedRuntimeLoaded=" + (cachedRuntimeLoaded ? 1 : 0)',
+            '"shaVerification=" + shaVerification',
+            '"rollbackReason=" + rollbackReason', '"lastError=" + lastError',
         ):
             self.assertIn(marker, source)
 

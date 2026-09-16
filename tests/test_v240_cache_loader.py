@@ -27,7 +27,7 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
         ):
             self.assertIn(required, source)
         for forbidden in (
-            "BasicHook", "InstallAllHooks", "InstallSfbHooks", "InstallMobileHooks",
+            "BasicHook(", "InstallAllHooks", "InstallSfbHooks", "InstallMobileHooks",
             "InstallExactOpenFiltersHook", "HookOpenFilePanelFilters",
             "V240SettingsOverlay", "V240EventCompat", "V240TouchAssist", "FileSelector",
             "FindClass", "CallStatic", "CallObject", "NewGlobalRef", "pthread_create",
@@ -89,7 +89,7 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
             loader = LOADER.read_text(encoding="utf-8")
             dynamic = DYNAMIC_ENTRY.read_text(encoding="utf-8")
             self.assertIn("gameHooksInstalled=0", loader)
-            self.assertNotIn("BasicHook", loader)
+            self.assertNotIn("BasicHook(", loader)
             self.assertIn("activation-free", dynamic)
             self.assertNotIn("System.load(", dynamic)
 

@@ -31,10 +31,10 @@ import dalvik.system.DexClassLoader;
 /**
  * Stable bootstrap-owned runtime updater.
  *
- * Code is staged only inside app-private code_cache. A downloaded runtime is never
- * executed in the process that downloaded it. The next process marks the candidate
- * boot as pending before loading it; if that process dies before the health deadline,
- * the following launch quarantines the candidate and restores the previous slot.
+ * Runtime code is staged only inside app-private code_cache. A downloaded runtime is
+ * never executed in the process that downloaded it. The next process marks a candidate
+ * boot pending before native/DEX loading; an interrupted launch quarantines that exact
+ * commit SHA and rolls back without ever re-downloading the quarantined SHA.
  */
 final class V240RuntimeUpdater {
     private static final String TAG = "ADOFAI.V240Updater";
@@ -45,6 +45,8 @@ final class V240RuntimeUpdater {
     private static final long MAX_MANIFEST_BYTES = 64L * 1024L;
     private static final long MAX_BUNDLE_BYTES = 32L * 1024L * 1024L;
     private static final long MAX_ENTRY_BYTES = 24L * 1024L * 1024L;
+    private static final String CHANNEL = "github-release:v240-runtime-channel";
+    private static final String SOURCE_REPOSITORY = "hoonex/adofai";
     private static final String CHANNEL_MANIFEST =
             "https://github.com/hoonex/adofai/releases/download/v240-runtime-channel/manifest.json";
     private static final String RELEASE_PREFIX =
@@ -56,6 +58,10 @@ final class V240RuntimeUpdater {
     private static boolean started;
     private static volatile boolean cachedRuntimeLoaded;
     private static volatile String loadedVersion = "none";
+    private static volatile String availableVersion = "none";
+    private static volatile String downloadedVersion = "none";
+    private static volatile String shaVerification = "not-checked";
+    private static volatile String rollbackReason = "none";
     private static volatile String lastError = "none";
     private static volatile String channelState = "not-checked";
     private static File rootDir;
@@ -69,6 +75,8 @@ final class V240RuntimeUpdater {
         if (owner == null || owner.isFinishing()) return false;
         started = true;
         Context app = owner.getApplicationContext();
+        SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        rollbackReason = prefs.getString("rollback_reason", "none");
         rootDir = new File(app.getCodeCacheDir(), "v240-runtime");
         if (!rootDir.isDirectory() && !rootDir.mkdirs()) {
             lastError = "code_cache_create_failed";
@@ -77,12 +85,12 @@ final class V240RuntimeUpdater {
         }
 
         try {
-            recoverInterruptedBoot();
+            recoverInterruptedBoot(app);
             loadActiveCandidate(app);
         } catch (Throwable error) {
             lastError = "startup:" + safeMessage(error);
-            Log.e(TAG, "cached runtime startup failed; keeping Java recovery mode", error);
-            try { quarantineActive("startup_exception"); } catch (Throwable ignored) {}
+            Log.e(TAG, "cached runtime startup failed; keeping original game path alive", error);
+            try { quarantineActive(app, "startup_exception"); } catch (Throwable ignored) {}
         }
 
         beginAsyncUpdateCheck(app);
@@ -99,11 +107,16 @@ final class V240RuntimeUpdater {
         return "V240 runtime updater\n"
                 + "bootstrapVersion=" + BOOTSTRAP_VERSION + "\n"
                 + "codeCacheOnly=1\n"
+                + "channel=" + CHANNEL + "\n"
+                + "availableVersion=" + availableVersion + "\n"
+                + "downloadedVersion=" + downloadedVersion + "\n"
                 + "cachedRuntimeLoaded=" + (cachedRuntimeLoaded ? 1 : 0) + "\n"
                 + "loadedVersion=" + loadedVersion + "\n"
                 + "activeVersion=" + active + "\n"
                 + "previousVersion=" + previous + "\n"
+                + "shaVerification=" + shaVerification + "\n"
                 + "channelState=" + channelState + "\n"
+                + "rollbackReason=" + rollbackReason + "\n"
                 + "lastError=" + lastError + "\n";
     }
 
@@ -111,13 +124,24 @@ final class V240RuntimeUpdater {
         String version = readPointer(new File(rootDir, "active"));
         if (version == null) {
             channelState = "java-recovery-mode";
-            Log.w(TAG, "no cache runtime active; embedded native intentionally not loaded");
+            Log.w(TAG, "no cache runtime active; original game path remains available");
             return;
         }
+        if (isVersionQuarantined(version)) {
+            recordRollback(app, "active_quarantined:" + version);
+            clearActivePointer(version);
+            restorePreviousPointer();
+            version = readPointer(new File(rootDir, "active"));
+            if (version == null) {
+                channelState = "java-recovery-mode";
+                return;
+            }
+        }
+
         File dir = versionDir(version);
         if (!isRuntimeDirValid(dir, version)) {
             lastError = "active_slot_invalid:" + version;
-            quarantineActive("invalid_active_slot");
+            quarantineActive(app, "invalid_active_slot");
             return;
         }
 
@@ -127,10 +151,14 @@ final class V240RuntimeUpdater {
         loadedVersion = version;
 
         JSONObject meta = readJson(new File(dir, "meta.json"), 32 * 1024);
+        if (!version.equals(meta.getString("version"))) {
+            throw new IllegalStateException("runtime metadata version mismatch");
+        }
         File nativeLib = new File(dir, "libv240fix.so");
         File runtimeDex = new File(dir, "runtime.dex");
         assertHash(nativeLib, meta.getString("nativeSha256"));
         assertHash(runtimeDex, meta.getString("dexSha256"));
+        shaVerification = "payload-verified:" + version;
 
         // Android 14+ requires dynamically loaded code files not to remain writable.
         if (!runtimeDex.setReadOnly() && runtimeDex.canWrite()) {
@@ -140,6 +168,8 @@ final class V240RuntimeUpdater {
             throw new IllegalStateException("libv240fix.so remained writable");
         }
 
+        // A native process abort cannot be caught in Java. boot.pending is deliberately
+        // persisted before this call so the next launch quarantines this exact version.
         System.load(nativeLib.getAbsolutePath());
 
         File opt = new File(rootDir, "opt-" + version);
@@ -176,29 +206,54 @@ final class V240RuntimeUpdater {
         }
     }
 
-    private static void recoverInterruptedBoot() throws Exception {
+    private static void recoverInterruptedBoot(Context app) throws Exception {
         String active = readPointer(new File(rootDir, "active"));
         if (active == null) return;
+        if (isVersionQuarantined(active)) {
+            recordRollback(app, "active_quarantined:" + active);
+            clearActivePointer(active);
+            restorePreviousPointer();
+            return;
+        }
         File dir = versionDir(active);
         if (!new File(dir, "boot.pending").isFile()) return;
         lastError = "rollback_unhealthy_boot:" + active;
-        Log.w(TAG, "previous cached runtime did not reach health deadline; rolling back " + active);
+        Log.w(TAG, "cached runtime did not reach health deadline; rolling back " + active);
         quarantineVersion(active, "boot_crash");
+        recordRollback(app, "boot_crash:" + active);
         restorePreviousPointer();
     }
 
-    private static void quarantineActive(String reason) throws Exception {
+    private static void quarantineActive(Context app, String reason) throws Exception {
         String active = readPointer(new File(rootDir, "active"));
-        if (active != null) quarantineVersion(active, reason);
+        if (active != null) {
+            quarantineVersion(active, reason);
+            recordRollback(app, reason + ":" + active);
+        }
         restorePreviousPointer();
     }
 
     private static void quarantineVersion(String version, String reason) throws Exception {
-        if (!isSafeVersion(version)) return;
+        if (!isImmutableRuntimeVersion(version)) return;
+        File marker = quarantineMarker(version);
+        writeSmallFile(marker, reason + "\n" + System.currentTimeMillis() + "\n");
         File dir = versionDir(version);
         File bad = new File(rootDir, "bad-" + version + "-" + System.currentTimeMillis());
         if (dir.exists() && !dir.renameTo(bad)) safeDeleteTree(dir);
         Log.w(TAG, "quarantined runtime " + version + " reason=" + reason);
+        clearActivePointer(version);
+    }
+
+    private static boolean isVersionQuarantined(String version) {
+        return isImmutableRuntimeVersion(version) && quarantineMarker(version).isFile();
+    }
+
+    private static File quarantineMarker(String version) {
+        if (!isImmutableRuntimeVersion(version)) throw new IllegalArgumentException("unsafe version");
+        return new File(rootDir, "quarantine-" + version + ".txt");
+    }
+
+    private static void clearActivePointer(String version) throws Exception {
         File active = new File(rootDir, "active");
         String current = readPointer(active);
         if (version.equals(current) && active.exists() && !active.delete()) {
@@ -206,9 +261,18 @@ final class V240RuntimeUpdater {
         }
     }
 
+    private static void recordRollback(Context app, String reason) {
+        rollbackReason = reason == null ? "unknown" : reason;
+        try {
+            app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    .edit().putString("rollback_reason", rollbackReason).apply();
+        } catch (Throwable ignored) {}
+    }
+
     private static void restorePreviousPointer() throws Exception {
         String previous = readPointer(new File(rootDir, "previous"));
-        if (previous != null && isRuntimeDirValid(versionDir(previous), previous)) {
+        if (previous != null && !isVersionQuarantined(previous)
+                && isRuntimeDirValid(versionDir(previous), previous)) {
             writePointer(new File(rootDir, "active"), previous);
         } else {
             File active = new File(rootDir, "active");
@@ -246,6 +310,9 @@ final class V240RuntimeUpdater {
         if (manifest.getInt("schema") != MANIFEST_SCHEMA) {
             throw new IllegalStateException("unsupported manifest schema");
         }
+        if (!SOURCE_REPOSITORY.equals(manifest.optString("sourceRepository", ""))) {
+            throw new IllegalStateException("unexpected runtime source repository");
+        }
         if (manifest.getInt("minBootstrap") > BOOTSTRAP_VERSION) {
             channelState = "bootstrap-too-old";
             return;
@@ -256,15 +323,32 @@ final class V240RuntimeUpdater {
         }
 
         String version = manifest.getString("version");
-        if (!isSafeVersion(version)) throw new IllegalStateException("unsafe runtime version");
+        if (!isImmutableRuntimeVersion(version)) {
+            throw new IllegalStateException("runtime version must be a commit SHA");
+        }
+        if (!version.equals(manifest.optString("sourceCommit", ""))) {
+            throw new IllegalStateException("runtime source commit mismatch");
+        }
+        availableVersion = version;
+        if (isVersionQuarantined(version)) {
+            channelState = "quarantined-skip:" + version;
+            lastError = "none";
+            return;
+        }
+
         String active = readPointer(new File(rootDir, "active"));
         if (version.equals(active) && isRuntimeDirValid(versionDir(version), version)) {
             channelState = "up-to-date:" + version;
+            downloadedVersion = version;
             return;
         }
 
         URL bundleUrl = new URL(manifest.getString("bundleUrl"));
         requireReleaseUrl(bundleUrl);
+        String expectedAsset = "/runtime-" + version + ".zip";
+        if (!bundleUrl.getPath().endsWith(expectedAsset)) {
+            throw new IllegalStateException("runtime asset is not commit-addressed");
+        }
         long declaredBytes = manifest.optLong("bundleBytes", -1L);
         if (declaredBytes <= 0L || declaredBytes > MAX_BUNDLE_BYTES) {
             throw new IllegalStateException("bundle size outside safety bound");
@@ -274,13 +358,14 @@ final class V240RuntimeUpdater {
         String dexHash = normalizedHash(manifest.getString("dexSha256"));
 
         File download = new File(rootDir, "download.part");
-        if (download.exists() && !download.delete()) throw new IllegalStateException("stale download.part");
+        if (download.exists()) safeDelete(download);
         long actualBytes = downloadFile(bundleUrl, download, MAX_BUNDLE_BYTES);
         if (actualBytes != declaredBytes) {
             safeDelete(download);
             throw new IllegalStateException("bundle byte count mismatch");
         }
         assertHash(download, bundleHash);
+        shaVerification = "bundle-verified:" + version;
 
         File staging = new File(rootDir, "staging-" + version);
         safeDeleteTree(staging);
@@ -291,6 +376,7 @@ final class V240RuntimeUpdater {
             File runtimeDex = new File(staging, "runtime.dex");
             assertHash(nativeLib, nativeHash);
             assertHash(runtimeDex, dexHash);
+            shaVerification = "payload-verified:" + version;
             if (!runtimeDex.setReadOnly() && runtimeDex.canWrite()) {
                 throw new IllegalStateException("downloaded runtime.dex remained writable");
             }
@@ -301,6 +387,7 @@ final class V240RuntimeUpdater {
             JSONObject meta = new JSONObject();
             meta.put("schema", MANIFEST_SCHEMA);
             meta.put("version", version);
+            meta.put("sourceRepository", SOURCE_REPOSITORY);
             meta.put("nativeSha256", nativeHash);
             meta.put("dexSha256", dexHash);
             writeSmallFile(new File(staging, "meta.json"), meta.toString());
@@ -310,10 +397,13 @@ final class V240RuntimeUpdater {
             if (!staging.renameTo(target)) throw new IllegalStateException("runtime slot promotion failed");
 
             String oldActive = readPointer(new File(rootDir, "active"));
-            if (oldActive != null && isRuntimeDirValid(versionDir(oldActive), oldActive)) {
+            if (oldActive != null && !oldActive.equals(version)
+                    && !isVersionQuarantined(oldActive)
+                    && isRuntimeDirValid(versionDir(oldActive), oldActive)) {
                 writePointer(new File(rootDir, "previous"), oldActive);
             }
             writePointer(new File(rootDir, "active"), version);
+            downloadedVersion = version;
             channelState = "downloaded-restart-required:" + version;
             lastError = "none";
             Log.i(TAG, "runtime " + version + " staged in code_cache; it will load next process start");
@@ -439,7 +529,7 @@ final class V240RuntimeUpdater {
     }
 
     private static boolean isRuntimeDirValid(File dir, String version) {
-        if (dir == null || !dir.isDirectory() || !isSafeVersion(version)) return false;
+        if (dir == null || !dir.isDirectory() || !isImmutableRuntimeVersion(version)) return false;
         File nativeLib = new File(dir, "libv240fix.so");
         File dex = new File(dir, "runtime.dex");
         File meta = new File(dir, "meta.json");
@@ -448,17 +538,15 @@ final class V240RuntimeUpdater {
     }
 
     private static File versionDir(String version) {
-        if (!isSafeVersion(version)) throw new IllegalArgumentException("unsafe version");
+        if (!isImmutableRuntimeVersion(version)) throw new IllegalArgumentException("unsafe version");
         return new File(rootDir, "slot-" + version);
     }
 
-    private static boolean isSafeVersion(String version) {
-        if (version == null || version.length() < 1 || version.length() > 80) return false;
+    private static boolean isImmutableRuntimeVersion(String version) {
+        if (version == null || version.length() != 40) return false;
         for (int i = 0; i < version.length(); i++) {
             char ch = version.charAt(i);
-            boolean ok = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
-                    || (ch >= '0' && ch <= '9') || ch == '.' || ch == '_' || ch == '-';
-            if (!ok) return false;
+            if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'))) return false;
         }
         return true;
     }
@@ -480,6 +568,7 @@ final class V240RuntimeUpdater {
         expected = normalizedHash(expected);
         String actual = sha256(file);
         if (!expected.equals(actual)) {
+            shaVerification = "failed:" + file.getName();
             throw new IllegalStateException("SHA-256 mismatch for " + file.getName());
         }
     }
@@ -527,7 +616,7 @@ final class V240RuntimeUpdater {
             }
             if (offset != data.length) return null;
             String value = new String(data, "UTF-8").trim();
-            return isSafeVersion(value) ? value : null;
+            return isImmutableRuntimeVersion(value) ? value : null;
         } catch (Throwable ignored) {
             return null;
         }
@@ -539,7 +628,7 @@ final class V240RuntimeUpdater {
     }
 
     private static void writePointer(File file, String value) throws Exception {
-        if (!isSafeVersion(value)) throw new IllegalArgumentException("unsafe pointer value");
+        if (!isImmutableRuntimeVersion(value)) throw new IllegalArgumentException("unsafe pointer value");
         File temp = new File(rootDir, file.getName() + ".tmp");
         writeSmallFile(temp, value + "\n");
         if (file.exists() && !file.delete()) throw new IllegalStateException("could not replace pointer");

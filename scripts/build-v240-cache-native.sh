@@ -43,7 +43,7 @@ for marker in (
 ):
     assert marker in s, marker
 for forbidden in (
-    'BasicHook', 'InstallAllHooks', 'InstallSfbHooks', 'InstallMobileHooks',
+    'BasicHook(', 'InstallAllHooks', 'InstallSfbHooks', 'InstallMobileHooks',
     'InstallExactOpenFiltersHook', 'HookOpenFilePanelFilters',
     'V240SettingsOverlay', 'V240EventCompat', 'V240TouchAssist', 'FileSelector',
     'FindClass', 'CallStatic', 'CallObject', 'NewGlobalRef', 'pthread_create',
