@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <atomic>
+#include <cstdint>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -13,18 +14,44 @@ namespace {
 std::atomic<bool> g_bnmLoadRequested{false};
 std::atomic<bool> g_bnmLoadedCallback{false};
 std::atomic<bool> g_probeComplete{false};
+std::atomic<bool> g_sfbOpenFiltersHookInstalled{false};
+std::atomic<int> g_sfbOpenFiltersCanaryCalls{0};
 std::mutex g_reportMutex;
 std::string g_report =
-        "nativeProbe=cache-post-bnm-probe-only-v2\n"
-        "nativeStage=post-bnm-read-only-abi\n"
-        "abiProbeRevision=3\n"
+        "nativeProbe=cache-post-bnm-sfb-pass-through-v1\n"
+        "nativeStage=post-bnm-sfb-pass-through-canary\n"
+        "abiProbeRevision=4\n"
         "bnmLoadRequested=0\n"
         "bnmLoadedCallback=0\n"
         "probeComplete=0\n"
         "gameHooksInstalled=0\n"
         "sfbOpenFiltersHookInstalled=0\n"
         "sfbFilterMemoryRead=0\n"
-        "sfbHookPolicy=disabled-unproven-call-abi\n";
+        "sfbHookPolicy=bootstrap3-exact-pass-through-canary\n"
+        "sfbCanaryAbiGuard=0\n";
+
+struct ExtensionFilterValue {
+    String* Name;
+    Array<String*>* Extensions;
+};
+static_assert(sizeof(ExtensionFilterValue) == sizeof(void*) * 2,
+              "ExtensionFilter payload must be two managed references");
+
+using OpenFiltersFn = Array<String*>* (*)(String*, String*, Array<ExtensionFilterValue>*, bool);
+OpenFiltersFn g_oldOpenFilters = nullptr;
+
+Array<String*>* HookOpenFilePanelFilters(
+        String* title,
+        String* directory,
+        Array<ExtensionFilterValue>* filters,
+        bool multiselect) {
+    g_sfbOpenFiltersCanaryCalls.fetch_add(1, std::memory_order_relaxed);
+    OpenFiltersFn original = g_oldOpenFilters;
+    if (original == nullptr) return nullptr;
+    // Pass-through canary only. Do not inspect ExtensionFilter[] memory and do not
+    // change arguments or results. This proves the exact native trampoline ABI.
+    return original(title, directory, filters, multiselect);
+}
 
 bool SameClass(const Class& left, const Class& right) {
     return left && right && left.GetClass() == right.GetClass();
@@ -42,12 +69,7 @@ int TypeValueType(const IL2CPP::Il2CppType* type) {
     return type == nullptr ? -1 : (type->valuetype ? 1 : 0);
 }
 
-void RunReadOnlyAbiProbe() {
-    // Evidence-only recovery payload. Resolve metadata only after BNM is loaded.
-    // Never invoke managed code, write managed state, create objects, or install hooks.
-    // Revision 3 additionally inspects MethodInfo/Il2CppClass metadata so the exact
-    // SFB ExtensionFilter[] signature and value-type layout can be proven before any
-    // hook is allowed to exist.
+void RunAbiProbeAndInstallCanary() {
     Class browser("SFB", "StandaloneFileBrowser");
     Class extensionFilter("SFB", "ExtensionFilter");
     Class canvasScaler("UnityEngine.UI", "CanvasScaler");
@@ -81,8 +103,6 @@ void RunReadOnlyAbiProbe() {
     const bool filterNameField = filterName.IsValid();
     const bool filterExtensionsField = filterExtensions.IsValid();
 
-    // Read only the exact IL2CPP metadata BNM already resolved. This does not dereference
-    // an ExtensionFilter[] object and does not execute OpenFilePanel.
     IL2CPP::MethodInfo* openInfo = openFiltersExact ? openFilters.GetInfo() : nullptr;
     Class stringClass = Defaults::Get<String*>();
     Class boolClass = Defaults::Get<bool>();
@@ -127,6 +147,36 @@ void RunReadOnlyAbiProbe() {
     const bool filterNameString = SameClass(filterNameType, stringClass);
     const bool filterExtensionsStringArray = SameClass(filterExtensionsType, stringArrayClass);
 
+    const uint32_t expectedBoxedSize =
+            static_cast<uint32_t>(sizeof(IL2CPP::Il2CppObject) + sizeof(ExtensionFilterValue));
+    const bool canaryAbiGuard =
+            openFiltersExact &&
+            openMethodPointer &&
+            openStatic &&
+            openParameterCount4 &&
+            openReturnStringArray &&
+            openParam0String &&
+            openParam1String &&
+            openParam2FilterArray &&
+            openParam3Bool &&
+            TypeByRef(param2Type) == 0 &&
+            TypeValueType(param2Type) == 0 &&
+            filterValueType &&
+            filterInstanceSize == expectedBoxedSize &&
+            filterActualSize == expectedBoxedSize &&
+            filterNameField &&
+            filterExtensionsField &&
+            filterNameOffset == 0 &&
+            filterExtensionsOffset == static_cast<long long>(sizeof(void*)) &&
+            filterNameString &&
+            filterExtensionsStringArray;
+
+    if (canaryAbiGuard) {
+        BasicHook(openFilters, HookOpenFilePanelFilters, g_oldOpenFilters);
+        g_sfbOpenFiltersHookInstalled.store(
+                g_oldOpenFilters != nullptr, std::memory_order_release);
+    }
+
     const bool setScaleFactor1 = canvasScaler && canvasScaler.GetMethod("SetScaleFactor", 1).IsValid();
     const bool getAxis1 = input && input.GetMethod("GetAxis", 1).IsValid();
     const bool getAxisRaw1 = input && input.GetMethod("GetAxisRaw", 1).IsValid();
@@ -162,18 +212,21 @@ void RunReadOnlyAbiProbe() {
     const bool pauseMenuClass = static_cast<bool>(pauseMenu);
     const bool pauseMenuShowSettingsMenu0 = pauseMenu
             && pauseMenu.GetMethod("ShowSettingsMenu", 0).IsValid();
+    const bool hookInstalled = g_sfbOpenFiltersHookInstalled.load(std::memory_order_acquire);
 
     std::ostringstream out;
-    out << "nativeProbe=cache-post-bnm-probe-only-v2\n"
-        << "nativeStage=post-bnm-read-only-abi\n"
-        << "abiProbeRevision=3\n"
+    out << "nativeProbe=cache-post-bnm-sfb-pass-through-v1\n"
+        << "nativeStage=post-bnm-sfb-pass-through-canary\n"
+        << "abiProbeRevision=4\n"
         << "bnmLoadRequested=1\n"
         << "bnmLoadedCallback=1\n"
         << "probeComplete=1\n"
-        << "gameHooksInstalled=0\n"
-        << "sfbOpenFiltersHookInstalled=0\n"
+        << "gameHooksInstalled=" << (hookInstalled ? 1 : 0) << '\n'
+        << "sfbOpenFiltersHookInstalled=" << (hookInstalled ? 1 : 0) << '\n'
         << "sfbFilterMemoryRead=0\n"
-        << "sfbHookPolicy=disabled-unproven-call-abi\n"
+        << "sfbHookPolicy=bootstrap3-exact-pass-through-canary\n"
+        << "sfbCanaryAbiGuard=" << (canaryAbiGuard ? 1 : 0) << '\n'
+        << "sfbCanaryOriginalCaptured=" << (g_oldOpenFilters != nullptr ? 1 : 0) << '\n'
         << "abi.SFB.class=" << (browser ? 1 : 0) << '\n'
         << "abi.SFB.OpenFilePanel4=" << (openFile4 ? 1 : 0) << '\n'
         << "abi.SFB.OpenFilePanel.filtersExact=" << (openFiltersExact ? 1 : 0) << '\n'
@@ -195,6 +248,8 @@ void RunReadOnlyAbiProbe() {
         << "abi.SFB.ExtensionFilter.valueType=" << (filterValueType ? 1 : 0) << '\n'
         << "abi.SFB.ExtensionFilter.instanceSize=" << filterInstanceSize << '\n'
         << "abi.SFB.ExtensionFilter.actualSize=" << filterActualSize << '\n'
+        << "abi.SFB.ExtensionFilter.expectedBoxedSize=" << expectedBoxedSize << '\n'
+        << "abi.SFB.ExtensionFilter.payloadSize=" << sizeof(ExtensionFilterValue) << '\n'
         << "abi.SFB.ExtensionFilter.elementSize=" << filterElementSize << '\n'
         << "abi.SFB.ExtensionFilter.nativeSize=" << filterNativeSize << '\n'
         << "abi.SFB.ExtensionFilter.Name=" << (filterNameField ? 1 : 0) << '\n'
@@ -239,32 +294,38 @@ void RunReadOnlyAbiProbe() {
 }
 
 std::string CurrentReport() {
+    std::ostringstream out;
     if (!g_bnmLoadRequested.load(std::memory_order_acquire)) {
-        return "nativeProbe=cache-post-bnm-probe-only-v2\n"
-               "nativeStage=post-bnm-read-only-abi\n"
-               "abiProbeRevision=3\n"
-               "bnmLoadRequested=0\n"
-               "bnmLoadedCallback=0\n"
-               "probeComplete=0\n"
-               "gameHooksInstalled=0\n"
-               "sfbOpenFiltersHookInstalled=0\n"
-               "sfbFilterMemoryRead=0\n"
-               "sfbHookPolicy=disabled-unproven-call-abi\n";
+        out << "nativeProbe=cache-post-bnm-sfb-pass-through-v1\n"
+            << "nativeStage=post-bnm-sfb-pass-through-canary\n"
+            << "abiProbeRevision=4\n"
+            << "bnmLoadRequested=0\n"
+            << "bnmLoadedCallback=0\n"
+            << "probeComplete=0\n"
+            << "gameHooksInstalled=0\n"
+            << "sfbOpenFiltersHookInstalled=0\n"
+            << "sfbFilterMemoryRead=0\n"
+            << "sfbHookPolicy=bootstrap3-exact-pass-through-canary\n"
+            << "sfbCanaryAbiGuard=0\n";
+    } else if (!g_bnmLoadedCallback.load(std::memory_order_acquire)) {
+        out << "nativeProbe=cache-post-bnm-sfb-pass-through-v1\n"
+            << "nativeStage=post-bnm-sfb-pass-through-canary\n"
+            << "abiProbeRevision=4\n"
+            << "bnmLoadRequested=1\n"
+            << "bnmLoadedCallback=0\n"
+            << "probeComplete=0\n"
+            << "gameHooksInstalled=0\n"
+            << "sfbOpenFiltersHookInstalled=0\n"
+            << "sfbFilterMemoryRead=0\n"
+            << "sfbHookPolicy=bootstrap3-exact-pass-through-canary\n"
+            << "sfbCanaryAbiGuard=0\n";
+    } else {
+        std::lock_guard<std::mutex> lock(g_reportMutex);
+        out << g_report;
     }
-    if (!g_bnmLoadedCallback.load(std::memory_order_acquire)) {
-        return "nativeProbe=cache-post-bnm-probe-only-v2\n"
-               "nativeStage=post-bnm-read-only-abi\n"
-               "abiProbeRevision=3\n"
-               "bnmLoadRequested=1\n"
-               "bnmLoadedCallback=0\n"
-               "probeComplete=0\n"
-               "gameHooksInstalled=0\n"
-               "sfbOpenFiltersHookInstalled=0\n"
-               "sfbFilterMemoryRead=0\n"
-               "sfbHookPolicy=disabled-unproven-call-abi\n";
-    }
-    std::lock_guard<std::mutex> lock(g_reportMutex);
-    return g_report;
+    out << "sfbOpenFiltersCanaryCalls="
+        << g_sfbOpenFiltersCanaryCalls.load(std::memory_order_relaxed) << '\n';
+    return out.str();
 }
 } // namespace
 
@@ -279,7 +340,7 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     Loading::TryLoadByJNI(env);
     Loading::AddOnLoadedEvent([]() {
         g_bnmLoadedCallback.store(true, std::memory_order_release);
-        RunReadOnlyAbiProbe();
+        RunAbiProbeAndInstallCanary();
     });
     return JNI_VERSION_1_6;
 }

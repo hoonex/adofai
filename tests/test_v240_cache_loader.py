@@ -10,71 +10,74 @@ DYNAMIC_ENTRY = ROOT / "android/v240-dynamic-runtime/java/dev/hoonex/adofai/v240
 
 
 class V240CacheNativeLoaderContract(unittest.TestCase):
-    def test_loader_runs_metadata_only_post_bnm_probe(self):
+    def test_loader_installs_only_exact_pass_through_canary(self):
         source = LOADER.read_text(encoding="utf-8")
         for required in (
             "JNI_OnLoad", "GetEnv", "universe.h", "Loading::TryLoadByJNI",
-            "Loading::AddOnLoadedEvent", "RunReadOnlyAbiProbe",
+            "Loading::AddOnLoadedEvent", "RunAbiProbeAndInstallCanary",
             "Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport",
-            "nativeProbe=cache-post-bnm-probe-only-v2", "nativeStage=post-bnm-read-only-abi",
-            "abiProbeRevision=3", "probeComplete=1", "gameHooksInstalled=0",
-            "sfbOpenFiltersHookInstalled=0", "sfbFilterMemoryRead=0",
-            "sfbHookPolicy=disabled-unproven-call-abi",
-            "abi.SFB.OpenFilePanel.filtersExact=", "abi.SFB.OpenFilePanel.static=",
-            "abi.SFB.OpenFilePanel.methodPointer=", "abi.SFB.OpenFilePanel.parameterCount4=",
-            "abi.SFB.OpenFilePanel.return.StringArray=",
-            "abi.SFB.OpenFilePanel.param2.ExtensionFilterArray=",
-            "abi.SFB.OpenFilePanel.param2.typeCode=", "abi.SFB.OpenFilePanel.param2.byref=",
-            "abi.SFB.ExtensionFilter.valueType=", "abi.SFB.ExtensionFilter.instanceSize=",
-            "abi.SFB.ExtensionFilter.elementSize=", "abi.SFB.ExtensionFilter.Name.offset=",
-            "abi.SFB.ExtensionFilter.Extensions.offset=",
-            "abi.SFB.ExtensionFilter.Extensions.StringArray=",
-            "abi.Settings.PauseMenu.ShowSettingsMenu0=",
-            "abi.Mobile.CanvasScaler.SetScaleFactor1=", "abi.Touch.EventSystem.RaycastAll=",
-            "abi.FPS.Application.setTargetFrameRate1=",
-            "abi.Event.scrCamera.SetCustomFrameRateBoolInt=",
+            "nativeProbe=cache-post-bnm-sfb-pass-through-v1",
+            "nativeStage=post-bnm-sfb-pass-through-canary",
+            "abiProbeRevision=4",
+            "sfbHookPolicy=bootstrap3-exact-pass-through-canary",
+            "sfbCanaryAbiGuard=", "sfbCanaryOriginalCaptured=",
+            "sfbOpenFiltersCanaryCalls=", "sfbFilterMemoryRead=0",
+            "struct ExtensionFilterValue", "String* Name;",
+            "Array<String*>* Extensions;",
+            "using OpenFiltersFn = Array<String*>* (*)",
+            "HookOpenFilePanelFilters", "g_oldOpenFilters",
+            "BasicHook(openFilters, HookOpenFilePanelFilters, g_oldOpenFilters)",
+            "return original(title, directory, filters, multiselect);",
         ):
             self.assertIn(required, source)
+        self.assertEqual(source.count("BasicHook("), 1)
         for forbidden in (
-            "BasicHook(", "InstallAllHooks", "InstallSfbHooks", "InstallMobileHooks",
-            "InstallExactOpenFiltersHook", "HookOpenFilePanelFilters",
+            "InstallAllHooks", "InstallSfbHooks", "InstallMobileHooks",
             "V240SettingsOverlay", "V240EventCompat", "V240TouchAssist", "FileSelector",
             "FindClass", "CallStatic", "CallObject", "NewGlobalRef", "pthread_create",
             ".Call(", ".Set(", "CreateNewObject", "RunOpenPicker(",
-            "struct ExtensionFilterValue", "reinterpret_cast<Array<ExtensionFilterValue>*>(",
+            "m_Items[", "filters->",
         ):
             self.assertNotIn(forbidden, source)
 
-    def test_probe_only_resolves_metadata_after_bnm_callback(self):
-        source = LOADER.read_text(encoding="utf-8")
-        callback = source.index("Loading::AddOnLoadedEvent")
-        probe_call = source.index("RunReadOnlyAbiProbe();", callback)
-        self.assertGreater(probe_call, callback)
-        self.assertIn('Class browser("SFB", "StandaloneFileBrowser")', source)
-        self.assertIn('Class extensionFilter("SFB", "ExtensionFilter")', source)
-        self.assertIn('Class eventSystem("UnityEngine.EventSystems", "EventSystem")', source)
-        self.assertIn('Class scrCamera("", "scrCamera")', source)
-        self.assertIn('Class pauseMenu("", "PauseMenu")', source)
-        self.assertIn('"SetCustomFrameRate", {Defaults::Get<bool>(), Defaults::Get<int>()}).IsValid()', source)
-
-    def test_revision3_reads_signature_and_layout_metadata_without_activation(self):
+    def test_canary_is_runtime_guarded_by_proven_v240_abi(self):
         source = LOADER.read_text(encoding="utf-8")
         for required in (
-            "openFilters.GetInfo()", "openInfo->methodPointer", "openFilters._isStatic",
-            "openInfo->parameters_count == 4", "openInfo->parameters[0]",
-            "openInfo->parameters[1]", "openInfo->parameters[2]", "openInfo->parameters[3]",
-            "openInfo->return_type", "extensionFilter.GetArray()",
-            "extensionFilter.GetIl2CppType()", "extensionFilter.GetClass()",
-            "filterClass->instance_size", "filterClass->actualSize", "filterClass->element_size",
-            "filterClass->native_size", "filterName.GetOffset()", "filterExtensions.GetOffset()",
-            "filterName.GetType()", "filterExtensions.GetType()",
+            'browser.GetMethod(\n            "OpenFilePanel", {"title", "directory", "extensions", "multiselect"})',
+            "openInfo->methodPointer != nullptr",
+            "openFilters._isStatic",
+            "openInfo->parameters_count == 4",
+            "SameClass(returnClass, stringArrayClass)",
+            "SameClass(param0Class, stringClass)",
+            "SameClass(param1Class, stringClass)",
+            "SameClass(param2Class, filterArrayClass)",
+            "SameClass(param3Class, boolClass)",
+            "TypeByRef(param2Type) == 0",
+            "TypeValueType(param2Type) == 0",
+            "filterType->valuetype",
+            "sizeof(IL2CPP::Il2CppObject) + sizeof(ExtensionFilterValue)",
+            "filterInstanceSize == expectedBoxedSize",
+            "filterActualSize == expectedBoxedSize",
+            "filterNameOffset == 0",
+            "filterExtensionsOffset == static_cast<long long>(sizeof(void*))",
+            "SameClass(filterNameType, stringClass)",
+            "SameClass(filterExtensionsType, stringArrayClass)",
         ):
             self.assertIn(required, source)
-        self.assertNotIn("m_Items[", source)
-        self.assertNotIn("GetFieldPointer", source)
-        self.assertNotIn("ArrayNew", source)
 
-    def test_cache_native_build_pins_bnm_but_excludes_feature_runtime(self):
+    def test_canary_never_reads_filter_array_or_changes_result(self):
+        source = LOADER.read_text(encoding="utf-8")
+        hook_start = source.index("Array<String*>* HookOpenFilePanelFilters")
+        hook_end = source.index("\n}\n", hook_start) + 2
+        hook = source[hook_start:hook_end]
+        self.assertIn("g_sfbOpenFiltersCanaryCalls.fetch_add", hook)
+        self.assertIn("return original(title, directory, filters, multiselect);", hook)
+        self.assertNotIn("m_Items", hook)
+        self.assertNotIn("Extensions", hook)
+        self.assertNotIn("Name", hook)
+        self.assertNotIn("CreateMonoString", hook)
+
+    def test_cache_native_build_pins_bnm_and_allows_only_canary_hook(self):
         build = BUILD.read_text(encoding="utf-8")
         self.assertIn("V240CacheLoader.cpp", build)
         self.assertIn("HitMargin/A-Dance-of-Fire-and-Ice-Mobile---Load-Custom-Level.git", build)
@@ -82,41 +85,40 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
         self.assertIn("UNITY_VER 213", build)
         self.assertIn("UNITY_PATCH_VER 10", build)
         self.assertIn("BNM/src/Loading.cpp", build)
-        self.assertIn("nativeProbe=cache-post-bnm-probe-only-v2", build)
-        self.assertIn("post-bnm-read-only-abi", build)
-        self.assertIn("sfbHookPolicy=disabled-unproven-call-abi", build)
+        self.assertIn("nativeProbe=cache-post-bnm-sfb-pass-through-v1", build)
+        self.assertIn("bootstrap3-exact-pass-through-canary", build)
+        self.assertIn("assert s.count('BasicHook(') == 1", build)
         self.assertNotIn("build-v240-fixed-native.sh", build)
         self.assertNotIn("V240Fix.cpp", build)
         self.assertNotIn("V240TouchAssist.cpp", build)
         self.assertNotIn("V240EventCompat.cpp", build)
 
-    def test_dynamic_entry_is_activation_free_but_keeps_java_relocation(self):
+    def test_dynamic_entry_remains_java_only(self):
         dynamic = DYNAMIC_ENTRY.read_text(encoding="utf-8")
-        self.assertIn("Recovery channel v6 is deliberately activation-free", dynamic)
-        self.assertIn("metadata-only ABI discovery", dynamic)
         self.assertIn('LEGACY_GEAR_TAG = "adofai-v240-settings-button"', dynamic)
         self.assertIn("scheduleLegacyGearRelocation", dynamic)
         self.assertIn("Gravity.CENTER_VERTICAL | Gravity.END", dynamic)
         self.assertNotIn("V240EventCompat", dynamic)
         self.assertNotIn("System.load(", dynamic)
 
-    def test_channel_packages_read_only_recovery_probe(self):
+    def test_channel_requires_bootstrap3_before_canary_delivery(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("build-v240-cache-native.sh dist/v240-channel-native", workflow)
         self.assertNotIn("build-v240-fixed-native.sh dist/v240-channel-native", workflow)
         self.assertIn("cp dist/v240-channel-native/libv240fix.so", workflow)
         self.assertIn("test_v240_cache_loader.py", workflow)
-        self.assertIn("Build read-only post-BNM recovery probe", workflow)
+        self.assertIn("Build bootstrap3-gated SFB pass-through canary", workflow)
+        self.assertIn("'minBootstrap': 3", workflow)
 
-    def test_rollout_is_boolean_and_enabled_rollout_stays_feature_inert(self):
+    def test_rollout_is_boolean_and_canary_scope_stays_single_hook(self):
         rollout = ROLLOUT.read_text(encoding="utf-8").strip()
         self.assertIn(rollout, ("true", "false"))
         if rollout == "true":
             loader = LOADER.read_text(encoding="utf-8")
             dynamic = DYNAMIC_ENTRY.read_text(encoding="utf-8")
-            self.assertIn("gameHooksInstalled=0", loader)
-            self.assertNotIn("BasicHook(", loader)
-            self.assertIn("activation-free", dynamic)
+            self.assertEqual(loader.count("BasicHook("), 1)
+            self.assertIn("sfbFilterMemoryRead=0", loader)
+            self.assertIn("bootstrap3-exact-pass-through-canary", loader)
             self.assertNotIn("System.load(", dynamic)
 
 

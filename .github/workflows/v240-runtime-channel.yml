@@ -44,7 +44,7 @@ jobs:
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
           sdkmanager 'platforms;android-35' 'build-tools;36.0.0' 'ndk;29.0.14206865'
 
-      - name: Build read-only post-BNM recovery probe
+      - name: Build bootstrap3-gated SFB pass-through canary
         run: bash scripts/build-v240-cache-native.sh dist/v240-channel-native
 
       - name: Build hot-swappable dynamic DEX
@@ -82,7 +82,7 @@ jobs:
               raise SystemExit('channel-rollout.txt must be true or false')
           manifest = {
               'schema': 1,
-              'minBootstrap': 1,
+              'minBootstrap': 3,
               'sourceRepository': 'hoonex/adofai',
               'sourceCommit': version,
               'version': version,
