@@ -44,7 +44,7 @@ jobs:
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
           sdkmanager 'platforms;android-35' 'build-tools;36.0.0' 'ndk;29.0.14206865'
 
-      - name: Build bootstrap3-gated SFB pass-through canary
+      - name: Build self-fused SFB pass-through canary
         run: bash scripts/build-v240-cache-native.sh dist/v240-channel-native
 
       - name: Build hot-swappable dynamic DEX
@@ -82,7 +82,7 @@ jobs:
               raise SystemExit('channel-rollout.txt must be true or false')
           manifest = {
               'schema': 1,
-              'minBootstrap': 3,
+              'minBootstrap': 1,
               'sourceRepository': 'hoonex/adofai',
               'sourceCommit': version,
               'version': version,
@@ -113,11 +113,7 @@ jobs:
               --title 'ADOFAI 2.4 Cache Runtime Channel' \
               --notes 'Machine-consumed cache runtime channel. Runtime assets are commit-addressed and the stable bootstrap verifies manifest and payload digests before next-launch activation.'
           fi
-          # Never clobber a commit-addressed runtime. A repeated publication of the
-          # same commit must fail rather than silently replacing executable bytes.
           gh release upload "$TAG" "$ASSET"
-          # The manifest is the movable channel pointer. It references the immutable
-          # commit-addressed asset and includes its SHA-256 plus the source commit.
           gh release upload "$TAG" dist/v240-runtime-channel/manifest.json --clobber
 
       - uses: actions/upload-artifact@v4

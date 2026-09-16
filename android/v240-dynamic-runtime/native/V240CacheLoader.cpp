@@ -1,9 +1,12 @@
 #include <jni.h>
 #include <atomic>
 #include <cstdint>
+#include <dlfcn.h>
+#include <fcntl.h>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <unistd.h>
 
 #include "universe.h"
 
@@ -15,19 +18,30 @@ std::atomic<bool> g_bnmLoadRequested{false};
 std::atomic<bool> g_bnmLoadedCallback{false};
 std::atomic<bool> g_probeComplete{false};
 std::atomic<bool> g_sfbOpenFiltersHookInstalled{false};
+std::atomic<bool> g_sfbCanaryMarkerReady{false};
+std::atomic<bool> g_sfbCanaryInstallAttempted{false};
+std::atomic<int> g_sfbCanaryRecoveryState{0};
 std::atomic<int> g_sfbOpenFiltersCanaryCalls{0};
+std::atomic<int> g_sfbOpenFiltersCanaryReturns{0};
+std::atomic<int> g_sfbCanaryCallsInFlight{0};
+std::atomic<int> g_sfbCanaryMarkerWriteFailures{0};
 std::mutex g_reportMutex;
+std::string g_installMarkerPath;
+std::string g_callMarkerPath;
 std::string g_report =
-        "nativeProbe=cache-post-bnm-sfb-pass-through-v1\n"
-        "nativeStage=post-bnm-sfb-pass-through-canary\n"
-        "abiProbeRevision=4\n"
+        "nativeProbe=cache-post-bnm-sfb-self-fused-v1\n"
+        "nativeStage=post-bnm-sfb-self-fused-canary\n"
+        "abiProbeRevision=5\n"
         "bnmLoadRequested=0\n"
         "bnmLoadedCallback=0\n"
         "probeComplete=0\n"
         "gameHooksInstalled=0\n"
         "sfbOpenFiltersHookInstalled=0\n"
         "sfbFilterMemoryRead=0\n"
-        "sfbHookPolicy=bootstrap3-exact-pass-through-canary\n"
+        "sfbHookPolicy=bootstrap1-self-fused-methodinfo-pass-through\n"
+        "sfbCanarySelfFuse=1\n"
+        "sfbCanaryMarkerReady=0\n"
+        "sfbCanaryRecoveryState=0\n"
         "sfbCanaryAbiGuard=0\n";
 
 struct ExtensionFilterValue {
@@ -37,20 +51,97 @@ struct ExtensionFilterValue {
 static_assert(sizeof(ExtensionFilterValue) == sizeof(void*) * 2,
               "ExtensionFilter payload must be two managed references");
 
-using OpenFiltersFn = Array<String*>* (*)(String*, String*, Array<ExtensionFilterValue>*, bool);
+using OpenFiltersFn = Array<String*>* (*)(
+        String*, String*, Array<ExtensionFilterValue>*, bool, IL2CPP::MethodInfo*);
 OpenFiltersFn g_oldOpenFilters = nullptr;
+
+std::string ResolveRuntimeDirectory() {
+    Dl_info info{};
+    if (dladdr(reinterpret_cast<void*>(&ResolveRuntimeDirectory), &info) == 0 ||
+        info.dli_fname == nullptr) {
+        return "";
+    }
+    std::string path(info.dli_fname);
+    const std::size_t slash = path.find_last_of('/');
+    if (slash == std::string::npos || slash == 0) return "";
+    return path.substr(0, slash);
+}
+
+bool MarkerExists(const std::string& path) {
+    return !path.empty() && access(path.c_str(), F_OK) == 0;
+}
+
+bool WriteMarker(const std::string& path) {
+    if (path.empty()) return false;
+    const int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+    if (fd < 0) return false;
+    static constexpr char kPending[] = "pending\n";
+    const ssize_t written = write(fd, kPending, sizeof(kPending) - 1);
+    const bool ok = written == static_cast<ssize_t>(sizeof(kPending) - 1) && fsync(fd) == 0;
+    close(fd);
+    if (!ok) unlink(path.c_str());
+    return ok;
+}
+
+void ClearMarker(const std::string& path) {
+    if (!path.empty()) unlink(path.c_str());
+}
+
+bool PrepareCanarySelfFuse() {
+    const std::string runtimeDir = ResolveRuntimeDirectory();
+    if (runtimeDir.empty()) {
+        g_sfbCanaryRecoveryState.store(3, std::memory_order_release);
+        return false;
+    }
+    g_installMarkerPath = runtimeDir + "/sfb-canary-r5-install.pending";
+    g_callMarkerPath = runtimeDir + "/sfb-canary-r5-call.pending";
+    g_sfbCanaryMarkerReady.store(true, std::memory_order_release);
+
+    if (MarkerExists(g_installMarkerPath)) {
+        g_sfbCanaryRecoveryState.store(1, std::memory_order_release);
+        return false;
+    }
+    if (MarkerExists(g_callMarkerPath)) {
+        g_sfbCanaryRecoveryState.store(2, std::memory_order_release);
+        return false;
+    }
+
+    const std::string probe = runtimeDir + "/sfb-canary-r5-marker-probe.tmp";
+    ClearMarker(probe);
+    if (!WriteMarker(probe)) {
+        g_sfbCanaryMarkerReady.store(false, std::memory_order_release);
+        g_sfbCanaryRecoveryState.store(3, std::memory_order_release);
+        return false;
+    }
+    ClearMarker(probe);
+    return true;
+}
 
 Array<String*>* HookOpenFilePanelFilters(
         String* title,
         String* directory,
         Array<ExtensionFilterValue>* filters,
-        bool multiselect) {
-    g_sfbOpenFiltersCanaryCalls.fetch_add(1, std::memory_order_relaxed);
+        bool multiselect,
+        IL2CPP::MethodInfo* methodInfo) {
     OpenFiltersFn original = g_oldOpenFilters;
     if (original == nullptr) return nullptr;
-    // Pass-through canary only. Do not inspect ExtensionFilter[] memory and do not
-    // change arguments or results. This proves the exact native trampoline ABI.
-    return original(title, directory, filters, multiselect);
+
+    g_sfbOpenFiltersCanaryCalls.fetch_add(1, std::memory_order_relaxed);
+    const int previousInFlight = g_sfbCanaryCallsInFlight.fetch_add(1, std::memory_order_acq_rel);
+    if (previousInFlight == 0 && !WriteMarker(g_callMarkerPath)) {
+        g_sfbCanaryMarkerWriteFailures.fetch_add(1, std::memory_order_relaxed);
+        g_sfbCanaryCallsInFlight.fetch_sub(1, std::memory_order_acq_rel);
+        return nullptr;
+    }
+
+    // Pass-through canary only. Keep the generated IL2CPP hidden MethodInfo* intact.
+    // Do not inspect ExtensionFilter[] memory and do not change arguments or results.
+    Array<String*>* result = original(title, directory, filters, multiselect, methodInfo);
+    g_sfbOpenFiltersCanaryReturns.fetch_add(1, std::memory_order_relaxed);
+    if (g_sfbCanaryCallsInFlight.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+        ClearMarker(g_callMarkerPath);
+    }
+    return result;
 }
 
 bool SameClass(const Class& left, const Class& right) {
@@ -69,7 +160,7 @@ int TypeValueType(const IL2CPP::Il2CppType* type) {
     return type == nullptr ? -1 : (type->valuetype ? 1 : 0);
 }
 
-void RunAbiProbeAndInstallCanary() {
+void RunAbiProbeAndMaybeInstallCanary() {
     Class browser("SFB", "StandaloneFileBrowser");
     Class extensionFilter("SFB", "ExtensionFilter");
     Class canvasScaler("UnityEngine.UI", "CanvasScaler");
@@ -150,31 +241,30 @@ void RunAbiProbeAndInstallCanary() {
     const uint32_t expectedBoxedSize =
             static_cast<uint32_t>(sizeof(IL2CPP::Il2CppObject) + sizeof(ExtensionFilterValue));
     const bool canaryAbiGuard =
-            openFiltersExact &&
-            openMethodPointer &&
-            openStatic &&
-            openParameterCount4 &&
-            openReturnStringArray &&
-            openParam0String &&
-            openParam1String &&
-            openParam2FilterArray &&
-            openParam3Bool &&
-            TypeByRef(param2Type) == 0 &&
-            TypeValueType(param2Type) == 0 &&
-            filterValueType &&
-            filterInstanceSize == expectedBoxedSize &&
-            filterActualSize == expectedBoxedSize &&
-            filterNameField &&
-            filterExtensionsField &&
-            filterNameOffset == 0 &&
+            openFiltersExact && openMethodPointer && openStatic && openParameterCount4 &&
+            openReturnStringArray && openParam0String && openParam1String &&
+            openParam2FilterArray && openParam3Bool &&
+            TypeByRef(param2Type) == 0 && TypeValueType(param2Type) == 0 &&
+            filterValueType && filterInstanceSize == expectedBoxedSize &&
+            filterActualSize == expectedBoxedSize && filterNameField &&
+            filterExtensionsField && filterNameOffset == 0 &&
             filterExtensionsOffset == static_cast<long long>(sizeof(void*)) &&
-            filterNameString &&
-            filterExtensionsStringArray;
+            filterNameString && filterExtensionsStringArray;
 
-    if (canaryAbiGuard) {
+    const bool selfFuseReady = PrepareCanarySelfFuse();
+    if (canaryAbiGuard && selfFuseReady && WriteMarker(g_installMarkerPath)) {
+        g_sfbCanaryInstallAttempted.store(true, std::memory_order_release);
         BasicHook(openFilters, HookOpenFilePanelFilters, g_oldOpenFilters);
-        g_sfbOpenFiltersHookInstalled.store(
-                g_oldOpenFilters != nullptr, std::memory_order_release);
+        const bool installed = g_oldOpenFilters != nullptr;
+        g_sfbOpenFiltersHookInstalled.store(installed, std::memory_order_release);
+        if (installed) {
+            ClearMarker(g_installMarkerPath);
+        } else {
+            g_sfbCanaryRecoveryState.store(4, std::memory_order_release);
+        }
+    } else if (canaryAbiGuard && selfFuseReady) {
+        g_sfbCanaryMarkerReady.store(false, std::memory_order_release);
+        g_sfbCanaryRecoveryState.store(3, std::memory_order_release);
     }
 
     const bool setScaleFactor1 = canvasScaler && canvasScaler.GetMethod("SetScaleFactor", 1).IsValid();
@@ -189,18 +279,14 @@ void RunAbiProbeAndInstallCanary() {
     const bool raycastAll = eventSystem && eventSystem.GetMethod("RaycastAll").IsValid();
     const bool pointerPosition = pointerEventData
             && pointerEventData.GetProperty("position").IsValid();
-    const bool listCount = listRaycastResult
-            && listRaycastResult.GetProperty("Count").IsValid();
-    const bool listClear = listRaycastResult
-            && listRaycastResult.GetMethod("Clear", 0).IsValid();
+    const bool listCount = listRaycastResult && listRaycastResult.GetProperty("Count").IsValid();
+    const bool listClear = listRaycastResult && listRaycastResult.GetMethod("Clear", 0).IsValid();
     const bool touchCount = input && input.GetMethod("get_touchCount", 0).IsValid();
     const bool sceneName = adoBase && adoBase.GetMethod("get_sceneName").IsValid();
-
     const bool setTargetFrameRate1 = application
             && application.GetMethod("set_targetFrameRate", 1).IsValid();
     const bool setVSyncCount1 = qualitySettings
             && qualitySettings.GetMethod("set_vSyncCount", 1).IsValid();
-
     const bool setCustomFrameRateBoolInt = scrCamera && scrCamera.GetMethod(
             "SetCustomFrameRate", {Defaults::Get<bool>(), Defaults::Get<int>()}).IsValid();
     const bool callMethodName = ffxCallMethod && ffxCallMethod.GetField("methodName").IsValid();
@@ -208,25 +294,29 @@ void RunAbiProbeAndInstallCanary() {
             "Decode", {levelEvent.GetCompileTimeClass()}).IsValid();
     const bool callMethodStartEffect = ffxCallMethod && scrPlanet && ffxCallMethod.GetMethod(
             "StartEffect", {scrPlanet.GetCompileTimeClass()}).IsValid();
-
     const bool pauseMenuClass = static_cast<bool>(pauseMenu);
     const bool pauseMenuShowSettingsMenu0 = pauseMenu
             && pauseMenu.GetMethod("ShowSettingsMenu", 0).IsValid();
     const bool hookInstalled = g_sfbOpenFiltersHookInstalled.load(std::memory_order_acquire);
 
     std::ostringstream out;
-    out << "nativeProbe=cache-post-bnm-sfb-pass-through-v1\n"
-        << "nativeStage=post-bnm-sfb-pass-through-canary\n"
-        << "abiProbeRevision=4\n"
+    out << "nativeProbe=cache-post-bnm-sfb-self-fused-v1\n"
+        << "nativeStage=post-bnm-sfb-self-fused-canary\n"
+        << "abiProbeRevision=5\n"
         << "bnmLoadRequested=1\n"
         << "bnmLoadedCallback=1\n"
         << "probeComplete=1\n"
         << "gameHooksInstalled=" << (hookInstalled ? 1 : 0) << '\n'
         << "sfbOpenFiltersHookInstalled=" << (hookInstalled ? 1 : 0) << '\n'
         << "sfbFilterMemoryRead=0\n"
-        << "sfbHookPolicy=bootstrap3-exact-pass-through-canary\n"
+        << "sfbHookPolicy=bootstrap1-self-fused-methodinfo-pass-through\n"
+        << "sfbCanarySelfFuse=1\n"
+        << "sfbCanaryMarkerReady=" << (g_sfbCanaryMarkerReady.load() ? 1 : 0) << '\n'
+        << "sfbCanaryRecoveryState=" << g_sfbCanaryRecoveryState.load() << '\n'
+        << "sfbCanaryInstallAttempted=" << (g_sfbCanaryInstallAttempted.load() ? 1 : 0) << '\n'
         << "sfbCanaryAbiGuard=" << (canaryAbiGuard ? 1 : 0) << '\n'
         << "sfbCanaryOriginalCaptured=" << (g_oldOpenFilters != nullptr ? 1 : 0) << '\n'
+        << "sfbCanaryHiddenMethodInfo=1\n"
         << "abi.SFB.class=" << (browser ? 1 : 0) << '\n'
         << "abi.SFB.OpenFilePanel4=" << (openFile4 ? 1 : 0) << '\n'
         << "abi.SFB.OpenFilePanel.filtersExact=" << (openFiltersExact ? 1 : 0) << '\n'
@@ -278,8 +368,7 @@ void RunAbiProbeAndInstallCanary() {
         << "abi.Mobile.ADOBase.sceneName=" << (sceneName ? 1 : 0) << '\n'
         << "abi.FPS.Application.setTargetFrameRate1=" << (setTargetFrameRate1 ? 1 : 0) << '\n'
         << "abi.FPS.QualitySettings.setVSyncCount1=" << (setVSyncCount1 ? 1 : 0) << '\n'
-        << "abi.Event.scrCamera.SetCustomFrameRateBoolInt="
-        << (setCustomFrameRateBoolInt ? 1 : 0) << '\n'
+        << "abi.Event.scrCamera.SetCustomFrameRateBoolInt=" << (setCustomFrameRateBoolInt ? 1 : 0) << '\n'
         << "abi.Event.ffxCallMethod.methodName=" << (callMethodName ? 1 : 0) << '\n'
         << "abi.Event.ffxCallMethod.DecodeLevelEvent=" << (callMethodDecode ? 1 : 0) << '\n'
         << "abi.Event.ffxCallMethod.StartEffectPlanet=" << (callMethodStartEffect ? 1 : 0) << '\n'
@@ -296,35 +385,29 @@ void RunAbiProbeAndInstallCanary() {
 std::string CurrentReport() {
     std::ostringstream out;
     if (!g_bnmLoadRequested.load(std::memory_order_acquire)) {
-        out << "nativeProbe=cache-post-bnm-sfb-pass-through-v1\n"
-            << "nativeStage=post-bnm-sfb-pass-through-canary\n"
-            << "abiProbeRevision=4\n"
-            << "bnmLoadRequested=0\n"
-            << "bnmLoadedCallback=0\n"
-            << "probeComplete=0\n"
-            << "gameHooksInstalled=0\n"
-            << "sfbOpenFiltersHookInstalled=0\n"
-            << "sfbFilterMemoryRead=0\n"
-            << "sfbHookPolicy=bootstrap3-exact-pass-through-canary\n"
-            << "sfbCanaryAbiGuard=0\n";
+        out << g_report;
     } else if (!g_bnmLoadedCallback.load(std::memory_order_acquire)) {
-        out << "nativeProbe=cache-post-bnm-sfb-pass-through-v1\n"
-            << "nativeStage=post-bnm-sfb-pass-through-canary\n"
-            << "abiProbeRevision=4\n"
+        out << "nativeProbe=cache-post-bnm-sfb-self-fused-v1\n"
+            << "nativeStage=post-bnm-sfb-self-fused-canary\n"
+            << "abiProbeRevision=5\n"
             << "bnmLoadRequested=1\n"
             << "bnmLoadedCallback=0\n"
             << "probeComplete=0\n"
             << "gameHooksInstalled=0\n"
             << "sfbOpenFiltersHookInstalled=0\n"
             << "sfbFilterMemoryRead=0\n"
-            << "sfbHookPolicy=bootstrap3-exact-pass-through-canary\n"
+            << "sfbHookPolicy=bootstrap1-self-fused-methodinfo-pass-through\n"
+            << "sfbCanarySelfFuse=1\n"
+            << "sfbCanaryMarkerReady=0\n"
+            << "sfbCanaryRecoveryState=0\n"
             << "sfbCanaryAbiGuard=0\n";
     } else {
         std::lock_guard<std::mutex> lock(g_reportMutex);
         out << g_report;
     }
-    out << "sfbOpenFiltersCanaryCalls="
-        << g_sfbOpenFiltersCanaryCalls.load(std::memory_order_relaxed) << '\n';
+    out << "sfbOpenFiltersCanaryCalls=" << g_sfbOpenFiltersCanaryCalls.load() << '\n'
+        << "sfbOpenFiltersCanaryReturns=" << g_sfbOpenFiltersCanaryReturns.load() << '\n'
+        << "sfbCanaryMarkerWriteFailures=" << g_sfbCanaryMarkerWriteFailures.load() << '\n';
     return out.str();
 }
 } // namespace
@@ -340,7 +423,7 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     Loading::TryLoadByJNI(env);
     Loading::AddOnLoadedEvent([]() {
         g_bnmLoadedCallback.store(true, std::memory_order_release);
-        RunAbiProbeAndInstallCanary();
+        RunAbiProbeAndMaybeInstallCanary();
     });
     return JNI_VERSION_1_6;
 }

@@ -30,20 +30,24 @@ import sys
 s = Path(sys.argv[1]).read_text(encoding='utf-8')
 for marker in (
     'JNI_OnLoad', 'GetEnv', 'universe.h', 'Loading::TryLoadByJNI',
-    'Loading::AddOnLoadedEvent', 'RunAbiProbeAndInstallCanary',
+    'Loading::AddOnLoadedEvent', 'RunAbiProbeAndMaybeInstallCanary',
     'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport',
-    'nativeProbe=cache-post-bnm-sfb-pass-through-v1',
-    'nativeStage=post-bnm-sfb-pass-through-canary',
-    'abiProbeRevision=4',
-    'sfbHookPolicy=bootstrap3-exact-pass-through-canary',
-    'sfbCanaryAbiGuard=', 'sfbCanaryOriginalCaptured=',
-    'sfbOpenFiltersCanaryCalls=', 'sfbFilterMemoryRead=0',
-    'struct ExtensionFilterValue',
+    'nativeProbe=cache-post-bnm-sfb-self-fused-v1',
+    'nativeStage=post-bnm-sfb-self-fused-canary', 'abiProbeRevision=5',
+    'sfbHookPolicy=bootstrap1-self-fused-methodinfo-pass-through',
+    'sfbCanarySelfFuse=1', 'sfbCanaryMarkerReady=', 'sfbCanaryRecoveryState=',
+    'sfbCanaryHiddenMethodInfo=1', 'sfbOpenFiltersCanaryCalls=',
+    'sfbOpenFiltersCanaryReturns=', 'sfbCanaryMarkerWriteFailures=',
+    'sfbFilterMemoryRead=0', 'struct ExtensionFilterValue',
+    'IL2CPP::MethodInfo* methodInfo',
     'BasicHook(openFilters, HookOpenFilePanelFilters, g_oldOpenFilters)',
-    'return original(title, directory, filters, multiselect);',
+    'original(title, directory, filters, multiselect, methodInfo)',
+    'dladdr(', 'sfb-canary-r5-install.pending', 'sfb-canary-r5-call.pending',
+    'O_CREAT | O_EXCL | O_CLOEXEC', 'fsync(fd)',
 ):
     assert marker in s, marker
 assert s.count('BasicHook(') == 1
+assert 'original(title, directory, filters, multiselect);' not in s
 for forbidden in (
     'InstallAllHooks', 'InstallSfbHooks', 'InstallMobileHooks',
     'V240SettingsOverlay', 'V240EventCompat', 'V240TouchAssist', 'FileSelector',
@@ -121,10 +125,13 @@ cp "${LIB}" "${OUT}/libv240fix.so"
 readelf -h "${OUT}/libv240fix.so" | grep -q 'AArch64'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'JNI_OnLoad'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport'
-strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-sfb-pass-through-v1'
-strings "${OUT}/libv240fix.so" | grep -q 'nativeStage=post-bnm-sfb-pass-through-canary'
-strings "${OUT}/libv240fix.so" | grep -q 'sfbHookPolicy=bootstrap3-exact-pass-through-canary'
+strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-sfb-self-fused-v1'
+strings "${OUT}/libv240fix.so" | grep -q 'nativeStage=post-bnm-sfb-self-fused-canary'
+strings "${OUT}/libv240fix.so" | grep -q 'sfbHookPolicy=bootstrap1-self-fused-methodinfo-pass-through'
+strings "${OUT}/libv240fix.so" | grep -q 'sfbCanarySelfFuse=1'
+strings "${OUT}/libv240fix.so" | grep -q 'sfbCanaryHiddenMethodInfo=1'
 strings "${OUT}/libv240fix.so" | grep -q 'sfbOpenFiltersCanaryCalls='
+strings "${OUT}/libv240fix.so" | grep -q 'sfbOpenFiltersCanaryReturns='
 strings "${OUT}/libv240fix.so" | grep -q 'sfbFilterMemoryRead=0'
 if readelf -Ws "${OUT}/libv240fix.so" | grep -Eq 'Java_com_unity3d_player_V240SettingsOverlay_|Java_com_unity3d_player_V240EventCompat_'; then
   echo 'cache canary unexpectedly exported feature activation JNI' >&2
