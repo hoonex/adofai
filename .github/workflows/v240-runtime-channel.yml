@@ -5,6 +5,8 @@ on:
     branches: [fix/v240-custom-bugfix]
     paths:
       - 'android/v240-dynamic-runtime/**'
+      - 'scripts/apply-v240-r10-raycast-probe.py'
+      - 'scripts/apply-v240-r11-editor-probe.py'
       - 'scripts/build-v240-cache-native.sh'
       - 'scripts/build-v240-dynamic-runtime.sh'
       - 'tests/test_v240_cache_loader.py'
@@ -44,7 +46,7 @@ jobs:
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
           sdkmanager 'platforms;android-35' 'build-tools;36.0.0' 'ndk;29.0.14206865'
 
-      - name: Build self-fused SFB SAF filtered-open runtime
+      - name: Build r11 parent bridge and exact scnEditor pass-through probes
         run: bash scripts/build-v240-cache-native.sh dist/v240-channel-native
 
       - name: Build hot-swappable dynamic DEX
@@ -82,7 +84,7 @@ jobs:
               raise SystemExit('channel-rollout.txt must be true or false')
           manifest = {
               'schema': 1,
-              'minBootstrap': 1,
+              'minBootstrap': 3,
               'sourceRepository': 'hoonex/adofai',
               'sourceCommit': version,
               'version': version,
