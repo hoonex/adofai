@@ -1,13 +1,11 @@
 #include <jni.h>
 #include <atomic>
-#include <chrono>
 #include <cstdint>
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <mutex>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <vector>
 #include <unistd.h>
 
@@ -18,12 +16,11 @@ using namespace BNM::Structures::Mono;
 
 namespace {
 JavaVM* g_vm = nullptr;
-jclass g_selectorClass = nullptr;
-jmethodID g_selectFile = nullptr;
-jmethodID g_getFilePath = nullptr;
-jfieldID g_isDone = nullptr;
+jclass g_bridgeClass = nullptr;
+jmethodID g_beginOpen = nullptr;
+jmethodID g_await = nullptr;
 Class g_stringClass;
-std::mutex g_selectorMutex;
+std::mutex g_bridgeMutex;
 std::mutex g_pickerMutex;
 std::mutex g_reportMutex;
 std::mutex g_filterTextMutex;
@@ -49,6 +46,7 @@ std::atomic<int> g_filterFallbacks{0};
 std::atomic<int> g_filterCount{0};
 std::atomic<int> g_extensionCount{0};
 std::string g_lastExtensions = "<none>";
+std::string g_lastMime = "<none>";
 std::string g_installMarker;
 std::string g_callMarker;
 
@@ -60,9 +58,9 @@ constexpr std::size_t kMaxJoinedExtensions = 512;
 constexpr const char* kBroadExtensions = "adofai,zip,json,ogg,mp3,wav,png,jpg,jpeg";
 
 std::string g_report =
-        "nativeProbe=cache-post-bnm-sfb-saf-filtered-v1\n"
-        "nativeStage=post-bnm-sfb-saf-filtered-open\n"
-        "abiProbeRevision=7\n"
+        "nativeProbe=cache-post-bnm-sfb-saf-direct-v1\n"
+        "nativeStage=post-bnm-sfb-saf-direct-document\n"
+        "abiProbeRevision=8\n"
         "bnmLoadRequested=0\n"
         "bnmLoadedCallback=0\n"
         "probeComplete=0\n"
@@ -70,13 +68,15 @@ std::string g_report =
         "sfbOpenFiltersHookInstalled=0\n"
         "sfbFilterMemoryRead=1\n"
         "sfbFilterReadBounded=1\n"
-        "sfbHookPolicy=bootstrap1-self-fused-saf-filtered-open\n"
+        "sfbHookPolicy=bootstrap1-self-fused-saf-direct-document\n"
         "sfbCanarySelfFuse=1\n"
         "sfbCanaryMarkerReady=0\n"
         "sfbCanaryRecoveryState=0\n"
         "sfbCanaryAbiGuard=0\n"
         "sfbSafBridgeReady=0\n"
-        "sfbOriginalCallUsed=0\n";
+        "sfbOriginalCallUsed=0\n"
+        "sfbPickerBackend=direct-document\n"
+        "sfbFileSelectorBypassed=1\n";
 
 struct ExtensionFilterValue {
     String* Name;
@@ -129,12 +129,12 @@ void ClearMarker(const std::string& path) {
 bool PrepareSelfFuse() {
     const std::string dir = RuntimeDir();
     if (dir.empty()) { g_recoveryState.store(3); return false; }
-    g_installMarker = dir + "/sfb-canary-r7-install.pending";
-    g_callMarker = dir + "/sfb-canary-r7-call.pending";
+    g_installMarker = dir + "/sfb-canary-r8-install.pending";
+    g_callMarker = dir + "/sfb-canary-r8-call.pending";
     g_markerReady.store(true);
     if (MarkerExists(g_installMarker)) { g_recoveryState.store(1); return false; }
     if (MarkerExists(g_callMarker)) { g_recoveryState.store(2); return false; }
-    const std::string probe = dir + "/sfb-canary-r7-marker-probe.tmp";
+    const std::string probe = dir + "/sfb-canary-r8-marker-probe.tmp";
     ClearMarker(probe);
     if (!WriteMarker(probe)) { g_markerReady.store(false); g_recoveryState.store(3); return false; }
     ClearMarker(probe);
@@ -153,8 +153,8 @@ bool GetEnv(JNIEnv** env, bool* attached) {
     return true;
 }
 
-jclass LoadAppClass(JNIEnv* env) {
-    jclass direct = env->FindClass("com/unity3d/player/FileSelector");
+jclass LoadAppClass(JNIEnv* env, const char* slashName, const char* dotName) {
+    jclass direct = env->FindClass(slashName);
     if (direct != nullptr && !env->ExceptionCheck()) return direct;
     if (env->ExceptionCheck()) env->ExceptionClear();
 
@@ -177,7 +177,7 @@ jclass LoadAppClass(JNIEnv* env) {
             : env->GetMethodID(loaderClass, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
     jclass result = nullptr;
     if (loader != nullptr && loadClass != nullptr && !env->ExceptionCheck()) {
-        jstring name = env->NewStringUTF("com.unity3d.player.FileSelector");
+        jstring name = env->NewStringUTF(dotName);
         jobject clazz = name == nullptr ? nullptr : env->CallObjectMethod(loader, loadClass, name);
         if (name) env->DeleteLocalRef(name);
         if (clazz != nullptr && !env->ExceptionCheck()) result = reinterpret_cast<jclass>(clazz);
@@ -191,26 +191,26 @@ jclass LoadAppClass(JNIEnv* env) {
     return result;
 }
 
-bool InitSelector(JNIEnv* env) {
-    std::lock_guard<std::mutex> lock(g_selectorMutex);
-    if (g_selectorClass && g_selectFile && g_getFilePath && g_isDone) return true;
-    jclass local = LoadAppClass(env);
+bool InitBridge(JNIEnv* env) {
+    std::lock_guard<std::mutex> lock(g_bridgeMutex);
+    if (g_bridgeClass && g_beginOpen && g_await) return true;
+    jclass local = LoadAppClass(env,
+            "com/unity3d/player/V240AndroidBridge",
+            "com.unity3d.player.V240AndroidBridge");
     if (local == nullptr) return false;
-    jmethodID selectFile = env->GetStaticMethodID(local, "selectFile", "(Ljava/lang/String;Z)V");
-    jmethodID getFilePath = env->GetStaticMethodID(local, "getFilePath", "()Ljava/lang/String;");
-    jfieldID isDone = env->GetStaticFieldID(local, "isDone", "Z");
+    jmethodID beginOpen = env->GetStaticMethodID(local, "beginOpen", "(Ljava/lang/String;Z)I");
+    jmethodID await = env->GetStaticMethodID(local, "await", "(IJ)Ljava/lang/String;");
     if (env->ExceptionCheck()) env->ExceptionClear();
-    if (selectFile == nullptr || getFilePath == nullptr || isDone == nullptr) {
+    if (beginOpen == nullptr || await == nullptr) {
         env->DeleteLocalRef(local);
         return false;
     }
     jclass global = reinterpret_cast<jclass>(env->NewGlobalRef(local));
     env->DeleteLocalRef(local);
     if (global == nullptr) return false;
-    g_selectorClass = global;
-    g_selectFile = selectFile;
-    g_getFilePath = getFilePath;
-    g_isDone = isDone;
+    g_bridgeClass = global;
+    g_beginOpen = beginOpen;
+    g_await = await;
     return true;
 }
 
@@ -218,16 +218,14 @@ bool ProbeSafBridge() {
     JNIEnv* env = nullptr;
     bool attached = false;
     if (!GetEnv(&env, &attached)) return false;
-    const bool ready = InitSelector(env);
+    const bool ready = InitBridge(env);
     if (attached) g_vm->DetachCurrentThread();
     g_safBridgeReady.store(ready);
     return ready;
 }
 
 bool ContainsExtension(const std::vector<std::string>& values, const std::string& candidate) {
-    for (const std::string& value : values) {
-        if (value == candidate) return true;
-    }
+    for (const std::string& value : values) if (value == candidate) return true;
     return false;
 }
 
@@ -235,7 +233,6 @@ bool NormalizeExtension(String* value, std::string* out) {
     if (value == nullptr || out == nullptr) return false;
     const int length = value->length;
     if (length <= 0 || length > kMaxExtensionChars + 2) return false;
-
     std::string ascii;
     ascii.reserve(static_cast<std::size_t>(length));
     for (int i = 0; i < length; ++i) {
@@ -245,11 +242,9 @@ bool NormalizeExtension(String* value, std::string* out) {
         if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
         ascii.push_back(c);
     }
-
     std::size_t start = 0;
     while (start < ascii.size() && (ascii[start] == '.' || ascii[start] == '*')) ++start;
     if (start >= ascii.size()) return false;
-
     std::string normalized = ascii.substr(start);
     if (normalized.empty() || normalized.size() > static_cast<std::size_t>(kMaxExtensionChars)) return false;
     for (char c : normalized) {
@@ -269,17 +264,14 @@ bool ReadFilterExtensions(Array<ExtensionFilterValue>* filters,
     g_filterCount.store(0);
     g_extensionCount.store(0);
     if (filters == nullptr) return false;
-
     const std::size_t filterCount = static_cast<std::size_t>(filters->capacity);
     if (filterCount > kMaxExtensionFilters) return false;
     g_filterCount.store(static_cast<int>(filterCount));
-
     for (std::size_t i = 0; i < filterCount; ++i) {
         Array<String*>* extensions = filters->m_Items[i].Extensions;
         if (extensions == nullptr) continue;
         const std::size_t extensionCount = static_cast<std::size_t>(extensions->capacity);
         if (extensionCount > kMaxExtensionsPerFilter) return false;
-
         for (std::size_t j = 0; j < extensionCount; ++j) {
             String* extension = extensions->m_Items[j];
             if (extension == nullptr) continue;
@@ -291,7 +283,6 @@ bool ReadFilterExtensions(Array<ExtensionFilterValue>* filters,
             }
         }
     }
-
     g_extensionCount.store(static_cast<int>(values->size()));
     g_filterReadSuccess.fetch_add(1);
     return true;
@@ -314,6 +305,10 @@ void SetLastExtensions(const std::string& value) {
     std::lock_guard<std::mutex> lock(g_filterTextMutex);
     g_lastExtensions = value;
 }
+void SetLastMime(const std::string& value) {
+    std::lock_guard<std::mutex> lock(g_filterTextMutex);
+    g_lastMime = value;
+}
 
 std::string ResolvePickerExtensions(Array<ExtensionFilterValue>* filters) {
     std::vector<std::string> values;
@@ -328,27 +323,68 @@ std::string ResolvePickerExtensions(Array<ExtensionFilterValue>* filters) {
     return kBroadExtensions;
 }
 
+std::string MimeForExtension(const std::string& extension) {
+    if (extension == "png") return "image/png";
+    if (extension == "jpg" || extension == "jpeg") return "image/jpeg";
+    if (extension == "ogg") return "audio/ogg";
+    if (extension == "mp3") return "audio/mpeg";
+    if (extension == "wav") return "audio/wav";
+    if (extension == "zip" || extension == "adozip") return "application/zip";
+    if (extension == "json") return "application/json";
+    return "";
+}
+
+std::string ResolvePickerMime(const std::string& extensions) {
+    std::string common;
+    std::size_t start = 0;
+    while (start <= extensions.size()) {
+        const std::size_t end = extensions.find(',', start);
+        const std::string extension = extensions.substr(start,
+                end == std::string::npos ? std::string::npos : end - start);
+        if (!extension.empty()) {
+            const std::string mime = MimeForExtension(extension);
+            if (mime.empty()) return "*/*";
+            if (common.empty()) common = mime;
+            else if (common != mime) return "*/*";
+        }
+        if (end == std::string::npos) break;
+        start = end + 1;
+    }
+    return common.empty() ? "*/*" : common;
+}
+
 std::string RunSafPicker(bool multiselect, const std::string& extensions) {
     std::lock_guard<std::mutex> lock(g_pickerMutex);
     g_safPickerCalls.fetch_add(1);
     JNIEnv* env = nullptr;
     bool attached = false;
-    if (!GetEnv(&env, &attached) || !InitSelector(env)) {
+    if (!GetEnv(&env, &attached) || !InitBridge(env)) {
         g_safLastState.store(1);
         if (attached) g_vm->DetachCurrentThread();
         return "";
     }
-    const std::string requested = extensions.empty() ? std::string(kBroadExtensions) : extensions;
-    jstring filter = env->NewStringUTF(requested.c_str());
-    if (filter == nullptr) {
+
+    const std::string mime = ResolvePickerMime(extensions);
+    SetLastMime(mime);
+    jstring jmime = env->NewStringUTF(mime.c_str());
+    if (jmime == nullptr) {
         if (env->ExceptionCheck()) env->ExceptionClear();
         g_safLastState.store(2);
         if (attached) g_vm->DetachCurrentThread();
         return "";
     }
-    env->CallStaticVoidMethod(g_selectorClass, g_selectFile, filter,
-                              multiselect ? JNI_TRUE : JNI_FALSE);
-    env->DeleteLocalRef(filter);
+    const jint requestId = env->CallStaticIntMethod(
+            g_bridgeClass, g_beginOpen, jmime, multiselect ? JNI_TRUE : JNI_FALSE);
+    env->DeleteLocalRef(jmime);
+    if (env->ExceptionCheck() || requestId <= 0) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        g_safLastState.store(2);
+        if (attached) g_vm->DetachCurrentThread();
+        return "";
+    }
+
+    jstring state = reinterpret_cast<jstring>(env->CallStaticObjectMethod(
+            g_bridgeClass, g_await, requestId, static_cast<jlong>(600000)));
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
         g_safLastState.store(2);
@@ -356,34 +392,28 @@ std::string RunSafPicker(bool multiselect, const std::string& extensions) {
         return "";
     }
 
-    bool done = false;
-    for (int i = 0; i < 18000; ++i) {
-        const jboolean value = env->GetStaticBooleanField(g_selectorClass, g_isDone);
-        if (env->ExceptionCheck()) { env->ExceptionClear(); g_safLastState.store(2); break; }
-        if (value == JNI_TRUE) { done = true; break; }
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-
-    std::string result;
-    if (done) {
-        jstring path = reinterpret_cast<jstring>(env->CallStaticObjectMethod(g_selectorClass, g_getFilePath));
-        if (env->ExceptionCheck()) {
-            env->ExceptionClear();
-            g_safLastState.store(2);
-        } else if (path != nullptr) {
-            const char* chars = env->GetStringUTFChars(path, nullptr);
-            if (chars != nullptr) {
-                result.assign(chars);
-                env->ReleaseStringUTFChars(path, chars);
+    std::string encoded;
+    if (state != nullptr) {
+        const char* chars = env->GetStringUTFChars(state, nullptr);
+        if (chars != nullptr) {
+            const std::string value(chars);
+            env->ReleaseStringUTFChars(state, chars);
+            if (value.rfind("O:", 0) == 0) {
+                encoded = value.substr(2);
+                g_safLastState.store(encoded.empty() ? 3 : 4);
+            } else if (value.rfind("C:", 0) == 0) {
+                g_safLastState.store(3);
+            } else {
+                g_safLastState.store(2);
             }
-            env->DeleteLocalRef(path);
         }
+        env->DeleteLocalRef(state);
+    } else {
+        g_safLastState.store(2);
     }
     if (attached) g_vm->DetachCurrentThread();
     g_safPickerReturns.fetch_add(1);
-    if (!result.empty()) g_safLastState.store(4);
-    else if (g_safLastState.load() != 2) g_safLastState.store(3);
-    return result;
+    return encoded;
 }
 
 Array<String*>* ToManagedStringArray(const std::string& encoded) {
@@ -417,12 +447,8 @@ Array<String*>* HookOpenFilePanelFilters(
         g_callsInFlight.fetch_sub(1);
         return nullptr;
     }
-
-    // r7: bounded read of the proven ExtensionFilter payload. Any invalid shape or
-    // value falls back to the broad picker; the original SFB implementation is never called.
     const std::string extensions = ResolvePickerExtensions(filters);
     Array<String*>* result = ToManagedStringArray(RunSafPicker(multiselect, extensions));
-
     g_returns.fetch_add(1);
     if (g_callsInFlight.fetch_sub(1) == 1) ClearMarker(g_callMarker);
     return result;
@@ -479,9 +505,9 @@ void RunAbiProbeAndMaybeInstallCanary() {
     }
 
     std::ostringstream out;
-    out << "nativeProbe=cache-post-bnm-sfb-saf-filtered-v1\n"
-        << "nativeStage=post-bnm-sfb-saf-filtered-open\n"
-        << "abiProbeRevision=7\n"
+    out << "nativeProbe=cache-post-bnm-sfb-saf-direct-v1\n"
+        << "nativeStage=post-bnm-sfb-saf-direct-document\n"
+        << "abiProbeRevision=8\n"
         << "bnmLoadRequested=1\n"
         << "bnmLoadedCallback=1\n"
         << "probeComplete=1\n"
@@ -491,7 +517,7 @@ void RunAbiProbeAndMaybeInstallCanary() {
         << "sfbFilterReadBounded=1\n"
         << "sfbFilterReadMaxFilters=" << kMaxExtensionFilters << '\n'
         << "sfbFilterReadMaxExtensionsPerFilter=" << kMaxExtensionsPerFilter << '\n'
-        << "sfbHookPolicy=bootstrap1-self-fused-saf-filtered-open\n"
+        << "sfbHookPolicy=bootstrap1-self-fused-saf-direct-document\n"
         << "sfbCanarySelfFuse=1\n"
         << "sfbCanaryMarkerReady=" << (g_markerReady.load() ? 1 : 0) << '\n'
         << "sfbCanaryRecoveryState=" << g_recoveryState.load() << '\n'
@@ -501,6 +527,8 @@ void RunAbiProbeAndMaybeInstallCanary() {
         << "sfbCanaryHiddenMethodInfo=1\n"
         << "sfbSafBridgeReady=" << (safReady ? 1 : 0) << '\n'
         << "sfbOriginalCallUsed=0\n"
+        << "sfbPickerBackend=direct-document\n"
+        << "sfbFileSelectorBypassed=1\n"
         << "abi.SFB.class=" << (browser ? 1 : 0) << '\n'
         << "abi.SFB.OpenFilePanel.filtersExact=" << (openFilters.IsValid() ? 1 : 0) << '\n'
         << "abi.SFB.OpenFilePanel.static=" << ((info && openFilters._isStatic) ? 1 : 0) << '\n'
@@ -535,9 +563,9 @@ std::string CurrentReport() {
     std::ostringstream out;
     if (!g_bnmLoadRequested.load()) out << g_report;
     else if (!g_bnmLoadedCallback.load()) {
-        out << "nativeProbe=cache-post-bnm-sfb-saf-filtered-v1\n"
-            << "nativeStage=post-bnm-sfb-saf-filtered-open\n"
-            << "abiProbeRevision=7\n"
+        out << "nativeProbe=cache-post-bnm-sfb-saf-direct-v1\n"
+            << "nativeStage=post-bnm-sfb-saf-direct-document\n"
+            << "abiProbeRevision=8\n"
             << "bnmLoadRequested=1\n"
             << "bnmLoadedCallback=0\n"
             << "probeComplete=0\n"
@@ -545,17 +573,21 @@ std::string CurrentReport() {
             << "sfbOpenFiltersHookInstalled=0\n"
             << "sfbFilterMemoryRead=1\n"
             << "sfbFilterReadBounded=1\n"
-            << "sfbHookPolicy=bootstrap1-self-fused-saf-filtered-open\n"
+            << "sfbHookPolicy=bootstrap1-self-fused-saf-direct-document\n"
             << "sfbSafBridgeReady=0\n"
-            << "sfbOriginalCallUsed=0\n";
+            << "sfbOriginalCallUsed=0\n"
+            << "sfbPickerBackend=direct-document\n"
+            << "sfbFileSelectorBypassed=1\n";
     } else {
         std::lock_guard<std::mutex> lock(g_reportMutex);
         out << g_report;
     }
     std::string lastExtensions;
+    std::string lastMime;
     {
         std::lock_guard<std::mutex> lock(g_filterTextMutex);
         lastExtensions = g_lastExtensions;
+        lastMime = g_lastMime;
     }
     out << "sfbOpenFiltersCanaryCalls=" << g_calls.load() << '\n'
         << "sfbOpenFiltersCanaryReturns=" << g_returns.load() << '\n'
@@ -568,7 +600,8 @@ std::string CurrentReport() {
         << "sfbFilterFallbacks=" << g_filterFallbacks.load() << '\n'
         << "sfbFilterCount=" << g_filterCount.load() << '\n'
         << "sfbExtensionCount=" << g_extensionCount.load() << '\n'
-        << "sfbLastExtensions=" << lastExtensions << '\n';
+        << "sfbLastExtensions=" << lastExtensions << '\n'
+        << "sfbLastMime=" << lastMime << '\n';
     return out.str();
 }
 } // namespace

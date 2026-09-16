@@ -32,12 +32,13 @@ for marker in (
     'JNI_OnLoad', 'g_vm = vm', 'universe.h', 'Loading::TryLoadByJNI',
     'Loading::AddOnLoadedEvent', 'RunAbiProbeAndMaybeInstallCanary',
     'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport',
-    'nativeProbe=cache-post-bnm-sfb-saf-filtered-v1',
-    'nativeStage=post-bnm-sfb-saf-filtered-open', 'abiProbeRevision=7',
-    'sfbHookPolicy=bootstrap1-self-fused-saf-filtered-open',
+    'nativeProbe=cache-post-bnm-sfb-saf-direct-v1',
+    'nativeStage=post-bnm-sfb-saf-direct-document', 'abiProbeRevision=8',
+    'sfbHookPolicy=bootstrap1-self-fused-saf-direct-document',
+    'sfbPickerBackend=direct-document', 'sfbFileSelectorBypassed=1',
     'sfbCanarySelfFuse=1', 'sfbCanaryMarkerReady=', 'sfbCanaryRecoveryState=',
     'sfbCanaryHiddenMethodInfo=1', 'sfbSafBridgeReady=', 'sfbOriginalCallUsed=0',
-    'sfbSafPickerCalls=', 'sfbSafPickerReturns=', 'sfbSafLastState=',
+    'sfbSafPickerCalls=', 'sfbSafPickerReturns=', 'sfbSafLastState=', 'sfbLastMime=',
     'sfbOpenFiltersCanaryCalls=', 'sfbOpenFiltersCanaryReturns=',
     'sfbCanaryMarkerWriteFailures=', 'sfbFilterMemoryRead=1',
     'sfbFilterReadBounded=1', 'sfbFilterReadAttempts=', 'sfbFilterReadSuccess=',
@@ -48,15 +49,17 @@ for marker in (
     'extensions->capacity', 'extensions->m_Items[j]', 'NormalizeExtension',
     'ResolvePickerExtensions(filters)', 'RunSafPicker(multiselect, extensions)',
     'ToManagedStringArray', 'CreateMonoString',
-    'FileSelector', 'CallStaticVoidMethod', 'CallStaticObjectMethod',
-    'GetStaticBooleanField', 'NewGlobalRef',
-    'dladdr(', 'sfb-canary-r7-install.pending', 'sfb-canary-r7-call.pending',
+    'V240AndroidBridge', 'beginOpen', 'await', 'CallStaticIntMethod', 'CallStaticObjectMethod',
+    'NewGlobalRef', 'ResolvePickerMime',
+    'dladdr(', 'sfb-canary-r8-install.pending', 'sfb-canary-r8-call.pending',
     'O_CREAT | O_EXCL | O_CLOEXEC', 'fsync(fd)',
 ):
     assert marker in s, marker
 assert s.count('BasicHook(') == 1
 assert 'original(title, directory, filters, multiselect, methodInfo)' not in s
 assert 'g_oldOpenFilters(' not in s
+assert '"com/unity3d/player/FileSelector"' not in s
+assert 'GetStaticBooleanField' not in s
 for forbidden in (
     'InstallAllHooks', 'InstallSfbHooks', 'InstallMobileHooks',
     'V240SettingsOverlay', 'V240EventCompat', 'V240TouchAssist',
@@ -141,9 +144,11 @@ cp "${LIB}" "${OUT}/libv240fix.so"
 readelf -h "${OUT}/libv240fix.so" | grep -q 'AArch64'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'JNI_OnLoad'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport'
-strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-sfb-saf-filtered-v1'
-strings "${OUT}/libv240fix.so" | grep -q 'nativeStage=post-bnm-sfb-saf-filtered-open'
-strings "${OUT}/libv240fix.so" | grep -q 'sfbHookPolicy=bootstrap1-self-fused-saf-filtered-open'
+strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-sfb-saf-direct-v1'
+strings "${OUT}/libv240fix.so" | grep -q 'nativeStage=post-bnm-sfb-saf-direct-document'
+strings "${OUT}/libv240fix.so" | grep -q 'sfbHookPolicy=bootstrap1-self-fused-saf-direct-document'
+strings "${OUT}/libv240fix.so" | grep -q 'sfbPickerBackend=direct-document'
+strings "${OUT}/libv240fix.so" | grep -q 'sfbFileSelectorBypassed=1'
 strings "${OUT}/libv240fix.so" | grep -q 'sfbSafBridgeReady='
 strings "${OUT}/libv240fix.so" | grep -q 'sfbOriginalCallUsed=0'
 strings "${OUT}/libv240fix.so" | grep -q 'sfbSafPickerCalls='
@@ -152,6 +157,7 @@ strings "${OUT}/libv240fix.so" | grep -q 'sfbFilterMemoryRead=1'
 strings "${OUT}/libv240fix.so" | grep -q 'sfbFilterReadBounded=1'
 strings "${OUT}/libv240fix.so" | grep -q 'sfbFilterReadAttempts='
 strings "${OUT}/libv240fix.so" | grep -q 'sfbLastExtensions='
+strings "${OUT}/libv240fix.so" | grep -q 'sfbLastMime='
 if readelf -Ws "${OUT}/libv240fix.so" | grep -Eq 'Java_com_unity3d_player_V240SettingsOverlay_|Java_com_unity3d_player_V240EventCompat_'; then
   echo 'cache SAF runtime unexpectedly exported feature activation JNI' >&2
   exit 1
