@@ -44,7 +44,7 @@ jobs:
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
           sdkmanager 'platforms;android-35' 'build-tools;36.0.0' 'ndk;29.0.14206865'
 
-      - name: Build self-fused SFB pass-through canary
+      - name: Build self-fused SFB SAF open canary
         run: bash scripts/build-v240-cache-native.sh dist/v240-channel-native
 
       - name: Build hot-swappable dynamic DEX
@@ -57,7 +57,7 @@ jobs:
           mkdir -p dist/v240-runtime-channel
           cp dist/v240-channel-native/libv240fix.so dist/v240-runtime-channel/libv240fix.so
           cp dist/v240-channel-dynamic/runtime.dex dist/v240-runtime-channel/runtime.dex
-          python3 - <<'PY'
+          python3 - <<'PY2'
           import hashlib, json, pathlib, zipfile, os
           root = pathlib.Path('dist/v240-runtime-channel')
           native = root / 'libv240fix.so'
@@ -97,7 +97,7 @@ jobs:
               raise SystemExit('runtime bundle outside updater size bound')
           (root / 'manifest.json').write_text(json.dumps(manifest, separators=(',', ':')) + '\n')
           print(json.dumps(manifest, indent=2))
-          PY
+          PY2
           test -s "dist/v240-runtime-channel/runtime-${GITHUB_SHA}.zip"
           test -s dist/v240-runtime-channel/manifest.json
 
