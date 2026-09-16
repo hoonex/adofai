@@ -29,6 +29,7 @@ R10_OVERLAY="${ROOT}/scripts/apply-v240-r10-raycast-probe.py"
 R11_OVERLAY="${ROOT}/scripts/apply-v240-r11-editor-probe.py"
 R12_OVERLAY="${ROOT}/scripts/apply-v240-r12-input-calibration.py"
 R13_OVERLAY="${ROOT}/scripts/apply-v240-r13-hit-probe-calibration-fix.py"
+R15_OVERLAY="${ROOT}/scripts/apply-v240-r15-exact-calibration-and-wide-inventory.py"
 test -f "${SRC}"
 test -f "${BRIDGE}"
 test -f "${ENTRY}"
@@ -36,6 +37,7 @@ test -f "${R10_OVERLAY}"
 test -f "${R11_OVERLAY}"
 test -f "${R12_OVERLAY}"
 test -f "${R13_OVERLAY}"
+test -f "${R15_OVERLAY}"
 python3 - "${SRC}" "${BRIDGE}" "${ENTRY}" <<'PY'
 from pathlib import Path
 import sys
@@ -123,8 +125,8 @@ s = s.replace('g_dynamicDiagnostics = diagnostics;',
 p.write_text(s, encoding='utf-8')
 PY_NATIVE_NAME_FIX
 
-# r10-r12 remain evidence layers. r13 fixes the BNM literal-const calibration guard and adds
-# a read-only scnEditor screen->world->RDUtils floor-hit probe without synthesizing input or selection.
+# r10-r12 remain evidence layers. r13/r14 turns the failed hit guess into read-only metadata,
+# and r15 uses the device-proven Persistence method names while widening only metadata output.
 python3 "${R10_OVERLAY}" "${JNI}/V240CacheLoader.cpp"
 grep -q 'abiProbeRevision=10' "${JNI}/V240CacheLoader.cpp"
 grep -q 'raycastProbePolicy=pass-through-observe-only' "${JNI}/V240CacheLoader.cpp"
@@ -167,6 +169,16 @@ grep -q 'editor-r13-hit.pending' "${JNI}/V240CacheLoader.cpp"
 grep -q 'calibrationPolicy=neutralize-only-exact-game-sentinel-bnm-const-v2' "${JNI}/V240CacheLoader.cpp"
 grep -q 'sentinelBase.IsValid() && sentinelBase._isConst' "${JNI}/V240CacheLoader.cpp"
 ! grep -q 'sentinelBase.IsValid() && sentinelBase._isStatic && sentinelBase._isConst' "${JNI}/V240CacheLoader.cpp"
+
+python3 "${R15_OVERLAY}" "${JNI}/V240CacheLoader.cpp"
+grep -q 'metadataInventoryRevision=2' "${JNI}/V240CacheLoader.cpp"
+grep -q 'metadataInventoryPolicy=wide-read-only-exact-name-followup' "${JNI}/V240CacheLoader.cpp"
+grep -q 'GetMethod("GetInputOffset", 0)' "${JNI}/V240CacheLoader.cpp"
+grep -q 'GetMethod("SetInputOffset", 1)' "${JNI}/V240CacheLoader.cpp"
+grep -q 'calibrationExecution=enabled-r15-exact-persistence-self-fused' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorHitExecution=disabled-r15-wide-metadata-inventory' "${JNI}/V240CacheLoader.cpp"
+! grep -q 'GetMethod("get_inputOffset", 0)' "${JNI}/V240CacheLoader.cpp"
+! grep -q 'GetMethod("set_inputOffset", 1)' "${JNI}/V240CacheLoader.cpp"
 
 python3 - "${JNI}/BNM/include/BNM/UserSettings/GlobalSettings.hpp" <<'PY'
 from pathlib import Path
@@ -236,7 +248,10 @@ strings "${OUT}/libv240fix.so" | grep -q 'abiProbeRevision=13'
 strings "${OUT}/libv240fix.so" | grep -q 'editorInputEdgePolicy=observe-only'
 strings "${OUT}/libv240fix.so" | grep -q 'editorHitPolicy=screen-to-world-rdutils-observe-only'
 strings "${OUT}/libv240fix.so" | grep -q 'editorHitMutation=0'
-strings "${OUT}/libv240fix.so" | grep -q 'calibrationPolicy=neutralize-only-exact-game-sentinel-bnm-const-v2'
+strings "${OUT}/libv240fix.so" | grep -q 'calibrationPolicy=exact-Persistence-GetInputOffset-SetInputOffset-sentinel-v3'
+strings "${OUT}/libv240fix.so" | grep -q 'calibrationExecution=enabled-r15-exact-persistence-self-fused'
+strings "${OUT}/libv240fix.so" | grep -q 'metadataInventoryRevision=2'
+strings "${OUT}/libv240fix.so" | grep -q 'editorHitExecution=disabled-r15-wide-metadata-inventory'
 strings "${OUT}/libv240fix.so" | grep -q 'sfbHookPolicy=dynamic-document-preprocess-before-bind'
 strings "${OUT}/libv240fix.so" | grep -q 'dynamicBridgeRegistrationPath=context-classloader-parent-native'
 strings "${OUT}/libv240fix.so" | grep -q 'editorProbePolicy=scnEditor-pass-through-observe-only'
