@@ -26,10 +26,12 @@ SRC="${ROOT}/android/v240-dynamic-runtime/native/V240CacheLoader.cpp"
 BRIDGE="${ROOT}/android/v240-dynamic-runtime/java/dev/hoonex/adofai/v240/dynamic/DirectDocumentBridge.java"
 ENTRY="${ROOT}/android/v240-dynamic-runtime/java/dev/hoonex/adofai/v240/dynamic/RuntimeEntry.java"
 R10_OVERLAY="${ROOT}/scripts/apply-v240-r10-raycast-probe.py"
+R11_OVERLAY="${ROOT}/scripts/apply-v240-r11-editor-probe.py"
 test -f "${SRC}"
 test -f "${BRIDGE}"
 test -f "${ENTRY}"
 test -f "${R10_OVERLAY}"
+test -f "${R11_OVERLAY}"
 python3 - "${SRC}" "${BRIDGE}" "${ENTRY}" <<'PY'
 from pathlib import Path
 import sys
@@ -79,16 +81,28 @@ assert j.index('invokeBoolean(BACKPORT') < j.index('BIND_SAVE.invoke')
 assert j.index('invokeBoolean(HALL_FIX') < j.index('BIND_SAVE.invoke')
 assert j.index('invokeBoolean(OPAQUE_PREPARE') < j.index('BIND_SAVE.invoke')
 assert j.index('invokeVoid(MAP_REPAIR') < j.index('BIND_SAVE.invoke')
-for marker in ('nativeRegisterDynamicBridge(DirectDocumentBridge.class)', 'nativeReconcileDynamicRuntime()'):
+for marker in (
+    'public static void install(Context context)',
+    'registerDynamicBridgeViaParent()',
+    'Thread.currentThread()',
+    'thread.setContextClassLoader(dynamic)',
+    'Class.forName("com.unity3d.player.V240CompatibilityReport", true,',
+    'getDeclaredMethod("nativeGetCompatibilityReport")',
+    'nativeReport.invoke(null)',
+    'thread.setContextClassLoader(previous)',
+):
     assert marker in e, marker
+assert 'private static native' not in e
+assert 'nativeRegisterDynamicBridge(' not in e
+assert 'nativeReconcileDynamicRuntime(' not in e
 assert 'System.load(' not in e
 assert 'System.loadLibrary(' not in e
 PY
 
 JNI="${UPSTREAM}/app/src/main/jni"
 cp "${SRC}" "${JNI}/V240CacheLoader.cpp"
-# Keep the committed r9 source readable while fixing the JNI method-id/text diagnostic name
-# collision in the isolated build copy. This remains a bounded build-only reconciliation.
+# The r9 base source has one diagnostic-text/JNI-method-id name collision. Reconcile only the
+# isolated build copy so committed evidence remains comparable to the real-device r9 report.
 python3 - "${JNI}/V240CacheLoader.cpp" <<'PY_NATIVE_NAME_FIX'
 from pathlib import Path
 import sys
@@ -105,15 +119,25 @@ s = s.replace('g_dynamicDiagnostics = diagnostics;',
 p.write_text(s, encoding='utf-8')
 PY_NATIVE_NAME_FIX
 
-# r10 is a diagnostic-only hot-swap overlay: replace the r9 unused scrController wrapper as the
-# active observation path with a self-fused, pass-through EventSystem.RaycastAll probe. No input
-# coordinates, result lists, or game state are mutated by the probe.
+# r10 remains an intermediate evidence overlay. r11 then disables its broad active observation
+# path and replaces it with exact scnEditor HandleMouseActions/SelectFloor pass-through probes.
 python3 "${R10_OVERLAY}" "${JNI}/V240CacheLoader.cpp"
 grep -q 'abiProbeRevision=10' "${JNI}/V240CacheLoader.cpp"
 grep -q 'raycastProbePolicy=pass-through-observe-only' "${JNI}/V240CacheLoader.cpp"
-grep -q 'raycastProbeMutation=0' "${JNI}/V240CacheLoader.cpp"
 grep -q 'BasicHook(raycastMethod, HookRaycastProbe, g_oldRaycastProbe)' "${JNI}/V240CacheLoader.cpp"
+
+python3 "${R11_OVERLAY}" "${JNI}/V240CacheLoader.cpp"
+grep -q 'abiProbeRevision=11' "${JNI}/V240CacheLoader.cpp"
+grep -q 'nativeProbe=cache-post-bnm-scneditor-input-observe-v1' "${JNI}/V240CacheLoader.cpp"
+grep -q 'dynamicBridgeRegistrationPath=context-classloader-parent-native' "${JNI}/V240CacheLoader.cpp"
+grep -q 'DiscoverDynamicBridgeFromContextLoader(env)' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorProbePolicy=scnEditor-pass-through-observe-only' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorProbeMutation=0' "${JNI}/V240CacheLoader.cpp"
+grep -q 'BasicHook(handleMethod, HookEditorMouse, g_oldEditorMouse)' "${JNI}/V240CacheLoader.cpp"
+grep -q 'BasicHook(selectMethod, HookSelectFloor, g_oldSelectFloor)' "${JNI}/V240CacheLoader.cpp"
+grep -q 'raycastProbePolicy=disabled-r10-superseded-by-scnEditor' "${JNI}/V240CacheLoader.cpp"
 ! grep -q 'MaybeInstallUiHook();' "${JNI}/V240CacheLoader.cpp"
+! grep -q 'MaybeInstallRaycastProbe();' "${JNI}/V240CacheLoader.cpp"
 
 python3 - "${JNI}/BNM/include/BNM/UserSettings/GlobalSettings.hpp" <<'PY'
 from pathlib import Path
@@ -178,12 +202,12 @@ cp "${LIB}" "${OUT}/libv240fix.so"
 readelf -h "${OUT}/libv240fix.so" | grep -q 'AArch64'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'JNI_OnLoad'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport'
-readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_dev_hoonex_adofai_v240_dynamic_RuntimeEntry_nativeRegisterDynamicBridge'
-readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_dev_hoonex_adofai_v240_dynamic_RuntimeEntry_nativeReconcileDynamicRuntime'
-strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-eventsystem-raycast-observe-v1'
-strings "${OUT}/libv240fix.so" | grep -q 'abiProbeRevision=10'
+strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-scneditor-input-observe-v1'
+strings "${OUT}/libv240fix.so" | grep -q 'abiProbeRevision=11'
 strings "${OUT}/libv240fix.so" | grep -q 'sfbHookPolicy=dynamic-document-preprocess-before-bind'
-strings "${OUT}/libv240fix.so" | grep -q 'raycastProbePolicy=pass-through-observe-only'
-strings "${OUT}/libv240fix.so" | grep -q 'raycastProbeMutation=0'
+strings "${OUT}/libv240fix.so" | grep -q 'dynamicBridgeRegistrationPath=context-classloader-parent-native'
+strings "${OUT}/libv240fix.so" | grep -q 'editorProbePolicy=scnEditor-pass-through-observe-only'
+strings "${OUT}/libv240fix.so" | grep -q 'editorProbeMutation=0'
+strings "${OUT}/libv240fix.so" | grep -q 'raycastProbePolicy=disabled-r10-superseded-by-scnEditor'
 strings "${OUT}/libv240fix.so" | grep -q 'uiHitPolicy=disabled-r9-device-proven-not-on-tile-path'
 sha256sum "${OUT}/libv240fix.so" | tee "${OUT}/SHA256SUMS.txt"
