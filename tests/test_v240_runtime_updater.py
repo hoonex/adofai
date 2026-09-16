@@ -53,15 +53,23 @@ class V240RuntimeUpdaterContractTest(unittest.TestCase):
         self.assertNotIn("System.load(", check)
         self.assertNotIn("DexClassLoader(", check)
 
-    def test_crash_loop_has_pending_marker_quarantine_and_rollback(self):
+    def test_crash_loop_retries_once_then_quarantines_and_rolls_back(self):
         source = self.text(UPDATER)
         for marker in (
             '"boot.pending"', "recoverInterruptedBoot(app)",
+            "MAX_CONSECUTIVE_BOOT_FAILURES = 2", "recordBootFailure(active)",
+            '"boot-failures-" + version + ".txt"', "writeSmallFile(bootFailureCounterFile(version)",
+            "if (failures < MAX_CONSECUTIVE_BOOT_FAILURES)",
+            'channelState = "retry-unhealthy-boot:" + active',
             'quarantineVersion(active, "boot_crash")', "restorePreviousPointer()",
             '"quarantine-" + version + ".txt"', "isVersionQuarantined(version)",
-            'recordRollback(app, "boot_crash:" + active)', "HEALTH_DELAY_MS",
+            'recordRollback(app, "boot_crash:" + active)', "clearBootFailureState(active)",
+            "HEALTH_DELAY_MS",
         ):
             self.assertIn(marker, source)
+        retry = source.index("if (failures < MAX_CONSECUTIVE_BOOT_FAILURES)")
+        quarantine = source.index('quarantineVersion(active, "boot_crash")')
+        self.assertLess(retry, quarantine)
 
     def test_quarantined_version_is_never_downloaded_again(self):
         source = self.text(UPDATER)
@@ -80,6 +88,7 @@ class V240RuntimeUpdaterContractTest(unittest.TestCase):
             '"previousVersion=" + previous',
             '"cachedRuntimeLoaded=" + (cachedRuntimeLoaded ? 1 : 0)',
             '"shaVerification=" + shaVerification',
+            '"bootFailureCount=" + bootFailureCount',
             '"rollbackReason=" + rollbackReason', '"lastError=" + lastError',
         ):
             self.assertIn(marker, source)

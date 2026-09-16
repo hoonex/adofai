@@ -33,13 +33,14 @@ import dalvik.system.DexClassLoader;
  *
  * Runtime code is staged only inside app-private code_cache. A downloaded runtime is
  * never executed in the process that downloaded it. The next process marks a candidate
- * boot pending before native/DEX loading; an interrupted launch quarantines that exact
- * commit SHA and rolls back without ever re-downloading the quarantined SHA.
+ * boot pending before native/DEX loading. One interrupted launch is retried; only a
+ * repeated interrupted launch quarantines that exact commit SHA and rolls back.
  */
 final class V240RuntimeUpdater {
     private static final String TAG = "ADOFAI.V240Updater";
-    private static final int BOOTSTRAP_VERSION = 2;
+    private static final int BOOTSTRAP_VERSION = 3;
     private static final int MANIFEST_SCHEMA = 1;
+    private static final int MAX_CONSECUTIVE_BOOT_FAILURES = 2;
     private static final long HEALTH_DELAY_MS = 10_000L;
     private static final long MIN_CHECK_INTERVAL_MS = 5L * 60L * 1000L;
     private static final long MAX_MANIFEST_BYTES = 64L * 1024L;
@@ -62,6 +63,7 @@ final class V240RuntimeUpdater {
     private static volatile String downloadedVersion = "none";
     private static volatile String shaVerification = "not-checked";
     private static volatile String rollbackReason = "none";
+    private static volatile int bootFailureCount;
     private static volatile String lastError = "none";
     private static volatile String channelState = "not-checked";
     private static File rootDir;
@@ -83,6 +85,8 @@ final class V240RuntimeUpdater {
             Log.w(TAG, "could not create runtime code_cache");
             return true;
         }
+        String activeAtStart = readPointer(new File(rootDir, "active"));
+        bootFailureCount = activeAtStart == null ? 0 : readBootFailureCount(activeAtStart);
 
         try {
             recoverInterruptedBoot(app);
@@ -115,6 +119,7 @@ final class V240RuntimeUpdater {
                 + "activeVersion=" + active + "\n"
                 + "previousVersion=" + previous + "\n"
                 + "shaVerification=" + shaVerification + "\n"
+                + "bootFailureCount=" + bootFailureCount + "\n"
                 + "channelState=" + channelState + "\n"
                 + "rollbackReason=" + rollbackReason + "\n"
                 + "lastError=" + lastError + "\n";
@@ -169,7 +174,7 @@ final class V240RuntimeUpdater {
         }
 
         // A native process abort cannot be caught in Java. boot.pending is deliberately
-        // persisted before this call so the next launch quarantines this exact version.
+        // persisted before this call so the next launch can count an interrupted boot.
         System.load(nativeLib.getAbsolutePath());
 
         File opt = new File(rootDir, "opt-" + version);
@@ -201,6 +206,7 @@ final class V240RuntimeUpdater {
         }
         try {
             writeSmallFile(new File(loadedDir, "healthy"), Long.toString(System.currentTimeMillis()));
+            clearBootFailureState(loadedVersion);
         } catch (Throwable error) {
             Log.w(TAG, "could not persist runtime health marker", error);
         }
@@ -216,12 +222,68 @@ final class V240RuntimeUpdater {
             return;
         }
         File dir = versionDir(active);
-        if (!new File(dir, "boot.pending").isFile()) return;
+        File pending = new File(dir, "boot.pending");
+        if (!pending.isFile()) return;
+
+        int failures = recordBootFailure(active);
+        if (failures < MAX_CONSECUTIVE_BOOT_FAILURES) {
+            lastError = "unhealthy_boot_retry:" + active + ":" + failures;
+            channelState = "retry-unhealthy-boot:" + active + ":" + failures
+                    + "/" + MAX_CONSECUTIVE_BOOT_FAILURES;
+            Log.w(TAG, "cached runtime boot was interrupted; retrying " + active
+                    + " failure=" + failures + "/" + MAX_CONSECUTIVE_BOOT_FAILURES);
+            if (pending.exists() && !pending.delete()) {
+                Log.w(TAG, "could not clear stale boot.pending before retry " + active);
+            }
+            return;
+        }
+
         lastError = "rollback_unhealthy_boot:" + active;
-        Log.w(TAG, "cached runtime did not reach health deadline; rolling back " + active);
+        Log.w(TAG, "cached runtime repeatedly failed health deadline; rolling back " + active);
         quarantineVersion(active, "boot_crash");
         recordRollback(app, "boot_crash:" + active);
+        clearBootFailureState(active);
         restorePreviousPointer();
+    }
+
+    private static int recordBootFailure(String version) throws Exception {
+        int nextCount = readBootFailureCount(version) + 1;
+        bootFailureCount = nextCount;
+        writeSmallFile(bootFailureCounterFile(version), Integer.toString(nextCount) + "\n");
+        return nextCount;
+    }
+
+    private static int readBootFailureCount(String version) {
+        if (!isImmutableRuntimeVersion(version) || rootDir == null) return 0;
+        File file = bootFailureCounterFile(version);
+        try {
+            if (!file.isFile() || file.length() <= 0L || file.length() > 16L) return 0;
+            byte[] data = new byte[(int) file.length()];
+            int offset = 0;
+            try (InputStream in = new FileInputStream(file)) {
+                while (offset < data.length) {
+                    int count = in.read(data, offset, data.length - offset);
+                    if (count < 0) break;
+                    offset += count;
+                }
+            }
+            if (offset != data.length) return 0;
+            int value = Integer.parseInt(new String(data, "UTF-8").trim());
+            return value < 0 || value > MAX_CONSECUTIVE_BOOT_FAILURES ? 0 : value;
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
+    private static File bootFailureCounterFile(String version) {
+        if (!isImmutableRuntimeVersion(version)) throw new IllegalArgumentException("unsafe version");
+        return new File(rootDir, "boot-failures-" + version + ".txt");
+    }
+
+    private static void clearBootFailureState(String version) {
+        if (!isImmutableRuntimeVersion(version) || rootDir == null) return;
+        safeDelete(bootFailureCounterFile(version));
+        bootFailureCount = 0;
     }
 
     private static void quarantineActive(Context app, String reason) throws Exception {
@@ -229,6 +291,7 @@ final class V240RuntimeUpdater {
         if (active != null) {
             quarantineVersion(active, reason);
             recordRollback(app, reason + ":" + active);
+            clearBootFailureState(active);
         }
         restorePreviousPointer();
     }
@@ -473,7 +536,7 @@ final class V240RuntimeUpdater {
             connection.setConnectTimeout(7000);
             connection.setReadTimeout(15000);
             connection.setUseCaches(false);
-            connection.setRequestProperty("User-Agent", "ADOFAI-V240-Updater/2");
+            connection.setRequestProperty("User-Agent", "ADOFAI-V240-Updater/3");
             int code = connection.getResponseCode();
             if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
                 String location = connection.getHeaderField("Location");
