@@ -99,3 +99,7 @@ if s.count('BasicHook(') != 5:
     raise SystemExit(f"r15 must not add hooks; expected five compiled hook sites, got {s.count('BasicHook(')}")
 
 path.write_text(s, encoding="utf-8")
+r16 = Path(__file__).with_name("apply-v240-r16-objects-at-mouse-probe.py")
+if not r16.is_file():
+    raise SystemExit(f"missing r16 overlay: {r16}")
+__import__("subprocess").run([sys.executable, str(r16), str(path)], check=True)
