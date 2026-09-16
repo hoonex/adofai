@@ -25,9 +25,11 @@ git -C "${UPSTREAM}" clean -fdx
 SRC="${ROOT}/android/v240-dynamic-runtime/native/V240CacheLoader.cpp"
 BRIDGE="${ROOT}/android/v240-dynamic-runtime/java/dev/hoonex/adofai/v240/dynamic/DirectDocumentBridge.java"
 ENTRY="${ROOT}/android/v240-dynamic-runtime/java/dev/hoonex/adofai/v240/dynamic/RuntimeEntry.java"
+R10_OVERLAY="${ROOT}/scripts/apply-v240-r10-raycast-probe.py"
 test -f "${SRC}"
 test -f "${BRIDGE}"
 test -f "${ENTRY}"
+test -f "${R10_OVERLAY}"
 python3 - "${SRC}" "${BRIDGE}" "${ENTRY}" <<'PY'
 from pathlib import Path
 import sys
@@ -85,8 +87,8 @@ PY
 
 JNI="${UPSTREAM}/app/src/main/jni"
 cp "${SRC}" "${JNI}/V240CacheLoader.cpp"
-# Keep the committed source readable while fixing the JNI method-id/text diagnostic name
-# collision in the isolated build copy. This is a bounded build-only reconciliation.
+# Keep the committed r9 source readable while fixing the JNI method-id/text diagnostic name
+# collision in the isolated build copy. This remains a bounded build-only reconciliation.
 python3 - "${JNI}/V240CacheLoader.cpp" <<'PY_NATIVE_NAME_FIX'
 from pathlib import Path
 import sys
@@ -102,6 +104,16 @@ s = s.replace('g_dynamicDiagnostics = diagnostics;',
               'g_dynamicDiagnosticsMethod = diagnostics;')
 p.write_text(s, encoding='utf-8')
 PY_NATIVE_NAME_FIX
+
+# r10 is a diagnostic-only hot-swap overlay: replace the r9 unused scrController wrapper as the
+# active observation path with a self-fused, pass-through EventSystem.RaycastAll probe. No input
+# coordinates, result lists, or game state are mutated by the probe.
+python3 "${R10_OVERLAY}" "${JNI}/V240CacheLoader.cpp"
+grep -q 'abiProbeRevision=10' "${JNI}/V240CacheLoader.cpp"
+grep -q 'raycastProbePolicy=pass-through-observe-only' "${JNI}/V240CacheLoader.cpp"
+grep -q 'raycastProbeMutation=0' "${JNI}/V240CacheLoader.cpp"
+grep -q 'BasicHook(raycastMethod, HookRaycastProbe, g_oldRaycastProbe)' "${JNI}/V240CacheLoader.cpp"
+! grep -q 'MaybeInstallUiHook();' "${JNI}/V240CacheLoader.cpp"
 
 python3 - "${JNI}/BNM/include/BNM/UserSettings/GlobalSettings.hpp" <<'PY'
 from pathlib import Path
@@ -168,8 +180,10 @@ readelf -Ws "${OUT}/libv240fix.so" | grep -q 'JNI_OnLoad'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_dev_hoonex_adofai_v240_dynamic_RuntimeEntry_nativeRegisterDynamicBridge'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_dev_hoonex_adofai_v240_dynamic_RuntimeEntry_nativeReconcileDynamicRuntime'
-strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-sfb-dynamic-import-uihit-v1'
+strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-eventsystem-raycast-observe-v1'
+strings "${OUT}/libv240fix.so" | grep -q 'abiProbeRevision=10'
 strings "${OUT}/libv240fix.so" | grep -q 'sfbHookPolicy=dynamic-document-preprocess-before-bind'
-strings "${OUT}/libv240fix.so" | grep -q 'uiHitPolicy=pinned-upstream-eventsystem-raycast'
-strings "${OUT}/libv240fix.so" | grep -q 'uiHitSourceCommit=74bcc7a0d8c8be1267504e21e28a35e199b5d4eb'
+strings "${OUT}/libv240fix.so" | grep -q 'raycastProbePolicy=pass-through-observe-only'
+strings "${OUT}/libv240fix.so" | grep -q 'raycastProbeMutation=0'
+strings "${OUT}/libv240fix.so" | grep -q 'uiHitPolicy=disabled-r9-device-proven-not-on-tile-path'
 sha256sum "${OUT}/libv240fix.so" | tee "${OUT}/SHA256SUMS.txt"
