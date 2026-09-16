@@ -26,6 +26,7 @@ Class g_stringClass;
 std::mutex g_selectorMutex;
 std::mutex g_pickerMutex;
 std::mutex g_reportMutex;
+std::mutex g_filterTextMutex;
 
 std::atomic<bool> g_bnmLoadRequested{false};
 std::atomic<bool> g_bnmLoadedCallback{false};
@@ -42,19 +43,34 @@ std::atomic<int> g_markerWriteFailures{0};
 std::atomic<int> g_safPickerCalls{0};
 std::atomic<int> g_safPickerReturns{0};
 std::atomic<int> g_safLastState{0};
+std::atomic<int> g_filterReadAttempts{0};
+std::atomic<int> g_filterReadSuccess{0};
+std::atomic<int> g_filterFallbacks{0};
+std::atomic<int> g_filterCount{0};
+std::atomic<int> g_extensionCount{0};
+std::string g_lastExtensions = "<none>";
 std::string g_installMarker;
 std::string g_callMarker;
+
+constexpr std::size_t kMaxExtensionFilters = 32;
+constexpr std::size_t kMaxExtensionsPerFilter = 64;
+constexpr std::size_t kMaxUniqueExtensions = 128;
+constexpr int kMaxExtensionChars = 32;
+constexpr std::size_t kMaxJoinedExtensions = 512;
+constexpr const char* kBroadExtensions = "adofai,zip,json,ogg,mp3,wav,png,jpg,jpeg";
+
 std::string g_report =
-        "nativeProbe=cache-post-bnm-sfb-saf-v1\n"
-        "nativeStage=post-bnm-sfb-saf-open\n"
-        "abiProbeRevision=6\n"
+        "nativeProbe=cache-post-bnm-sfb-saf-filtered-v1\n"
+        "nativeStage=post-bnm-sfb-saf-filtered-open\n"
+        "abiProbeRevision=7\n"
         "bnmLoadRequested=0\n"
         "bnmLoadedCallback=0\n"
         "probeComplete=0\n"
         "gameHooksInstalled=0\n"
         "sfbOpenFiltersHookInstalled=0\n"
-        "sfbFilterMemoryRead=0\n"
-        "sfbHookPolicy=bootstrap1-self-fused-saf-broad-open\n"
+        "sfbFilterMemoryRead=1\n"
+        "sfbFilterReadBounded=1\n"
+        "sfbHookPolicy=bootstrap1-self-fused-saf-filtered-open\n"
         "sfbCanarySelfFuse=1\n"
         "sfbCanaryMarkerReady=0\n"
         "sfbCanaryRecoveryState=0\n"
@@ -113,12 +129,12 @@ void ClearMarker(const std::string& path) {
 bool PrepareSelfFuse() {
     const std::string dir = RuntimeDir();
     if (dir.empty()) { g_recoveryState.store(3); return false; }
-    g_installMarker = dir + "/sfb-canary-r6-install.pending";
-    g_callMarker = dir + "/sfb-canary-r6-call.pending";
+    g_installMarker = dir + "/sfb-canary-r7-install.pending";
+    g_callMarker = dir + "/sfb-canary-r7-call.pending";
     g_markerReady.store(true);
     if (MarkerExists(g_installMarker)) { g_recoveryState.store(1); return false; }
     if (MarkerExists(g_callMarker)) { g_recoveryState.store(2); return false; }
-    const std::string probe = dir + "/sfb-canary-r6-marker-probe.tmp";
+    const std::string probe = dir + "/sfb-canary-r7-marker-probe.tmp";
     ClearMarker(probe);
     if (!WriteMarker(probe)) { g_markerReady.store(false); g_recoveryState.store(3); return false; }
     ClearMarker(probe);
@@ -208,7 +224,111 @@ bool ProbeSafBridge() {
     return ready;
 }
 
-std::string RunSafPicker(bool multiselect) {
+bool ContainsExtension(const std::vector<std::string>& values, const std::string& candidate) {
+    for (const std::string& value : values) {
+        if (value == candidate) return true;
+    }
+    return false;
+}
+
+bool NormalizeExtension(String* value, std::string* out) {
+    if (value == nullptr || out == nullptr) return false;
+    const int length = value->length;
+    if (length <= 0 || length > kMaxExtensionChars + 2) return false;
+
+    std::string ascii;
+    ascii.reserve(static_cast<std::size_t>(length));
+    for (int i = 0; i < length; ++i) {
+        const auto code = value->chars[i];
+        if (code > 0x7f) return false;
+        char c = static_cast<char>(code);
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+        ascii.push_back(c);
+    }
+
+    std::size_t start = 0;
+    while (start < ascii.size() && (ascii[start] == '.' || ascii[start] == '*')) ++start;
+    if (start >= ascii.size()) return false;
+
+    std::string normalized = ascii.substr(start);
+    if (normalized.empty() || normalized.size() > static_cast<std::size_t>(kMaxExtensionChars)) return false;
+    for (char c : normalized) {
+        const bool valid = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+                || c == '_' || c == '-' || c == '+';
+        if (!valid) return false;
+    }
+    *out = normalized;
+    return true;
+}
+
+bool ReadFilterExtensions(Array<ExtensionFilterValue>* filters,
+                          std::vector<std::string>* values) {
+    g_filterReadAttempts.fetch_add(1);
+    if (values == nullptr) return false;
+    values->clear();
+    g_filterCount.store(0);
+    g_extensionCount.store(0);
+    if (filters == nullptr) return false;
+
+    const std::size_t filterCount = static_cast<std::size_t>(filters->capacity);
+    if (filterCount > kMaxExtensionFilters) return false;
+    g_filterCount.store(static_cast<int>(filterCount));
+
+    for (std::size_t i = 0; i < filterCount; ++i) {
+        Array<String*>* extensions = filters->m_Items[i].Extensions;
+        if (extensions == nullptr) continue;
+        const std::size_t extensionCount = static_cast<std::size_t>(extensions->capacity);
+        if (extensionCount > kMaxExtensionsPerFilter) return false;
+
+        for (std::size_t j = 0; j < extensionCount; ++j) {
+            String* extension = extensions->m_Items[j];
+            if (extension == nullptr) continue;
+            std::string normalized;
+            if (!NormalizeExtension(extension, &normalized)) return false;
+            if (!ContainsExtension(*values, normalized)) {
+                if (values->size() >= kMaxUniqueExtensions) return false;
+                values->push_back(normalized);
+            }
+        }
+    }
+
+    g_extensionCount.store(static_cast<int>(values->size()));
+    g_filterReadSuccess.fetch_add(1);
+    return true;
+}
+
+bool JoinExtensions(const std::vector<std::string>& values, std::string* joined) {
+    if (joined == nullptr) return false;
+    joined->clear();
+    for (const std::string& value : values) {
+        if (value.empty()) continue;
+        const std::size_t extra = value.size() + (joined->empty() ? 0U : 1U);
+        if (joined->size() + extra > kMaxJoinedExtensions) return false;
+        if (!joined->empty()) joined->push_back(',');
+        joined->append(value);
+    }
+    return true;
+}
+
+void SetLastExtensions(const std::string& value) {
+    std::lock_guard<std::mutex> lock(g_filterTextMutex);
+    g_lastExtensions = value;
+}
+
+std::string ResolvePickerExtensions(Array<ExtensionFilterValue>* filters) {
+    std::vector<std::string> values;
+    std::string joined;
+    if (ReadFilterExtensions(filters, &values) && !values.empty()
+            && JoinExtensions(values, &joined) && !joined.empty()) {
+        SetLastExtensions(joined);
+        return joined;
+    }
+    g_filterFallbacks.fetch_add(1);
+    SetLastExtensions("<broad>");
+    return kBroadExtensions;
+}
+
+std::string RunSafPicker(bool multiselect, const std::string& extensions) {
     std::lock_guard<std::mutex> lock(g_pickerMutex);
     g_safPickerCalls.fetch_add(1);
     JNIEnv* env = nullptr;
@@ -218,7 +338,8 @@ std::string RunSafPicker(bool multiselect) {
         if (attached) g_vm->DetachCurrentThread();
         return "";
     }
-    jstring filter = env->NewStringUTF("adofai,zip,json,ogg,mp3,wav,png,jpg,jpeg");
+    const std::string requested = extensions.empty() ? std::string(kBroadExtensions) : extensions;
+    jstring filter = env->NewStringUTF(requested.c_str());
     if (filter == nullptr) {
         if (env->ExceptionCheck()) env->ExceptionClear();
         g_safLastState.store(2);
@@ -287,7 +408,6 @@ Array<String*>* HookOpenFilePanelFilters(
         bool multiselect, IL2CPP::MethodInfo* methodInfo) {
     (void)title;
     (void)directory;
-    (void)filters;
     (void)methodInfo;
     if (g_oldOpenFilters == nullptr) return nullptr;
     g_calls.fetch_add(1);
@@ -297,8 +417,12 @@ Array<String*>* HookOpenFilePanelFilters(
         g_callsInFlight.fetch_sub(1);
         return nullptr;
     }
-    // r6: no original SFB call and no ExtensionFilter[] read; only the embedded Java SAF bridge.
-    Array<String*>* result = ToManagedStringArray(RunSafPicker(multiselect));
+
+    // r7: bounded read of the proven ExtensionFilter payload. Any invalid shape or
+    // value falls back to the broad picker; the original SFB implementation is never called.
+    const std::string extensions = ResolvePickerExtensions(filters);
+    Array<String*>* result = ToManagedStringArray(RunSafPicker(multiselect, extensions));
+
     g_returns.fetch_add(1);
     if (g_callsInFlight.fetch_sub(1) == 1) ClearMarker(g_callMarker);
     return result;
@@ -355,16 +479,19 @@ void RunAbiProbeAndMaybeInstallCanary() {
     }
 
     std::ostringstream out;
-    out << "nativeProbe=cache-post-bnm-sfb-saf-v1\n"
-        << "nativeStage=post-bnm-sfb-saf-open\n"
-        << "abiProbeRevision=6\n"
+    out << "nativeProbe=cache-post-bnm-sfb-saf-filtered-v1\n"
+        << "nativeStage=post-bnm-sfb-saf-filtered-open\n"
+        << "abiProbeRevision=7\n"
         << "bnmLoadRequested=1\n"
         << "bnmLoadedCallback=1\n"
         << "probeComplete=1\n"
         << "gameHooksInstalled=" << (g_hookInstalled.load() ? 1 : 0) << '\n'
         << "sfbOpenFiltersHookInstalled=" << (g_hookInstalled.load() ? 1 : 0) << '\n'
-        << "sfbFilterMemoryRead=0\n"
-        << "sfbHookPolicy=bootstrap1-self-fused-saf-broad-open\n"
+        << "sfbFilterMemoryRead=1\n"
+        << "sfbFilterReadBounded=1\n"
+        << "sfbFilterReadMaxFilters=" << kMaxExtensionFilters << '\n'
+        << "sfbFilterReadMaxExtensionsPerFilter=" << kMaxExtensionsPerFilter << '\n'
+        << "sfbHookPolicy=bootstrap1-self-fused-saf-filtered-open\n"
         << "sfbCanarySelfFuse=1\n"
         << "sfbCanaryMarkerReady=" << (g_markerReady.load() ? 1 : 0) << '\n'
         << "sfbCanaryRecoveryState=" << g_recoveryState.load() << '\n'
@@ -408,28 +535,40 @@ std::string CurrentReport() {
     std::ostringstream out;
     if (!g_bnmLoadRequested.load()) out << g_report;
     else if (!g_bnmLoadedCallback.load()) {
-        out << "nativeProbe=cache-post-bnm-sfb-saf-v1\n"
-            << "nativeStage=post-bnm-sfb-saf-open\n"
-            << "abiProbeRevision=6\n"
+        out << "nativeProbe=cache-post-bnm-sfb-saf-filtered-v1\n"
+            << "nativeStage=post-bnm-sfb-saf-filtered-open\n"
+            << "abiProbeRevision=7\n"
             << "bnmLoadRequested=1\n"
             << "bnmLoadedCallback=0\n"
             << "probeComplete=0\n"
             << "gameHooksInstalled=0\n"
             << "sfbOpenFiltersHookInstalled=0\n"
-            << "sfbFilterMemoryRead=0\n"
-            << "sfbHookPolicy=bootstrap1-self-fused-saf-broad-open\n"
+            << "sfbFilterMemoryRead=1\n"
+            << "sfbFilterReadBounded=1\n"
+            << "sfbHookPolicy=bootstrap1-self-fused-saf-filtered-open\n"
             << "sfbSafBridgeReady=0\n"
             << "sfbOriginalCallUsed=0\n";
     } else {
         std::lock_guard<std::mutex> lock(g_reportMutex);
         out << g_report;
     }
+    std::string lastExtensions;
+    {
+        std::lock_guard<std::mutex> lock(g_filterTextMutex);
+        lastExtensions = g_lastExtensions;
+    }
     out << "sfbOpenFiltersCanaryCalls=" << g_calls.load() << '\n'
         << "sfbOpenFiltersCanaryReturns=" << g_returns.load() << '\n'
         << "sfbCanaryMarkerWriteFailures=" << g_markerWriteFailures.load() << '\n'
         << "sfbSafPickerCalls=" << g_safPickerCalls.load() << '\n'
         << "sfbSafPickerReturns=" << g_safPickerReturns.load() << '\n'
-        << "sfbSafLastState=" << g_safLastState.load() << '\n';
+        << "sfbSafLastState=" << g_safLastState.load() << '\n'
+        << "sfbFilterReadAttempts=" << g_filterReadAttempts.load() << '\n'
+        << "sfbFilterReadSuccess=" << g_filterReadSuccess.load() << '\n'
+        << "sfbFilterFallbacks=" << g_filterFallbacks.load() << '\n'
+        << "sfbFilterCount=" << g_filterCount.load() << '\n'
+        << "sfbExtensionCount=" << g_extensionCount.load() << '\n'
+        << "sfbLastExtensions=" << lastExtensions << '\n';
     return out.str();
 }
 } // namespace

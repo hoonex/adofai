@@ -32,20 +32,25 @@ for marker in (
     'JNI_OnLoad', 'g_vm = vm', 'universe.h', 'Loading::TryLoadByJNI',
     'Loading::AddOnLoadedEvent', 'RunAbiProbeAndMaybeInstallCanary',
     'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport',
-    'nativeProbe=cache-post-bnm-sfb-saf-v1',
-    'nativeStage=post-bnm-sfb-saf-open', 'abiProbeRevision=6',
-    'sfbHookPolicy=bootstrap1-self-fused-saf-broad-open',
+    'nativeProbe=cache-post-bnm-sfb-saf-filtered-v1',
+    'nativeStage=post-bnm-sfb-saf-filtered-open', 'abiProbeRevision=7',
+    'sfbHookPolicy=bootstrap1-self-fused-saf-filtered-open',
     'sfbCanarySelfFuse=1', 'sfbCanaryMarkerReady=', 'sfbCanaryRecoveryState=',
     'sfbCanaryHiddenMethodInfo=1', 'sfbSafBridgeReady=', 'sfbOriginalCallUsed=0',
     'sfbSafPickerCalls=', 'sfbSafPickerReturns=', 'sfbSafLastState=',
     'sfbOpenFiltersCanaryCalls=', 'sfbOpenFiltersCanaryReturns=',
-    'sfbCanaryMarkerWriteFailures=', 'sfbFilterMemoryRead=0',
+    'sfbCanaryMarkerWriteFailures=', 'sfbFilterMemoryRead=1',
+    'sfbFilterReadBounded=1', 'sfbFilterReadAttempts=', 'sfbFilterReadSuccess=',
+    'sfbFilterFallbacks=', 'sfbFilterCount=', 'sfbExtensionCount=', 'sfbLastExtensions=',
     'struct ExtensionFilterValue', 'IL2CPP::MethodInfo* methodInfo',
     'BasicHook(openFilters, HookOpenFilePanelFilters, g_oldOpenFilters)',
-    'RunSafPicker(multiselect)', 'ToManagedStringArray', 'CreateMonoString',
+    'ReadFilterExtensions', 'filters->capacity', 'filters->m_Items[i].Extensions',
+    'extensions->capacity', 'extensions->m_Items[j]', 'NormalizeExtension',
+    'ResolvePickerExtensions(filters)', 'RunSafPicker(multiselect, extensions)',
+    'ToManagedStringArray', 'CreateMonoString',
     'FileSelector', 'CallStaticVoidMethod', 'CallStaticObjectMethod',
     'GetStaticBooleanField', 'NewGlobalRef',
-    'dladdr(', 'sfb-canary-r6-install.pending', 'sfb-canary-r6-call.pending',
+    'dladdr(', 'sfb-canary-r7-install.pending', 'sfb-canary-r7-call.pending',
     'O_CREAT | O_EXCL | O_CLOEXEC', 'fsync(fd)',
 ):
     assert marker in s, marker
@@ -56,13 +61,17 @@ for forbidden in (
     'InstallAllHooks', 'InstallSfbHooks', 'InstallMobileHooks',
     'V240SettingsOverlay', 'V240EventCompat', 'V240TouchAssist',
     '.Call(', '.Set(', 'CreateNewObject', 'RunOpenPicker(',
-    'filters->', 'ReadFilterExtensions',
+    'cache-post-bnm-sfb-saf-v1', 'bootstrap1-self-fused-saf-broad-open',
 ):
     assert forbidden not in s, forbidden
 hook = s[s.index('Array<String*>* HookOpenFilePanelFilters'):]
 hook = hook[:hook.index('\n}\n') + 2]
-for forbidden in ('m_Items', '.Extensions', '.Name', 'original('):
+assert hook.index('WriteMarker(g_callMarker)') < hook.index('ResolvePickerExtensions(filters)')
+for forbidden in ('original(', 'g_oldOpenFilters('):
     assert forbidden not in hook, forbidden
+read = s[s.index('bool ReadFilterExtensions'):]
+read = read[:read.index('\n}\n\nbool JoinExtensions') + 2]
+assert '.Name' not in read
 PY
 
 JNI="${UPSTREAM}/app/src/main/jni"
@@ -132,16 +141,19 @@ cp "${LIB}" "${OUT}/libv240fix.so"
 readelf -h "${OUT}/libv240fix.so" | grep -q 'AArch64'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'JNI_OnLoad'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport'
-strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-sfb-saf-v1'
-strings "${OUT}/libv240fix.so" | grep -q 'nativeStage=post-bnm-sfb-saf-open'
-strings "${OUT}/libv240fix.so" | grep -q 'sfbHookPolicy=bootstrap1-self-fused-saf-broad-open'
+strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-sfb-saf-filtered-v1'
+strings "${OUT}/libv240fix.so" | grep -q 'nativeStage=post-bnm-sfb-saf-filtered-open'
+strings "${OUT}/libv240fix.so" | grep -q 'sfbHookPolicy=bootstrap1-self-fused-saf-filtered-open'
 strings "${OUT}/libv240fix.so" | grep -q 'sfbSafBridgeReady='
 strings "${OUT}/libv240fix.so" | grep -q 'sfbOriginalCallUsed=0'
 strings "${OUT}/libv240fix.so" | grep -q 'sfbSafPickerCalls='
 strings "${OUT}/libv240fix.so" | grep -q 'sfbSafPickerReturns='
-strings "${OUT}/libv240fix.so" | grep -q 'sfbFilterMemoryRead=0'
+strings "${OUT}/libv240fix.so" | grep -q 'sfbFilterMemoryRead=1'
+strings "${OUT}/libv240fix.so" | grep -q 'sfbFilterReadBounded=1'
+strings "${OUT}/libv240fix.so" | grep -q 'sfbFilterReadAttempts='
+strings "${OUT}/libv240fix.so" | grep -q 'sfbLastExtensions='
 if readelf -Ws "${OUT}/libv240fix.so" | grep -Eq 'Java_com_unity3d_player_V240SettingsOverlay_|Java_com_unity3d_player_V240EventCompat_'; then
-  echo 'cache SAF canary unexpectedly exported feature activation JNI' >&2
+  echo 'cache SAF runtime unexpectedly exported feature activation JNI' >&2
   exit 1
 fi
 sha256sum "${OUT}/libv240fix.so" | tee "${OUT}/SHA256SUMS.txt"

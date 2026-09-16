@@ -10,22 +10,25 @@ DYNAMIC_ENTRY = ROOT / "android/v240-dynamic-runtime/java/dev/hoonex/adofai/v240
 
 
 class V240CacheNativeLoaderContract(unittest.TestCase):
-    def test_loader_installs_only_self_fused_exact_saf_open_canary(self):
+    def test_loader_installs_only_self_fused_filtered_saf_hook(self):
         source = LOADER.read_text(encoding="utf-8")
         for required in (
             "JNI_OnLoad", "g_vm = vm", "universe.h", "Loading::TryLoadByJNI",
             "Loading::AddOnLoadedEvent", "RunAbiProbeAndMaybeInstallCanary",
             "Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport",
-            "nativeProbe=cache-post-bnm-sfb-saf-v1",
-            "nativeStage=post-bnm-sfb-saf-open",
-            "abiProbeRevision=6",
-            "sfbHookPolicy=bootstrap1-self-fused-saf-broad-open",
+            "nativeProbe=cache-post-bnm-sfb-saf-filtered-v1",
+            "nativeStage=post-bnm-sfb-saf-filtered-open",
+            "abiProbeRevision=7",
+            "sfbHookPolicy=bootstrap1-self-fused-saf-filtered-open",
             "sfbCanarySelfFuse=1", "sfbCanaryMarkerReady=",
             "sfbCanaryRecoveryState=", "sfbCanaryHiddenMethodInfo=1",
             "sfbSafBridgeReady=", "sfbOriginalCallUsed=0",
             "sfbSafPickerCalls=", "sfbSafPickerReturns=", "sfbSafLastState=",
             "sfbOpenFiltersCanaryCalls=", "sfbOpenFiltersCanaryReturns=",
-            "sfbCanaryMarkerWriteFailures=", "sfbFilterMemoryRead=0",
+            "sfbCanaryMarkerWriteFailures=", "sfbFilterMemoryRead=1",
+            "sfbFilterReadBounded=1", "sfbFilterReadAttempts=",
+            "sfbFilterReadSuccess=", "sfbFilterFallbacks=",
+            "sfbFilterCount=", "sfbExtensionCount=", "sfbLastExtensions=",
             "struct ExtensionFilterValue", "String* Name;",
             "Array<String*>* Extensions;", "IL2CPP::MethodInfo* methodInfo",
             "HookOpenFilePanelFilters", "g_oldOpenFilters",
@@ -38,7 +41,7 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
             "InstallAllHooks", "InstallSfbHooks", "InstallMobileHooks",
             "V240SettingsOverlay", "V240EventCompat", "V240TouchAssist",
             ".Call(", ".Set(", "CreateNewObject", "RunOpenPicker(",
-            "filters->", "ReadFilterExtensions",
+            "cache-post-bnm-sfb-saf-v1", "bootstrap1-self-fused-saf-broad-open",
         ):
             self.assertNotIn(forbidden, source)
 
@@ -56,21 +59,39 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
         ):
             self.assertIn(required, source)
 
-    def test_hook_does_not_call_original_or_read_filter_payload(self):
+    def test_filter_read_is_bounded_and_falls_back_broad(self):
+        source = LOADER.read_text(encoding="utf-8")
+        for required in (
+            "kMaxExtensionFilters = 32", "kMaxExtensionsPerFilter = 64",
+            "kMaxUniqueExtensions = 128", "kMaxExtensionChars = 32",
+            "kMaxJoinedExtensions = 512", "ReadFilterExtensions",
+            "filters->capacity", "filters->m_Items[i].Extensions",
+            "extensions->capacity", "extensions->m_Items[j]",
+            "NormalizeExtension", "ContainsExtension", "JoinExtensions",
+            "ResolvePickerExtensions", "g_filterFallbacks.fetch_add(1)",
+            "return kBroadExtensions;",
+        ):
+            self.assertIn(required, source)
+        read_start = source.index("bool ReadFilterExtensions")
+        read_end = source.index("\n}\n\nbool JoinExtensions", read_start) + 2
+        read_body = source[read_start:read_end]
+        self.assertNotIn(".Name", read_body)
+        self.assertIn("if (filterCount > kMaxExtensionFilters) return false;", read_body)
+        self.assertIn("if (extensionCount > kMaxExtensionsPerFilter) return false;", read_body)
+
+    def test_hook_marks_abort_boundary_before_filter_read_and_never_calls_original(self):
         source = LOADER.read_text(encoding="utf-8")
         hook_start = source.index("Array<String*>* HookOpenFilePanelFilters")
         hook_end = source.index("\n}\n", hook_start) + 2
         hook = source[hook_start:hook_end]
-        self.assertIn("(void)filters;", hook)
-        self.assertIn("RunSafPicker(multiselect)", hook)
+        self.assertIn("WriteMarker(g_callMarker)", hook)
+        self.assertIn("ResolvePickerExtensions(filters)", hook)
+        self.assertIn("RunSafPicker(multiselect, extensions)", hook)
+        self.assertLess(hook.index("WriteMarker(g_callMarker)"), hook.index("ResolvePickerExtensions(filters)"))
         self.assertNotIn("original(", hook)
         self.assertNotIn("g_oldOpenFilters(", hook)
-        self.assertNotIn("filters->", hook)
-        self.assertNotIn("m_Items", hook)
-        self.assertNotIn(".Extensions", hook)
-        self.assertNotIn(".Name", hook)
 
-    def test_canary_preserves_hidden_methodinfo_signature(self):
+    def test_hidden_methodinfo_signature_is_preserved(self):
         source = LOADER.read_text(encoding="utf-8")
         self.assertIn(
             "Array<String*>* (*)(\n        String*, String*, Array<ExtensionFilterValue>*, bool, IL2CPP::MethodInfo*)",
@@ -79,7 +100,7 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
         self.assertIn("bool multiselect, IL2CPP::MethodInfo* methodInfo)", source)
         self.assertIn("(void)methodInfo;", source)
 
-    def test_canary_is_runtime_guarded_by_proven_v240_abi_and_bridge(self):
+    def test_hook_is_runtime_guarded_by_proven_v240_abi_and_bridge(self):
         source = LOADER.read_text(encoding="utf-8")
         for required in (
             'browser.GetMethod(\n            "OpenFilePanel", {"title", "directory", "extensions", "multiselect"})',
@@ -98,11 +119,11 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
         ):
             self.assertIn(required, source)
 
-    def test_canary_self_fuse_covers_install_and_saf_call_abort_boundaries(self):
+    def test_self_fuse_covers_install_filter_read_and_saf_call_abort_boundaries(self):
         source = LOADER.read_text(encoding="utf-8")
         for required in (
-            "dladdr(", "sfb-canary-r6-install.pending", "sfb-canary-r6-call.pending",
-            "sfb-canary-r6-marker-probe.tmp", "O_CREAT | O_EXCL | O_CLOEXEC",
+            "dladdr(", "sfb-canary-r7-install.pending", "sfb-canary-r7-call.pending",
+            "sfb-canary-r7-marker-probe.tmp", "O_CREAT | O_EXCL | O_CLOEXEC",
             "fsync(fd)", "MarkerExists(g_installMarker)",
             "MarkerExists(g_callMarker)", "WriteMarker(g_installMarker)",
             "ClearMarker(g_installMarker)", "WriteMarker(g_callMarker)",
@@ -110,7 +131,7 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
         ):
             self.assertIn(required, source)
 
-    def test_cache_native_build_pins_bnm_and_allows_only_saf_canary(self):
+    def test_cache_native_build_pins_bnm_and_enforces_filtered_saf_scope(self):
         build = BUILD.read_text(encoding="utf-8")
         self.assertIn("V240CacheLoader.cpp", build)
         self.assertIn("HitMargin/A-Dance-of-Fire-and-Ice-Mobile---Load-Custom-Level.git", build)
@@ -118,9 +139,11 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
         self.assertIn("UNITY_VER 213", build)
         self.assertIn("UNITY_PATCH_VER 10", build)
         self.assertIn("BNM/src/Loading.cpp", build)
-        self.assertIn("cache-post-bnm-sfb-saf-v1", build)
-        self.assertIn("bootstrap1-self-fused-saf-broad-open", build)
+        self.assertIn("cache-post-bnm-sfb-saf-filtered-v1", build)
+        self.assertIn("bootstrap1-self-fused-saf-filtered-open", build)
         self.assertIn("assert s.count('BasicHook(') == 1", build)
+        self.assertIn("ReadFilterExtensions", build)
+        self.assertIn("filters->m_Items[i].Extensions", build)
         self.assertIn("FileSelector", build)
         self.assertIn("CallStaticVoidMethod", build)
         self.assertIn("CreateMonoString", build)
@@ -137,25 +160,26 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
         self.assertNotIn("V240EventCompat", dynamic)
         self.assertNotIn("System.load(", dynamic)
 
-    def test_channel_delivers_self_fused_saf_canary_to_bootstrap1(self):
+    def test_channel_delivers_filtered_saf_runtime_to_bootstrap1(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("build-v240-cache-native.sh dist/v240-channel-native", workflow)
         self.assertNotIn("build-v240-fixed-native.sh dist/v240-channel-native", workflow)
         self.assertIn("cp dist/v240-channel-native/libv240fix.so", workflow)
         self.assertIn("test_v240_cache_loader.py", workflow)
-        self.assertIn("Build self-fused SFB SAF open canary", workflow)
+        self.assertIn("Build self-fused SFB SAF filtered-open runtime", workflow)
         self.assertIn("'minBootstrap': 1", workflow)
 
-    def test_rollout_is_boolean_and_canary_scope_stays_single_hook(self):
+    def test_rollout_is_boolean_and_scope_stays_single_hook(self):
         rollout = ROLLOUT.read_text(encoding="utf-8").strip()
         self.assertIn(rollout, ("true", "false"))
         if rollout == "true":
             loader = LOADER.read_text(encoding="utf-8")
             dynamic = DYNAMIC_ENTRY.read_text(encoding="utf-8")
             self.assertEqual(loader.count("BasicHook("), 1)
-            self.assertIn("sfbFilterMemoryRead=0", loader)
+            self.assertIn("sfbFilterMemoryRead=1", loader)
+            self.assertIn("sfbFilterReadBounded=1", loader)
             self.assertIn("sfbOriginalCallUsed=0", loader)
-            self.assertIn("bootstrap1-self-fused-saf-broad-open", loader)
+            self.assertIn("bootstrap1-self-fused-saf-filtered-open", loader)
             self.assertNotIn("System.load(", dynamic)
 
 

@@ -44,7 +44,7 @@ jobs:
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
           sdkmanager 'platforms;android-35' 'build-tools;36.0.0' 'ndk;29.0.14206865'
 
-      - name: Build self-fused SFB SAF open canary
+      - name: Build self-fused SFB SAF filtered-open runtime
         run: bash scripts/build-v240-cache-native.sh dist/v240-channel-native
 
       - name: Build hot-swappable dynamic DEX
