@@ -38,7 +38,7 @@ import dalvik.system.DexClassLoader;
  */
 final class V240RuntimeUpdater {
     private static final String TAG = "ADOFAI.V240Updater";
-    private static final int BOOTSTRAP_VERSION = 1;
+    private static final int BOOTSTRAP_VERSION = 2;
     private static final int MANIFEST_SCHEMA = 1;
     private static final long HEALTH_DELAY_MS = 10_000L;
     private static final long MIN_CHECK_INTERVAL_MS = 5L * 60L * 1000L;
@@ -473,7 +473,7 @@ final class V240RuntimeUpdater {
             connection.setConnectTimeout(7000);
             connection.setReadTimeout(15000);
             connection.setUseCaches(false);
-            connection.setRequestProperty("User-Agent", "ADOFAI-V240-Updater/1");
+            connection.setRequestProperty("User-Agent", "ADOFAI-V240-Updater/2");
             int code = connection.getResponseCode();
             if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
                 String location = connection.getHeaderField("Location");
