@@ -16,6 +16,7 @@ std::mutex g_reportMutex;
 std::string g_report =
         "nativeProbe=cache-post-bnm-probe-only-v2\n"
         "nativeStage=post-bnm-read-only-abi\n"
+        "abiProbeRevision=3\n"
         "bnmLoadRequested=0\n"
         "bnmLoadedCallback=0\n"
         "probeComplete=0\n"
@@ -24,11 +25,28 @@ std::string g_report =
         "sfbFilterMemoryRead=0\n"
         "sfbHookPolicy=disabled-unproven-call-abi\n";
 
+bool SameClass(const Class& left, const Class& right) {
+    return left && right && left.GetClass() == right.GetClass();
+}
+
+int TypeCode(const IL2CPP::Il2CppType* type) {
+    return type == nullptr ? -1 : static_cast<int>(type->type);
+}
+
+int TypeByRef(const IL2CPP::Il2CppType* type) {
+    return type == nullptr ? -1 : (type->byref ? 1 : 0);
+}
+
+int TypeValueType(const IL2CPP::Il2CppType* type) {
+    return type == nullptr ? -1 : (type->valuetype ? 1 : 0);
+}
+
 void RunReadOnlyAbiProbe() {
     // Evidence-only recovery payload. Resolve metadata only after BNM is loaded.
     // Never invoke managed code, write managed state, create objects, or install hooks.
-    // In particular, method/field existence does not prove the native call ABI for
-    // SFB.ExtensionFilter[] and therefore is not enough evidence to activate BasicHook.
+    // Revision 3 additionally inspects MethodInfo/Il2CppClass metadata so the exact
+    // SFB ExtensionFilter[] signature and value-type layout can be proven before any
+    // hook is allowed to exist.
     Class browser("SFB", "StandaloneFileBrowser");
     Class extensionFilter("SFB", "ExtensionFilter");
     Class canvasScaler("UnityEngine.UI", "CanvasScaler");
@@ -48,16 +66,65 @@ void RunReadOnlyAbiProbe() {
     Class pauseMenu("", "PauseMenu");
 
     const bool openFile4 = browser && browser.GetMethod("OpenFilePanel", 4).IsValid();
-    const bool openFiltersExact = browser && browser.GetMethod(
-            "OpenFilePanel", {"title", "directory", "extensions", "multiselect"}).IsValid();
+    MethodBase openFilters = browser ? browser.GetMethod(
+            "OpenFilePanel", {"title", "directory", "extensions", "multiselect"}) : MethodBase{};
+    const bool openFiltersExact = openFilters.IsValid();
     const bool saveFile4 = browser && browser.GetMethod("SaveFilePanel", 4).IsValid();
     const bool openFolder3 = browser && browser.GetMethod("OpenFolderPanel", 3).IsValid();
     const bool openFileAsync5 = browser && browser.GetMethod("OpenFilePanelAsync", 5).IsValid();
     const bool saveFileAsync5 = browser && browser.GetMethod("SaveFilePanelAsync", 5).IsValid();
     const bool openFolderAsync4 = browser && browser.GetMethod("OpenFolderPanelAsync", 4).IsValid();
 
-    const bool filterNameField = extensionFilter && extensionFilter.GetField("Name").IsValid();
-    const bool filterExtensionsField = extensionFilter && extensionFilter.GetField("Extensions").IsValid();
+    FieldBase filterName = extensionFilter ? extensionFilter.GetField("Name") : FieldBase{};
+    FieldBase filterExtensions = extensionFilter ? extensionFilter.GetField("Extensions") : FieldBase{};
+    const bool filterNameField = filterName.IsValid();
+    const bool filterExtensionsField = filterExtensions.IsValid();
+
+    // Read only the exact IL2CPP metadata BNM already resolved. This does not dereference
+    // an ExtensionFilter[] object and does not execute OpenFilePanel.
+    IL2CPP::MethodInfo* openInfo = openFiltersExact ? openFilters.GetInfo() : nullptr;
+    Class stringClass = Defaults::Get<String*>();
+    Class boolClass = Defaults::Get<bool>();
+    Class stringArrayClass = stringClass ? stringClass.GetArray() : Class{};
+    Class filterArrayClass = extensionFilter ? extensionFilter.GetArray() : Class{};
+
+    const bool openMethodPointer = openInfo != nullptr && openInfo->methodPointer != nullptr;
+    const bool openStatic = openInfo != nullptr && openFilters._isStatic;
+    const bool openParameterCount4 = openInfo != nullptr && openInfo->parameters_count == 4;
+
+    const IL2CPP::Il2CppType* param0Type = openParameterCount4 ? openInfo->parameters[0] : nullptr;
+    const IL2CPP::Il2CppType* param1Type = openParameterCount4 ? openInfo->parameters[1] : nullptr;
+    const IL2CPP::Il2CppType* param2Type = openParameterCount4 ? openInfo->parameters[2] : nullptr;
+    const IL2CPP::Il2CppType* param3Type = openParameterCount4 ? openInfo->parameters[3] : nullptr;
+    Class param0Class = param0Type ? Class(param0Type) : Class{};
+    Class param1Class = param1Type ? Class(param1Type) : Class{};
+    Class param2Class = param2Type ? Class(param2Type) : Class{};
+    Class param3Class = param3Type ? Class(param3Type) : Class{};
+    Class returnClass = openInfo != nullptr && openInfo->return_type != nullptr
+            ? Class(openInfo->return_type) : Class{};
+
+    const bool openReturnStringArray = SameClass(returnClass, stringArrayClass);
+    const bool openParam0String = SameClass(param0Class, stringClass);
+    const bool openParam1String = SameClass(param1Class, stringClass);
+    const bool openParam2FilterArray = SameClass(param2Class, filterArrayClass);
+    const bool openParam3Bool = SameClass(param3Class, boolClass);
+
+    IL2CPP::Il2CppType* filterType = extensionFilter ? extensionFilter.GetIl2CppType() : nullptr;
+    IL2CPP::Il2CppClass* filterClass = extensionFilter ? extensionFilter.GetClass() : nullptr;
+    const bool filterValueType = filterType != nullptr && filterType->valuetype;
+    const uint32_t filterInstanceSize = filterClass == nullptr ? 0U : filterClass->instance_size;
+    const uint32_t filterActualSize = filterClass == nullptr ? 0U : filterClass->actualSize;
+    const uint32_t filterElementSize = filterClass == nullptr ? 0U : filterClass->element_size;
+    const int32_t filterNativeSize = filterClass == nullptr ? -1 : filterClass->native_size;
+
+    const long long filterNameOffset = filterNameField
+            ? static_cast<long long>(filterName.GetOffset()) : -1LL;
+    const long long filterExtensionsOffset = filterExtensionsField
+            ? static_cast<long long>(filterExtensions.GetOffset()) : -1LL;
+    Class filterNameType = filterNameField ? filterName.GetType() : Class{};
+    Class filterExtensionsType = filterExtensionsField ? filterExtensions.GetType() : Class{};
+    const bool filterNameString = SameClass(filterNameType, stringClass);
+    const bool filterExtensionsStringArray = SameClass(filterExtensionsType, stringArrayClass);
 
     const bool setScaleFactor1 = canvasScaler && canvasScaler.GetMethod("SetScaleFactor", 1).IsValid();
     const bool getAxis1 = input && input.GetMethod("GetAxis", 1).IsValid();
@@ -98,6 +165,7 @@ void RunReadOnlyAbiProbe() {
     std::ostringstream out;
     out << "nativeProbe=cache-post-bnm-probe-only-v2\n"
         << "nativeStage=post-bnm-read-only-abi\n"
+        << "abiProbeRevision=3\n"
         << "bnmLoadRequested=1\n"
         << "bnmLoadedCallback=1\n"
         << "probeComplete=1\n"
@@ -108,9 +176,33 @@ void RunReadOnlyAbiProbe() {
         << "abi.SFB.class=" << (browser ? 1 : 0) << '\n'
         << "abi.SFB.OpenFilePanel4=" << (openFile4 ? 1 : 0) << '\n'
         << "abi.SFB.OpenFilePanel.filtersExact=" << (openFiltersExact ? 1 : 0) << '\n'
+        << "abi.SFB.OpenFilePanel.static=" << (openStatic ? 1 : 0) << '\n'
+        << "abi.SFB.OpenFilePanel.methodPointer=" << (openMethodPointer ? 1 : 0) << '\n'
+        << "abi.SFB.OpenFilePanel.parameterCount4=" << (openParameterCount4 ? 1 : 0) << '\n'
+        << "abi.SFB.OpenFilePanel.return.StringArray=" << (openReturnStringArray ? 1 : 0) << '\n'
+        << "abi.SFB.OpenFilePanel.param0.String=" << (openParam0String ? 1 : 0) << '\n'
+        << "abi.SFB.OpenFilePanel.param1.String=" << (openParam1String ? 1 : 0) << '\n'
+        << "abi.SFB.OpenFilePanel.param2.ExtensionFilterArray=" << (openParam2FilterArray ? 1 : 0) << '\n'
+        << "abi.SFB.OpenFilePanel.param3.Boolean=" << (openParam3Bool ? 1 : 0) << '\n'
+        << "abi.SFB.OpenFilePanel.param0.typeCode=" << TypeCode(param0Type) << '\n'
+        << "abi.SFB.OpenFilePanel.param1.typeCode=" << TypeCode(param1Type) << '\n'
+        << "abi.SFB.OpenFilePanel.param2.typeCode=" << TypeCode(param2Type) << '\n'
+        << "abi.SFB.OpenFilePanel.param3.typeCode=" << TypeCode(param3Type) << '\n'
+        << "abi.SFB.OpenFilePanel.param2.byref=" << TypeByRef(param2Type) << '\n'
+        << "abi.SFB.OpenFilePanel.param2.valuetype=" << TypeValueType(param2Type) << '\n'
         << "abi.SFB.ExtensionFilter.class=" << (extensionFilter ? 1 : 0) << '\n'
+        << "abi.SFB.ExtensionFilter.valueType=" << (filterValueType ? 1 : 0) << '\n'
+        << "abi.SFB.ExtensionFilter.instanceSize=" << filterInstanceSize << '\n'
+        << "abi.SFB.ExtensionFilter.actualSize=" << filterActualSize << '\n'
+        << "abi.SFB.ExtensionFilter.elementSize=" << filterElementSize << '\n'
+        << "abi.SFB.ExtensionFilter.nativeSize=" << filterNativeSize << '\n'
         << "abi.SFB.ExtensionFilter.Name=" << (filterNameField ? 1 : 0) << '\n'
+        << "abi.SFB.ExtensionFilter.Name.offset=" << filterNameOffset << '\n'
+        << "abi.SFB.ExtensionFilter.Name.String=" << (filterNameString ? 1 : 0) << '\n'
         << "abi.SFB.ExtensionFilter.Extensions=" << (filterExtensionsField ? 1 : 0) << '\n'
+        << "abi.SFB.ExtensionFilter.Extensions.offset=" << filterExtensionsOffset << '\n'
+        << "abi.SFB.ExtensionFilter.Extensions.StringArray="
+        << (filterExtensionsStringArray ? 1 : 0) << '\n'
         << "abi.SFB.SaveFilePanel4=" << (saveFile4 ? 1 : 0) << '\n'
         << "abi.SFB.OpenFolderPanel3=" << (openFolder3 ? 1 : 0) << '\n'
         << "abi.SFB.OpenFilePanelAsync5=" << (openFileAsync5 ? 1 : 0) << '\n'
@@ -149,6 +241,7 @@ std::string CurrentReport() {
     if (!g_bnmLoadRequested.load(std::memory_order_acquire)) {
         return "nativeProbe=cache-post-bnm-probe-only-v2\n"
                "nativeStage=post-bnm-read-only-abi\n"
+               "abiProbeRevision=3\n"
                "bnmLoadRequested=0\n"
                "bnmLoadedCallback=0\n"
                "probeComplete=0\n"
@@ -160,6 +253,7 @@ std::string CurrentReport() {
     if (!g_bnmLoadedCallback.load(std::memory_order_acquire)) {
         return "nativeProbe=cache-post-bnm-probe-only-v2\n"
                "nativeStage=post-bnm-read-only-abi\n"
+               "abiProbeRevision=3\n"
                "bnmLoadRequested=1\n"
                "bnmLoadedCallback=0\n"
                "probeComplete=0\n"

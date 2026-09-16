@@ -17,10 +17,19 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
             "Loading::AddOnLoadedEvent", "RunReadOnlyAbiProbe",
             "Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport",
             "nativeProbe=cache-post-bnm-probe-only-v2", "nativeStage=post-bnm-read-only-abi",
-            "probeComplete=1", "gameHooksInstalled=0", "sfbOpenFiltersHookInstalled=0",
-            "sfbFilterMemoryRead=0", "sfbHookPolicy=disabled-unproven-call-abi",
-            "abi.SFB.OpenFilePanel.filtersExact=", "abi.SFB.ExtensionFilter.Name=",
-            "abi.SFB.ExtensionFilter.Extensions=", "abi.Settings.PauseMenu.ShowSettingsMenu0=",
+            "abiProbeRevision=3", "probeComplete=1", "gameHooksInstalled=0",
+            "sfbOpenFiltersHookInstalled=0", "sfbFilterMemoryRead=0",
+            "sfbHookPolicy=disabled-unproven-call-abi",
+            "abi.SFB.OpenFilePanel.filtersExact=", "abi.SFB.OpenFilePanel.static=",
+            "abi.SFB.OpenFilePanel.methodPointer=", "abi.SFB.OpenFilePanel.parameterCount4=",
+            "abi.SFB.OpenFilePanel.return.StringArray=",
+            "abi.SFB.OpenFilePanel.param2.ExtensionFilterArray=",
+            "abi.SFB.OpenFilePanel.param2.typeCode=", "abi.SFB.OpenFilePanel.param2.byref=",
+            "abi.SFB.ExtensionFilter.valueType=", "abi.SFB.ExtensionFilter.instanceSize=",
+            "abi.SFB.ExtensionFilter.elementSize=", "abi.SFB.ExtensionFilter.Name.offset=",
+            "abi.SFB.ExtensionFilter.Extensions.offset=",
+            "abi.SFB.ExtensionFilter.Extensions.StringArray=",
+            "abi.Settings.PauseMenu.ShowSettingsMenu0=",
             "abi.Mobile.CanvasScaler.SetScaleFactor1=", "abi.Touch.EventSystem.RaycastAll=",
             "abi.FPS.Application.setTargetFrameRate1=",
             "abi.Event.scrCamera.SetCustomFrameRateBoolInt=",
@@ -47,6 +56,23 @@ class V240CacheNativeLoaderContract(unittest.TestCase):
         self.assertIn('Class scrCamera("", "scrCamera")', source)
         self.assertIn('Class pauseMenu("", "PauseMenu")', source)
         self.assertIn('"SetCustomFrameRate", {Defaults::Get<bool>(), Defaults::Get<int>()}).IsValid()', source)
+
+    def test_revision3_reads_signature_and_layout_metadata_without_activation(self):
+        source = LOADER.read_text(encoding="utf-8")
+        for required in (
+            "openFilters.GetInfo()", "openInfo->methodPointer", "openFilters._isStatic",
+            "openInfo->parameters_count == 4", "openInfo->parameters[0]",
+            "openInfo->parameters[1]", "openInfo->parameters[2]", "openInfo->parameters[3]",
+            "openInfo->return_type", "extensionFilter.GetArray()",
+            "extensionFilter.GetIl2CppType()", "extensionFilter.GetClass()",
+            "filterClass->instance_size", "filterClass->actualSize", "filterClass->element_size",
+            "filterClass->native_size", "filterName.GetOffset()", "filterExtensions.GetOffset()",
+            "filterName.GetType()", "filterExtensions.GetType()",
+        ):
+            self.assertIn(required, source)
+        self.assertNotIn("m_Items[", source)
+        self.assertNotIn("GetFieldPointer", source)
+        self.assertNotIn("ArrayNew", source)
 
     def test_cache_native_build_pins_bnm_but_excludes_feature_runtime(self):
         build = BUILD.read_text(encoding="utf-8")
