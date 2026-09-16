@@ -85,6 +85,23 @@ PY
 
 JNI="${UPSTREAM}/app/src/main/jni"
 cp "${SRC}" "${JNI}/V240CacheLoader.cpp"
+# Keep the committed source readable while fixing the JNI method-id/text diagnostic name
+# collision in the isolated build copy. This is a bounded build-only reconciliation.
+python3 - "${JNI}/V240CacheLoader.cpp" <<'PY_NATIVE_NAME_FIX'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+s = p.read_text(encoding='utf-8')
+s = s.replace('jmethodID g_dynamicDiagnostics = nullptr;',
+              'jmethodID g_dynamicDiagnosticsMethod = nullptr;')
+s = s.replace('g_dynamicAwait != nullptr && g_dynamicDiagnostics != nullptr;',
+              'g_dynamicAwait != nullptr && g_dynamicDiagnosticsMethod != nullptr;')
+s = s.replace('diagnostics = g_dynamicDiagnostics;',
+              'diagnostics = g_dynamicDiagnosticsMethod;')
+s = s.replace('g_dynamicDiagnostics = diagnostics;',
+              'g_dynamicDiagnosticsMethod = diagnostics;')
+p.write_text(s, encoding='utf-8')
+PY_NATIVE_NAME_FIX
 
 python3 - "${JNI}/BNM/include/BNM/UserSettings/GlobalSettings.hpp" <<'PY'
 from pathlib import Path
