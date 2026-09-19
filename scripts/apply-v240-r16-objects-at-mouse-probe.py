@@ -305,3 +305,8 @@ if s.count("BasicHook(") != 6:
     raise SystemExit(f"r16 expected six compiled hook sites, got {s.count('BasicHook(')}")
 
 path.write_text(s, encoding="utf-8")
+
+r17 = Path(__file__).with_name("apply-v240-r17-editor-physics-sync.py")
+if not r17.is_file():
+    raise SystemExit(f"missing r17 overlay: {r17}")
+__import__("subprocess").run([sys.executable, str(r17), str(path)], check=True)

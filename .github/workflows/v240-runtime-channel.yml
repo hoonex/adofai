@@ -11,6 +11,7 @@ on:
       - 'scripts/apply-v240-r13-hit-probe-calibration-fix.py'
       - 'scripts/apply-v240-r15-exact-calibration-and-wide-inventory.py'
       - 'scripts/apply-v240-r16-objects-at-mouse-probe.py'
+      - 'scripts/apply-v240-r17-editor-physics-sync.py'
       - 'scripts/build-v240-cache-native.sh'
       - 'scripts/build-v240-dynamic-runtime.sh'
       - 'tests/test_v240_cache_loader.py'
@@ -50,7 +51,7 @@ jobs:
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
           sdkmanager 'platforms;android-35' 'build-tools;36.0.0' 'ndk;29.0.14206865'
 
-      - name: Build r16 ObjectsAtMouse observer and calibration fuse rollback
+      - name: Build r17 editor physics synchronization
         run: bash scripts/build-v240-cache-native.sh dist/v240-channel-native
 
       - name: Build hot-swappable dynamic DEX
