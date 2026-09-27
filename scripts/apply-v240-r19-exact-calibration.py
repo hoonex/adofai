@@ -230,3 +230,8 @@ if s.count('BasicHook(') != 9:
     raise SystemExit(f"r19 adds no hook; expected nine compiled sites, got {s.count('BasicHook(')}")
 
 path.write_text(s, encoding="utf-8")
+
+r20 = Path(__file__).with_name("apply-v240-r20-playerprefsjson-calibration.py")
+if not r20.is_file():
+    raise SystemExit(f"missing r20 overlay: {r20}")
+__import__("subprocess").run([sys.executable, str(r20), str(path)], check=True)

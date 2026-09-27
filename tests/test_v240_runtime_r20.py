@@ -59,19 +59,24 @@ class RuntimeR20PlayerPrefsJsonContract(unittest.TestCase):
         self.assertIn("if '    MaybeRepairCalibrationR19();\\n' in s:", self.r20)
         self.assertIn("calibrationR19Policy=disabled-r20-wrong-backend-forensic-only", self.r20)
 
-    def test_build_validates_final_r20_policy(self):
+    def test_r20_chains_exact_root_fix_successor(self):
+        self.assertIn("R21 supersedes the active R20 repair", self.r20)
+        self.assertIn("apply-v240-r21-root-fixes.py", self.r20)
+
+    def test_build_validates_r20_is_forensic_only_after_r21(self):
         for marker in (
-            "stabilityRevision=20",
-            "calibrationR20Policy=exact-Persistence-PlayerPrefsJson-sentinel-999-to-zero",
-            "calibrationR20Backend=PlayerPrefsJson",
-            "MaybeRepairCalibrationR20();",
+            "stabilityRevision=21",
+            "calibrationR20Policy=disabled-r21-symptom-write-forensic-only",
+            "MaybeInstallCalibrationR21();",
+            "MaybeInstallTileR21();",
         ):
             self.assertIn(marker, self.build)
 
-    def test_channel_runs_r20_contract(self):
+    def test_channel_keeps_r20_contract_and_runs_r21(self):
         self.assertIn("tests/test_v240_runtime_r20.py", self.workflow)
         self.assertIn("test_v240_runtime_r20.py", self.workflow)
-        self.assertIn("Build r20 full-width viewport and PlayerPrefsJson calibration persistence", self.workflow)
+        self.assertIn("test_v240_runtime_r21.py", self.workflow)
+        self.assertIn("Build r21 exact calibration confidence and editor collider sync", self.workflow)
 
 if __name__ == "__main__":
     unittest.main()

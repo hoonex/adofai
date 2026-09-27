@@ -16,12 +16,14 @@ on:
       - 'scripts/apply-v240-r18-window-audio-baseline.py'
       - 'scripts/apply-v240-r19-exact-calibration.py'
       - 'scripts/apply-v240-r20-playerprefsjson-calibration.py'
+      - 'scripts/apply-v240-r21-root-fixes.py'
       - 'scripts/build-v240-cache-native.sh'
       - 'scripts/build-v240-dynamic-runtime.sh'
       - 'tests/test_v240_cache_loader.py'
       - 'tests/test_v240_runtime_r18.py'
       - 'tests/test_v240_runtime_r19.py'
       - 'tests/test_v240_runtime_r20.py'
+      - 'tests/test_v240_runtime_r21.py'
       - 'tests/test_v240_runtime_updater.py'
       - '.github/workflows/v240-runtime-channel.yml'
   workflow_dispatch:
@@ -51,6 +53,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_v240_runtime_r18.py' -v
           python3 -m unittest discover -s tests -p 'test_v240_runtime_r19.py' -v
           python3 -m unittest discover -s tests -p 'test_v240_runtime_r20.py' -v
+          python3 -m unittest discover -s tests -p 'test_v240_runtime_r21.py' -v
 
       - uses: android-actions/setup-android@v3
         with:
@@ -61,7 +64,7 @@ jobs:
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
           sdkmanager 'platforms;android-35' 'build-tools;36.0.0' 'ndk;29.0.14206865'
 
-      - name: Build r20 full-width viewport and PlayerPrefsJson calibration persistence
+      - name: Build r21 exact calibration confidence and editor collider sync
         run: bash scripts/build-v240-cache-native.sh dist/v240-channel-native
 
       - name: Build hot-swappable dynamic DEX

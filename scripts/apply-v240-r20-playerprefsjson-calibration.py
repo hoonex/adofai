@@ -11,6 +11,9 @@ Authoritative target analysis:
 R19 incorrectly targeted UnityEngine.PlayerPrefs. R20 leaves that code compiled only as historical
 forensic evidence, removes its active call, and uses the exact Persistence -> PlayerPrefsJson path.
 No existing calibrated value is overwritten.
+
+R21 supersedes the active R20 repair after exact CalibrationPreset serialization analysis. R20 is
+kept in the transformation chain as forensic history; the successor disables its runtime write.
 """
 from pathlib import Path
 import sys
@@ -214,3 +217,8 @@ if s.count('BasicHook(') != 9:
     raise SystemExit(f"r20 adds no hooks; expected nine compiled sites, got {s.count('BasicHook(')}")
 
 path.write_text(s, encoding="utf-8")
+
+r21 = Path(__file__).with_name("apply-v240-r21-root-fixes.py")
+if not r21.is_file():
+    raise SystemExit(f"missing r21 overlay: {r21}")
+__import__("subprocess").run([sys.executable, str(r21), str(path)], check=True)

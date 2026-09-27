@@ -33,6 +33,7 @@ R15_OVERLAY="${ROOT}/scripts/apply-v240-r15-exact-calibration-and-wide-inventory
 R18_OVERLAY="${ROOT}/scripts/apply-v240-r18-window-audio-baseline.py"
 R19_OVERLAY="${ROOT}/scripts/apply-v240-r19-exact-calibration.py"
 R20_OVERLAY="${ROOT}/scripts/apply-v240-r20-playerprefsjson-calibration.py"
+R21_OVERLAY="${ROOT}/scripts/apply-v240-r21-root-fixes.py"
 test -f "${SRC}"
 test -f "${BRIDGE}"
 test -f "${ENTRY}"
@@ -44,6 +45,7 @@ test -f "${R15_OVERLAY}"
 test -f "${R18_OVERLAY}"
 test -f "${R19_OVERLAY}"
 test -f "${R20_OVERLAY}"
+test -f "${R21_OVERLAY}"
 python3 - "${SRC}" "${BRIDGE}" "${ENTRY}" <<'PY'
 from pathlib import Path
 import sys
@@ -192,17 +194,19 @@ grep -q 'startupAudioMutation=disabled-r19' "${JNI}/V240CacheLoader.cpp"
 grep -q 'editorProbeMetadataHandleRva=0x22E3EB0' "${JNI}/V240CacheLoader.cpp"
 grep -q 'editorProbeMetadataSelectRva=0x22E7DD0' "${JNI}/V240CacheLoader.cpp"
 grep -q 'editorProbeMetadataObjectsRva=0x22E8DF4' "${JNI}/V240CacheLoader.cpp"
-grep -q 'stabilityRevision=20' "${JNI}/V240CacheLoader.cpp"
+grep -q 'stabilityRevision=21' "${JNI}/V240CacheLoader.cpp"
 grep -q 'calibrationR19Policy=disabled-r20-wrong-backend-forensic-only' "${JNI}/V240CacheLoader.cpp"
-grep -q 'calibrationR20Policy=exact-Persistence-PlayerPrefsJson-sentinel-999-to-zero' "${JNI}/V240CacheLoader.cpp"
+grep -q 'calibrationR20Policy=disabled-r21-symptom-write-forensic-only' "${JNI}/V240CacheLoader.cpp"
 grep -q 'calibrationR20Backend=PlayerPrefsJson' "${JNI}/V240CacheLoader.cpp"
 grep -q 'calibration-r20-playerprefsjson-write.pending' "${JNI}/V240CacheLoader.cpp"
-grep -q '    MaybeRepairCalibrationR20();' "${JNI}/V240CacheLoader.cpp"
+! grep -q '    MaybeRepairCalibrationR20();' "${JNI}/V240CacheLoader.cpp"
+grep -q '    MaybeInstallCalibrationR21();' "${JNI}/V240CacheLoader.cpp"
+grep -q '    MaybeInstallTileR21();' "${JNI}/V240CacheLoader.cpp"
 ! grep -q '    MaybeRepairCalibrationR19();' "${JNI}/V240CacheLoader.cpp"
 ! grep -q '    MaybeInstallStartupAudioBaselineHook();' "${JNI}/V240CacheLoader.cpp"
 grep -q 'editorProbePolicy=disabled-r18-original-editor-path-window-viewport-fix' "${JNI}/V240CacheLoader.cpp"
 grep -q 'editorObjectsPolicy=disabled-r18-original-editor-path-window-viewport-fix' "${JNI}/V240CacheLoader.cpp"
-grep -q 'editorPhysicsPolicy=disabled-r18-window-viewport-fix' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorPhysicsPolicy=forensic-r17-disabled-r21-exact-production-sync-active' "${JNI}/V240CacheLoader.cpp"
 grep -q 'BasicHook(check, HookCheckForAudioOutputChange, g_oldCheckForAudioOutputChange)' "${JNI}/V240CacheLoader.cpp"
 grep -q 'BasicHook(start, HookControllerStart, g_oldControllerStart)' "${JNI}/V240CacheLoader.cpp"
 ! grep -q '    MaybeInstallEditorProbe();' "${JNI}/V240CacheLoader.cpp"
@@ -295,8 +299,13 @@ strings "${OUT}/libv240fix.so" | grep -q 'startupAudioPolicy=disabled-r19-not-de
 strings "${OUT}/libv240fix.so" | grep -q 'calibrationR19Policy=exact-playerprefs-offset-sentinel-999-to-zero'
 strings "${OUT}/libv240fix.so" | grep -q 'calibration-r19-playerprefs-write.pending'
 strings "${OUT}/libv240fix.so" | grep -q 'editorProbeMetadataObjectsRva=0x22E8DF4'
-strings "${OUT}/libv240fix.so" | grep -q 'stabilityRevision=20'
-strings "${OUT}/libv240fix.so" | grep -q 'calibrationR20Policy=exact-Persistence-PlayerPrefsJson-sentinel-999-to-zero'
+strings "${OUT}/libv240fix.so" | grep -q 'stabilityRevision=21'
+strings "${OUT}/libv240fix.so" | grep -q 'calibrationR20Policy=disabled-r21-symptom-write-forensic-only'
 strings "${OUT}/libv240fix.so" | grep -q 'calibrationR20Backend=PlayerPrefsJson'
 strings "${OUT}/libv240fix.so" | grep -q 'calibration-r20-playerprefsjson-write.pending'
+strings "${OUT}/libv240fix.so" | grep -q 'calibrationR21Policy=persisted-CalibrationPreset-FromDict-restore-confident'
+strings "${OUT}/libv240fix.so" | grep -q 'calibrationR21ConfidentOffsetExpected=24'
+strings "${OUT}/libv240fix.so" | grep -q 'tileR21Policy=ObjectsAtMouse-touch-SyncTransforms-before-original-RayCastAll'
+strings "${OUT}/libv240fix.so" | grep -q 'tileR21CoordinatesModified=0'
+strings "${OUT}/libv240fix.so" | grep -q 'editor-r21-tile-install.pending'
 sha256sum "${OUT}/libv240fix.so" | tee "${OUT}/SHA256SUMS.txt"
