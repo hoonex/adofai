@@ -245,3 +245,9 @@ if s.count('BasicHook(') != 13:
     raise SystemExit(f"r22 expected thirteen compiled hook sites, got {s.count('BasicHook(')}")
 
 path.write_text(s, encoding="utf-8")
+
+
+r23 = Path(__file__).with_name("apply-v240-r23-exact-raycast-resolution.py")
+if not r23.is_file():
+    raise SystemExit(f"missing r23 overlay: {r23}")
+__import__("subprocess").run([sys.executable, str(r23), str(path)], check=True)

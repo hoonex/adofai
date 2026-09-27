@@ -79,7 +79,7 @@ class RuntimeR22PersistenceContract(unittest.TestCase):
     def test_build_asserts_only_final_active_calibration_policy(self):
         b = self.build
         self.assertIn("apply-v240-r22-calibration-persist.py", b)
-        self.assertIn("stabilityRevision=22", b)
+        self.assertIn("stabilityRevision=23", b)
         self.assertIn(
             "calibrationR21Policy=disabled-r22-PersistenceLoad-already-restores-confident", b
         )
@@ -96,7 +96,7 @@ class RuntimeR22PersistenceContract(unittest.TestCase):
         self.assertIn("scripts/apply-v240-r22-calibration-persist.py", w)
         self.assertIn("tests/test_v240_runtime_r22.py", w)
         self.assertIn("test_v240_runtime_r22.py", w)
-        self.assertIn("Build r22 calibration persistence and editor collider sync", w)
+        self.assertIn("Build r23 exact editor raycast and calibration persistence", w)
 
 
 if __name__ == "__main__":
