@@ -33,6 +33,8 @@ class RuntimeR18StabilityContract(unittest.TestCase):
             "LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES",
             "1750L",
             "3000L",
+            "6500L",
+            "roughly six seconds",
             "decor.requestLayout()",
         ):
             self.assertIn(marker, s)

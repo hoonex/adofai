@@ -77,6 +77,11 @@ public final class RuntimeEntry {
         main.postDelayed(new Runnable() {
             @Override public void run() { normalizeLegacyWindowViewport(); }
         }, 3000L);
+        // The parent bootstrap retry loop is bounded to roughly six seconds. This final
+        // assertion guarantees the hot runtime wins even if overlay installation was slow.
+        main.postDelayed(new Runnable() {
+            @Override public void run() { normalizeLegacyWindowViewport(); }
+        }, 6500L);
     }
 
     private static void normalizeLegacyWindowViewport() {
