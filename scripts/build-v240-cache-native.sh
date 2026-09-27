@@ -31,6 +31,7 @@ R12_OVERLAY="${ROOT}/scripts/apply-v240-r12-input-calibration.py"
 R13_OVERLAY="${ROOT}/scripts/apply-v240-r13-hit-probe-calibration-fix.py"
 R15_OVERLAY="${ROOT}/scripts/apply-v240-r15-exact-calibration-and-wide-inventory.py"
 R18_OVERLAY="${ROOT}/scripts/apply-v240-r18-window-audio-baseline.py"
+R19_OVERLAY="${ROOT}/scripts/apply-v240-r19-exact-calibration.py"
 test -f "${SRC}"
 test -f "${BRIDGE}"
 test -f "${ENTRY}"
@@ -40,6 +41,7 @@ test -f "${R12_OVERLAY}"
 test -f "${R13_OVERLAY}"
 test -f "${R15_OVERLAY}"
 test -f "${R18_OVERLAY}"
+test -f "${R19_OVERLAY}"
 python3 - "${SRC}" "${BRIDGE}" "${ENTRY}" <<'PY'
 from pathlib import Path
 import sys
@@ -181,11 +183,18 @@ grep -q 'calibrationExecution=enabled-r15-exact-persistence-self-fused' "${JNI}/
 grep -q 'editorHitExecution=disabled-r15-wide-metadata-inventory' "${JNI}/V240CacheLoader.cpp"
 ! grep -q 'GetMethod("get_inputOffset", 0)' "${JNI}/V240CacheLoader.cpp"
 ! grep -q 'GetMethod("set_inputOffset", 1)' "${JNI}/V240CacheLoader.cpp"
-grep -q 'stabilityRevision=18' "${JNI}/V240CacheLoader.cpp"
+grep -q 'stabilityRevision=19' "${JNI}/V240CacheLoader.cpp"
 grep -q 'activeTilePolicy=original-v240-editor-path-plus-full-width-window' "${JNI}/V240CacheLoader.cpp"
 grep -q 'windowViewportPolicy=short-edges-full-width' "${JNI}/V240CacheLoader.cpp"
-grep -q 'startupAudioPolicy=first-check-inside-scrController-Start-baseline-silent-then-original' "${JNI}/V240CacheLoader.cpp"
-grep -q 'startupAudioMutation=runtime-baseline-only-no-PlayerPrefs' "${JNI}/V240CacheLoader.cpp"
+grep -q 'startupAudioPolicy=disabled-r19-not-device-calibration-root' "${JNI}/V240CacheLoader.cpp"
+grep -q 'startupAudioMutation=disabled-r19' "${JNI}/V240CacheLoader.cpp"
+grep -q 'calibrationR19Policy=exact-playerprefs-offset-sentinel-999-to-zero' "${JNI}/V240CacheLoader.cpp"
+grep -q 'calibrationR19Mutation=only-if-exact-999-preserve-existing' "${JNI}/V240CacheLoader.cpp"
+grep -q 'calibration-r19-playerprefs-write.pending' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorProbeMetadataHandleRva=0x22E3EB0' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorProbeMetadataSelectRva=0x22E7DD0' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorProbeMetadataObjectsRva=0x22E8DF4' "${JNI}/V240CacheLoader.cpp"
+! grep -q '    MaybeInstallStartupAudioBaselineHook();' "${JNI}/V240CacheLoader.cpp"
 grep -q 'editorProbePolicy=disabled-r18-original-editor-path-window-viewport-fix' "${JNI}/V240CacheLoader.cpp"
 grep -q 'editorObjectsPolicy=disabled-r18-original-editor-path-window-viewport-fix' "${JNI}/V240CacheLoader.cpp"
 grep -q 'editorPhysicsPolicy=disabled-r18-window-viewport-fix' "${JNI}/V240CacheLoader.cpp"
@@ -274,9 +283,11 @@ strings "${OUT}/libv240fix.so" | grep -q 'editorProbePolicy=disabled-r18-origina
 strings "${OUT}/libv240fix.so" | grep -q 'editorProbeMutation=0'
 strings "${OUT}/libv240fix.so" | grep -q 'raycastProbePolicy=disabled-r10-superseded-by-scnEditor'
 strings "${OUT}/libv240fix.so" | grep -q 'uiHitPolicy=disabled-r9-device-proven-not-on-tile-path'
-strings "${OUT}/libv240fix.so" | grep -q 'stabilityRevision=18'
+strings "${OUT}/libv240fix.so" | grep -q 'stabilityRevision=19'
 strings "${OUT}/libv240fix.so" | grep -q 'activeTilePolicy=original-v240-editor-path-plus-full-width-window'
 strings "${OUT}/libv240fix.so" | grep -q 'windowViewportPolicy=short-edges-full-width'
-strings "${OUT}/libv240fix.so" | grep -q 'startupAudioPolicy=first-check-inside-scrController-Start-baseline-silent-then-original'
-strings "${OUT}/libv240fix.so" | grep -q 'startup-audio-r18-install.pending'
+strings "${OUT}/libv240fix.so" | grep -q 'startupAudioPolicy=disabled-r19-not-device-calibration-root'
+strings "${OUT}/libv240fix.so" | grep -q 'calibrationR19Policy=exact-playerprefs-offset-sentinel-999-to-zero'
+strings "${OUT}/libv240fix.so" | grep -q 'calibration-r19-playerprefs-write.pending'
+strings "${OUT}/libv240fix.so" | grep -q 'editorProbeMetadataObjectsRva=0x22E8DF4'
 sha256sum "${OUT}/libv240fix.so" | tee "${OUT}/SHA256SUMS.txt"
