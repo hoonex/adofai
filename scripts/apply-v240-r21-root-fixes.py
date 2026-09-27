@@ -504,3 +504,8 @@ if s.count('BasicHook(') != 12:
     raise SystemExit(f"r21 expected twelve compiled hook sites, got {s.count('BasicHook(')}")
 
 path.write_text(s, encoding="utf-8")
+
+r22 = Path(__file__).with_name("apply-v240-r22-calibration-persist.py")
+if not r22.is_file():
+    raise SystemExit(f"missing r22 overlay: {r22}")
+__import__("subprocess").run([sys.executable, str(r22), str(path)], check=True)

@@ -34,6 +34,7 @@ R18_OVERLAY="${ROOT}/scripts/apply-v240-r18-window-audio-baseline.py"
 R19_OVERLAY="${ROOT}/scripts/apply-v240-r19-exact-calibration.py"
 R20_OVERLAY="${ROOT}/scripts/apply-v240-r20-playerprefsjson-calibration.py"
 R21_OVERLAY="${ROOT}/scripts/apply-v240-r21-root-fixes.py"
+R22_OVERLAY="${ROOT}/scripts/apply-v240-r22-calibration-persist.py"
 test -f "${SRC}"
 test -f "${BRIDGE}"
 test -f "${ENTRY}"
@@ -46,6 +47,7 @@ test -f "${R18_OVERLAY}"
 test -f "${R19_OVERLAY}"
 test -f "${R20_OVERLAY}"
 test -f "${R21_OVERLAY}"
+test -f "${R22_OVERLAY}"
 python3 - "${SRC}" "${BRIDGE}" "${ENTRY}" <<'PY'
 from pathlib import Path
 import sys
@@ -194,13 +196,18 @@ grep -q 'startupAudioMutation=disabled-r19' "${JNI}/V240CacheLoader.cpp"
 grep -q 'editorProbeMetadataHandleRva=0x22E3EB0' "${JNI}/V240CacheLoader.cpp"
 grep -q 'editorProbeMetadataSelectRva=0x22E7DD0' "${JNI}/V240CacheLoader.cpp"
 grep -q 'editorProbeMetadataObjectsRva=0x22E8DF4' "${JNI}/V240CacheLoader.cpp"
-grep -q 'stabilityRevision=21' "${JNI}/V240CacheLoader.cpp"
+grep -q 'stabilityRevision=22' "${JNI}/V240CacheLoader.cpp"
 grep -q 'calibrationR19Policy=disabled-r20-wrong-backend-forensic-only' "${JNI}/V240CacheLoader.cpp"
 grep -q 'calibrationR20Policy=disabled-r21-symptom-write-forensic-only' "${JNI}/V240CacheLoader.cpp"
 grep -q 'calibrationR20Backend=PlayerPrefsJson' "${JNI}/V240CacheLoader.cpp"
 grep -q 'calibration-r20-playerprefsjson-write.pending' "${JNI}/V240CacheLoader.cpp"
 ! grep -q '    MaybeRepairCalibrationR20();' "${JNI}/V240CacheLoader.cpp"
-grep -q '    MaybeInstallCalibrationR21();' "${JNI}/V240CacheLoader.cpp"
+! grep -q '    MaybeInstallCalibrationR21();' "${JNI}/V240CacheLoader.cpp"
+grep -q '    MaybeInstallCalibrationR22();' "${JNI}/V240CacheLoader.cpp"
+grep -q 'calibrationR21Policy=disabled-r22-PersistenceLoad-already-restores-confident' "${JNI}/V240CacheLoader.cpp"
+grep -q 'calibrationR22Policy=SaveCurrentPreset-then-Persistence.Save-debounced' "${JNI}/V240CacheLoader.cpp"
+grep -q 'calibrationR22PersistenceLoadConfidentStoreRva=0x1169674' "${JNI}/V240CacheLoader.cpp"
+grep -q 'calibrationR22PersistenceSaveRequests=' "${JNI}/V240CacheLoader.cpp"
 grep -q '    MaybeInstallTileR21();' "${JNI}/V240CacheLoader.cpp"
 ! grep -q '    MaybeRepairCalibrationR19();' "${JNI}/V240CacheLoader.cpp"
 ! grep -q '    MaybeInstallStartupAudioBaselineHook();' "${JNI}/V240CacheLoader.cpp"
@@ -290,8 +297,7 @@ require_binary_string() {
   fi
 }
 
-# Only require strings that are reachable from the final r21 runtime/report. Historical
-# r19/r20 function-body markers may legitimately be removed by -Oz/linker dead stripping.
+# Only require strings reachable from the final r22 runtime/report. Historical\n# r19/r20/r21 calibration bodies may be removed by -Oz/linker dead stripping.
 for marker in \
   'nativeProbe=cache-post-bnm-scneditor-hitprobe-calibration-v2' \
   'abiProbeRevision=13' \
@@ -304,13 +310,17 @@ for marker in \
   'startupAudioPolicy=disabled-r19-not-device-calibration-root' \
   'calibrationR19Policy=disabled-r20-wrong-backend-forensic-only' \
   'editorProbeMetadataObjectsRva=0x22E8DF4' \
-  'stabilityRevision=21' \
+  'stabilityRevision=22' \
   'calibrationR20Policy=disabled-r21-symptom-write-forensic-only' \
   'calibrationR20Backend=PlayerPrefsJson' \
-  'calibrationR21Policy=persisted-CalibrationPreset-FromDict-restore-confident' \
-  'calibrationR21ConfidentOffsetExpected=24' \
-  'calibration-r21-install.pending' \
-  'calibration-r21-confidence.pending' \
+  'calibrationR21Policy=disabled-r22-PersistenceLoad-already-restores-confident' \
+  'calibrationR22Policy=SaveCurrentPreset-then-Persistence.Save-debounced' \
+  'calibrationR22Mutation=persistence-schedule-only-no-preset-value-change' \
+  'calibrationR22SaveCurrentPresetRva=0x218576C' \
+  'calibrationR22PersistenceSaveRva=0x115F748' \
+  'calibrationR22PersistenceLoadConfidentStoreRva=0x1169674' \
+  'calibration-r22-persist-install.pending' \
+  'calibration-r22-persist-call.pending' \
   'tileR21Policy=ObjectsAtMouse-touch-SyncTransforms-before-original-RayCastAll' \
   'tileR21CoordinatesModified=0' \
   'tileR21RaycastArgumentsModified=0' \
