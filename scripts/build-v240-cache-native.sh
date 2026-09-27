@@ -30,6 +30,7 @@ R11_OVERLAY="${ROOT}/scripts/apply-v240-r11-editor-probe.py"
 R12_OVERLAY="${ROOT}/scripts/apply-v240-r12-input-calibration.py"
 R13_OVERLAY="${ROOT}/scripts/apply-v240-r13-hit-probe-calibration-fix.py"
 R15_OVERLAY="${ROOT}/scripts/apply-v240-r15-exact-calibration-and-wide-inventory.py"
+R18_OVERLAY="${ROOT}/scripts/apply-v240-r18-window-audio-baseline.py"
 test -f "${SRC}"
 test -f "${BRIDGE}"
 test -f "${ENTRY}"
@@ -38,6 +39,7 @@ test -f "${R11_OVERLAY}"
 test -f "${R12_OVERLAY}"
 test -f "${R13_OVERLAY}"
 test -f "${R15_OVERLAY}"
+test -f "${R18_OVERLAY}"
 python3 - "${SRC}" "${BRIDGE}" "${ENTRY}" <<'PY'
 from pathlib import Path
 import sys
@@ -179,6 +181,20 @@ grep -q 'calibrationExecution=enabled-r15-exact-persistence-self-fused' "${JNI}/
 grep -q 'editorHitExecution=disabled-r15-wide-metadata-inventory' "${JNI}/V240CacheLoader.cpp"
 ! grep -q 'GetMethod("get_inputOffset", 0)' "${JNI}/V240CacheLoader.cpp"
 ! grep -q 'GetMethod("set_inputOffset", 1)' "${JNI}/V240CacheLoader.cpp"
+grep -q 'stabilityRevision=18' "${JNI}/V240CacheLoader.cpp"
+grep -q 'activeTilePolicy=original-v240-editor-path-plus-full-width-window' "${JNI}/V240CacheLoader.cpp"
+grep -q 'windowViewportPolicy=short-edges-full-width' "${JNI}/V240CacheLoader.cpp"
+grep -q 'startupAudioPolicy=first-check-inside-scrController-Start-baseline-silent-then-original' "${JNI}/V240CacheLoader.cpp"
+grep -q 'startupAudioMutation=runtime-baseline-only-no-PlayerPrefs' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorProbePolicy=disabled-r18-original-editor-path-window-viewport-fix' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorObjectsPolicy=disabled-r18-original-editor-path-window-viewport-fix' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorPhysicsPolicy=disabled-r18-window-viewport-fix' "${JNI}/V240CacheLoader.cpp"
+grep -q 'BasicHook(check, HookCheckForAudioOutputChange, g_oldCheckForAudioOutputChange)' "${JNI}/V240CacheLoader.cpp"
+grep -q 'BasicHook(start, HookControllerStart, g_oldControllerStart)' "${JNI}/V240CacheLoader.cpp"
+! grep -q '    MaybeInstallEditorProbe();' "${JNI}/V240CacheLoader.cpp"
+! grep -q '    MaybeInstallEditorObjectsProbe();' "${JNI}/V240CacheLoader.cpp"
+! grep -q '    MaybeInstallEditorPhysicsSync();' "${JNI}/V240CacheLoader.cpp"
+! grep -q '    MaybeNeutralizeUnsetCalibration();' "${JNI}/V240CacheLoader.cpp"
 
 python3 - "${JNI}/BNM/include/BNM/UserSettings/GlobalSettings.hpp" <<'PY'
 from pathlib import Path
@@ -249,13 +265,18 @@ strings "${OUT}/libv240fix.so" | grep -q 'editorInputEdgePolicy=observe-only'
 strings "${OUT}/libv240fix.so" | grep -q 'editorHitPolicy=screen-to-world-rdutils-observe-only'
 strings "${OUT}/libv240fix.so" | grep -q 'editorHitMutation=0'
 strings "${OUT}/libv240fix.so" | grep -q 'calibrationPolicy=exact-Persistence-GetInputOffset-SetInputOffset-sentinel-v3'
-strings "${OUT}/libv240fix.so" | grep -q 'calibrationExecution=enabled-r15-exact-persistence-self-fused'
+strings "${OUT}/libv240fix.so" | grep -q 'calibrationExecution=disabled-r16-after-r15-self-fuse-recovery'
 strings "${OUT}/libv240fix.so" | grep -q 'metadataInventoryRevision=2'
 strings "${OUT}/libv240fix.so" | grep -q 'editorHitExecution=disabled-r15-wide-metadata-inventory'
 strings "${OUT}/libv240fix.so" | grep -q 'sfbHookPolicy=dynamic-document-preprocess-before-bind'
 strings "${OUT}/libv240fix.so" | grep -q 'dynamicBridgeRegistrationPath=context-classloader-parent-native'
-strings "${OUT}/libv240fix.so" | grep -q 'editorProbePolicy=scnEditor-pass-through-observe-only'
+strings "${OUT}/libv240fix.so" | grep -q 'editorProbePolicy=disabled-r18-original-editor-path-window-viewport-fix'
 strings "${OUT}/libv240fix.so" | grep -q 'editorProbeMutation=0'
 strings "${OUT}/libv240fix.so" | grep -q 'raycastProbePolicy=disabled-r10-superseded-by-scnEditor'
 strings "${OUT}/libv240fix.so" | grep -q 'uiHitPolicy=disabled-r9-device-proven-not-on-tile-path'
+strings "${OUT}/libv240fix.so" | grep -q 'stabilityRevision=18'
+strings "${OUT}/libv240fix.so" | grep -q 'activeTilePolicy=original-v240-editor-path-plus-full-width-window'
+strings "${OUT}/libv240fix.so" | grep -q 'windowViewportPolicy=short-edges-full-width'
+strings "${OUT}/libv240fix.so" | grep -q 'startupAudioPolicy=first-check-inside-scrController-Start-baseline-silent-then-original'
+strings "${OUT}/libv240fix.so" | grep -q 'startup-audio-r18-install.pending'
 sha256sum "${OUT}/libv240fix.so" | tee "${OUT}/SHA256SUMS.txt"

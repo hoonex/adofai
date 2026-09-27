@@ -200,3 +200,8 @@ assert 'calibrationExecution=disabled-r16-after-r15-self-fuse-recovery' in s
 assert 'editorPhysicsPolicy=touch-editor-objects-raycast-sync-once-per-frame' in s
 assert s.count('BasicHook(') == 7, s.count('BasicHook(')
 path.write_text(s, encoding="utf-8")
+
+r18 = Path(__file__).with_name("apply-v240-r18-window-audio-baseline.py")
+if not r18.is_file():
+    raise SystemExit(f"missing r18 overlay: {r18}")
+__import__("subprocess").run([sys.executable, str(r18), str(path)], check=True)

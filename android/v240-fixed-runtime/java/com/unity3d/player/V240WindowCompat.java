@@ -37,14 +37,16 @@ public final class V240WindowCompat {
             Window window = owner.getWindow();
             if (window == null) return;
 
-            // Old Unity layouts often assume a rectangular desktop-like viewport. Do not
-            // render interactive editor controls underneath a physical notch/camera cutout.
+            // Keep Unity's landscape surface at the full physical width on cutout phones.
+            // V2.4 editor world picking derives from Input.mousePosition/Screen coordinates;
+            // shrinking only the Android surface makes that legacy path disagree with the
+            // physical touch viewport. SHORT_EDGES preserves one consistent coordinate space.
             if (Build.VERSION.SDK_INT >= 28) {
                 WindowManager.LayoutParams params = window.getAttributes();
                 if (params.layoutInDisplayCutoutMode !=
-                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER) {
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES) {
                     params.layoutInDisplayCutoutMode =
-                            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER;
+                            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
                     window.setAttributes(params);
                 }
             }

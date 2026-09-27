@@ -2,6 +2,7 @@ package dev.hoonex.adofai.v240.dynamic;
 
 import android.app.Activity;
 import android.content.Context;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.DisplayMetrics;
@@ -9,6 +10,8 @@ import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.FrameLayout;
 
 import java.lang.reflect.Field;
@@ -32,6 +35,7 @@ public final class RuntimeEntry {
         // normal parent-first delegation. Native resolves DirectDocumentBridge by name through the
         // context loader and reconciles SFB installation.
         registerDynamicBridgeViaParent();
+        scheduleLegacyWindowNormalization();
         scheduleLegacyGearRelocation();
     }
 
@@ -56,6 +60,47 @@ public final class RuntimeEntry {
                 thread.setContextClassLoader(previous);
             } catch (Throwable ignored) {
             }
+        }
+    }
+
+
+    private static void scheduleLegacyWindowNormalization() {
+        final Handler main = new Handler(Looper.getMainLooper());
+        // V240Bootstrap's parent class reapplies its historical window policy during the
+        // first ~1.5 s. Reassert SHORT_EDGES after those callbacks as well as immediately.
+        main.post(new Runnable() {
+            @Override public void run() { normalizeLegacyWindowViewport(); }
+        });
+        main.postDelayed(new Runnable() {
+            @Override public void run() { normalizeLegacyWindowViewport(); }
+        }, 1750L);
+        main.postDelayed(new Runnable() {
+            @Override public void run() { normalizeLegacyWindowViewport(); }
+        }, 3000L);
+    }
+
+    private static void normalizeLegacyWindowViewport() {
+        try {
+            final Activity activity = currentActivity();
+            if (activity == null || activity.isFinishing()) return;
+            final Window window = activity.getWindow();
+            if (window == null) return;
+            if (Build.VERSION.SDK_INT >= 28) {
+                WindowManager.LayoutParams params = window.getAttributes();
+                if (params.layoutInDisplayCutoutMode !=
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES) {
+                    params.layoutInDisplayCutoutMode =
+                            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                    window.setAttributes(params);
+                }
+            }
+            View decor = window.getDecorView();
+            if (decor != null) {
+                decor.requestLayout();
+                decor.invalidate();
+            }
+        } catch (Throwable error) {
+            Log.w(TAG, "legacy full-width viewport normalization failed", error);
         }
     }
 
