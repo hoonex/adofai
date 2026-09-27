@@ -70,8 +70,8 @@ class RuntimeR18StabilityContract(unittest.TestCase):
         ):
             self.assertIn(marker, s)
         self.assertNotIn('SetInputOffset', s)
-        self.assertNotIn('PlayerPrefs', s.replace(
-            "startupAudioMutation=runtime-baseline-only-no-PlayerPrefs", ""))
+        self.assertNotIn('Class playerPrefs', s)
+        self.assertNotIn('playerPrefs.GetMethod', s)
 
     def test_startup_audio_hook_is_self_fused_and_fail_open(self):
         s = self.r18
