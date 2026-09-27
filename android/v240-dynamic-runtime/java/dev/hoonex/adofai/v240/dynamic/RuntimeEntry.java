@@ -35,6 +35,7 @@ public final class RuntimeEntry {
         // normal parent-first delegation. Native resolves DirectDocumentBridge by name through the
         // context loader and reconciles SFB installation.
         registerDynamicBridgeViaParent();
+        scheduleNativeReconciliation();
         scheduleLegacyWindowNormalization();
         scheduleLegacyGearRelocation();
     }
@@ -60,6 +61,22 @@ public final class RuntimeEntry {
                 thread.setContextClassLoader(previous);
             } catch (Throwable ignored) {
             }
+        }
+    }
+
+
+    /**
+     * Re-run parent-native reconciliation after startup state settles.
+     * R20 leaves its one-shot unused while Persistence.generalPrefs is unavailable,
+     * so these bounded retries can complete the durable repair without user action.
+     */
+    private static void scheduleNativeReconciliation() {
+        final Handler main = new Handler(Looper.getMainLooper());
+        final long[] delays = new long[] { 1200L, 3500L, 6500L };
+        for (final long delay : delays) {
+            main.postDelayed(new Runnable() {
+                @Override public void run() { registerDynamicBridgeViaParent(); }
+            }, delay);
         }
     }
 

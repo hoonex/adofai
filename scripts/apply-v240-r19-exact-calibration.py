@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R19: repair only the authoritative v2.4 unconfigured calibration preference.
+"""R19: legacy calibration attempt retained only for reproducible history.\n\nR20 supersedes this file because exact target disassembly showed the calibration backend is\nPersistence -> PlayerPrefsJson, not UnityEngine.PlayerPrefs. The R19 body must never be active.
 
 Exact source evidence from the authoritative APK:
 - Persistence.GetInputOffset RVA 0x1163F54 reads PlayerPrefs.GetFloat("offset", 999.0f).
