@@ -187,7 +187,7 @@ grep -q 'calibrationExecution=enabled-r15-exact-persistence-self-fused' "${JNI}/
 grep -q 'editorHitExecution=disabled-r15-wide-metadata-inventory' "${JNI}/V240CacheLoader.cpp"
 ! grep -q 'GetMethod("get_inputOffset", 0)' "${JNI}/V240CacheLoader.cpp"
 ! grep -q 'GetMethod("set_inputOffset", 1)' "${JNI}/V240CacheLoader.cpp"
-grep -q 'activeTilePolicy=original-v240-editor-path-plus-full-width-window' "${JNI}/V240CacheLoader.cpp"
+grep -q 'activeTilePolicy=r21-transient-collider-sync-plus-full-width-window' "${JNI}/V240CacheLoader.cpp"
 grep -q 'windowViewportPolicy=short-edges-full-width' "${JNI}/V240CacheLoader.cpp"
 grep -q 'startupAudioPolicy=disabled-r19-not-device-calibration-root' "${JNI}/V240CacheLoader.cpp"
 grep -q 'startupAudioMutation=disabled-r19' "${JNI}/V240CacheLoader.cpp"
@@ -293,7 +293,7 @@ strings "${OUT}/libv240fix.so" | grep -q 'editorProbeMutation=0'
 strings "${OUT}/libv240fix.so" | grep -q 'raycastProbePolicy=disabled-r10-superseded-by-scnEditor'
 strings "${OUT}/libv240fix.so" | grep -q 'uiHitPolicy=disabled-r9-device-proven-not-on-tile-path'
 strings "${OUT}/libv240fix.so" | grep -q 'stabilityRevision=19'
-strings "${OUT}/libv240fix.so" | grep -q 'activeTilePolicy=original-v240-editor-path-plus-full-width-window'
+strings "${OUT}/libv240fix.so" | grep -q 'activeTilePolicy=r21-transient-collider-sync-plus-full-width-window'
 strings "${OUT}/libv240fix.so" | grep -q 'windowViewportPolicy=short-edges-full-width'
 strings "${OUT}/libv240fix.so" | grep -q 'startupAudioPolicy=disabled-r19-not-device-calibration-root'
 strings "${OUT}/libv240fix.so" | grep -q 'calibrationR19Policy=exact-playerprefs-offset-sentinel-999-to-zero'
