@@ -31,7 +31,7 @@ class RuntimeR23ExactRaycastContract(unittest.TestCase):
             "tileR23ReturnType=UnityEngine.RaycastHit2D[]",
         ):
             self.assertIn(marker, s)
-        self.assertNotIn('physics.GetMethod("RaycastAll", 4)', s)
+        self.assertEqual(s.count('physics.GetMethod("RaycastAll", 4)'), 1)  # transform anchor only
 
     def test_r23_changes_resolution_only(self):
         s = self.r23

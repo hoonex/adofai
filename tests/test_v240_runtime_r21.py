@@ -102,7 +102,7 @@ class RuntimeR21RootFixContract(unittest.TestCase):
         for marker in (
             "apply-v240-r21-root-fixes.py",
             "apply-v240-r22-calibration-persist.py",
-            "stabilityRevision=22",
+            "stabilityRevision=23",
             "calibrationR21Policy=disabled-r22-PersistenceLoad-already-restores-confident",
             "calibrationR22Policy=SaveCurrentPreset-then-Persistence.Save-debounced",
             "tileR21Policy=ObjectsAtMouse-touch-SyncTransforms-before-original-RayCastAll",
@@ -117,7 +117,7 @@ class RuntimeR21RootFixContract(unittest.TestCase):
         self.assertIn("tests/test_v240_runtime_r22.py", self.workflow)
         self.assertIn("test_v240_runtime_r21.py", self.workflow)
         self.assertIn("test_v240_runtime_r22.py", self.workflow)
-        self.assertIn("Build r22 calibration persistence and editor collider sync", self.workflow)
+        self.assertIn("Build r23 exact editor raycast and calibration persistence", self.workflow)
 
 
     def test_final_binary_assertions_track_only_reachable_r22_plus_r21_tile_contract(self):
@@ -132,12 +132,14 @@ class RuntimeR21RootFixContract(unittest.TestCase):
         self.assertIn("require_binary_string()", final)
         self.assertIn("missing final runtime marker:", final)
         for marker in (
-            "stabilityRevision=22",
+            "stabilityRevision=23",
             "calibrationR21Policy=disabled-r22-PersistenceLoad-already-restores-confident",
             "calibrationR22Policy=SaveCurrentPreset-then-Persistence.Save-debounced",
             "calibration-r22-persist-install.pending",
             "calibration-r22-persist-call.pending",
             "tileR21Policy=ObjectsAtMouse-touch-SyncTransforms-before-original-RayCastAll",
+            "tileR23Resolution=RaycastAll-Vector2-Vector2-float-int-exact",
+            "tileR23ReturnType=UnityEngine.RaycastHit2D[]",
             "editor-r21-tile-install.pending",
             "editor-r21-objects-call.pending",
             "editor-r21-raycast-call.pending",

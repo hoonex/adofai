@@ -34,7 +34,8 @@ R18_OVERLAY="${ROOT}/scripts/apply-v240-r18-window-audio-baseline.py"
 R19_OVERLAY="${ROOT}/scripts/apply-v240-r19-exact-calibration.py"
 R20_OVERLAY="${ROOT}/scripts/apply-v240-r20-playerprefsjson-calibration.py"
 R21_OVERLAY="${ROOT}/scripts/apply-v240-r21-root-fixes.py"
-R22_OVERLAY="${ROOT}/scripts/apply-v240-r22-calibration-persist.py"\nR23_OVERLAY="${ROOT}/scripts/apply-v240-r23-exact-raycast-resolution.py"
+R22_OVERLAY="${ROOT}/scripts/apply-v240-r22-calibration-persist.py"
+R23_OVERLAY="${ROOT}/scripts/apply-v240-r23-exact-raycast-resolution.py"
 test -f "${SRC}"
 test -f "${BRIDGE}"
 test -f "${ENTRY}"
@@ -47,7 +48,8 @@ test -f "${R18_OVERLAY}"
 test -f "${R19_OVERLAY}"
 test -f "${R20_OVERLAY}"
 test -f "${R21_OVERLAY}"
-test -f "${R22_OVERLAY}"\ntest -f "${R23_OVERLAY}"
+test -f "${R22_OVERLAY}"
+test -f "${R23_OVERLAY}"
 python3 - "${SRC}" "${BRIDGE}" "${ENTRY}" <<'PY'
 from pathlib import Path
 import sys
@@ -207,7 +209,9 @@ grep -q '    MaybeInstallCalibrationR22();' "${JNI}/V240CacheLoader.cpp"
 grep -q 'calibrationR21Policy=disabled-r22-PersistenceLoad-already-restores-confident' "${JNI}/V240CacheLoader.cpp"
 grep -q 'calibrationR22Policy=SaveCurrentPreset-then-Persistence.Save-debounced' "${JNI}/V240CacheLoader.cpp"
 grep -q 'calibrationR22PersistenceLoadConfidentStoreRva=0x1169674' "${JNI}/V240CacheLoader.cpp"
-grep -q 'calibrationR22PersistenceSaveRequests=' "${JNI}/V240CacheLoader.cpp"\ngrep -q 'tileR23Resolution=RaycastAll-Vector2-Vector2-float-int-exact' "${JNI}/V240CacheLoader.cpp"\ngrep -Fq 'MetadataTypeName(raycastInfo->return_type) == "UnityEngine.RaycastHit2D[]"' "${JNI}/V240CacheLoader.cpp"
+grep -q 'calibrationR22PersistenceSaveRequests=' "${JNI}/V240CacheLoader.cpp"
+grep -q 'tileR23Resolution=RaycastAll-Vector2-Vector2-float-int-exact' "${JNI}/V240CacheLoader.cpp"
+grep -Fq 'MetadataTypeName(raycastInfo->return_type) == "UnityEngine.RaycastHit2D[]"' "${JNI}/V240CacheLoader.cpp"
 grep -q '    MaybeInstallTileR21();' "${JNI}/V240CacheLoader.cpp"
 ! grep -q '    MaybeRepairCalibrationR19();' "${JNI}/V240CacheLoader.cpp"
 ! grep -q '    MaybeInstallStartupAudioBaselineHook();' "${JNI}/V240CacheLoader.cpp"
@@ -297,7 +301,8 @@ require_binary_string() {
   fi
 }
 
-# Only require strings reachable from the final r23 runtime/report. Historical\n# r19/r20/r21 calibration bodies may be removed by -Oz/linker dead stripping.
+# Only require strings reachable from the final r23 runtime/report. Historical
+# r19/r20/r21 calibration bodies may be removed by -Oz/linker dead stripping.
 for marker in \
   'nativeProbe=cache-post-bnm-scneditor-hitprobe-calibration-v2' \
   'abiProbeRevision=13' \
@@ -322,9 +327,9 @@ for marker in \
   'calibration-r22-persist-install.pending' \
   'calibration-r22-persist-call.pending' \
   'tileR21Policy=ObjectsAtMouse-touch-SyncTransforms-before-original-RayCastAll' \
-  'tileR23Resolution=RaycastAll-Vector2-Vector2-float-int-exact' \\
-  'tileR23ReturnType=UnityEngine.RaycastHit2D[]' \\
-  'tileR23MutationDelta=0' \\
+  'tileR23Resolution=RaycastAll-Vector2-Vector2-float-int-exact' \
+  'tileR23ReturnType=UnityEngine.RaycastHit2D[]' \
+  'tileR23MutationDelta=0' \
   'tileR21CoordinatesModified=0' \
   'tileR21RaycastArgumentsModified=0' \
   'editor-r21-tile-install.pending' \
