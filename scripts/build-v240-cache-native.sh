@@ -277,35 +277,34 @@ cp "${LIB}" "${OUT}/libv240fix.so"
 readelf -h "${OUT}/libv240fix.so" | grep -q 'AArch64'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'JNI_OnLoad'
 readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport'
-strings "${OUT}/libv240fix.so" | grep -q 'nativeProbe=cache-post-bnm-scneditor-hitprobe-calibration-v2'
-strings "${OUT}/libv240fix.so" | grep -q 'abiProbeRevision=13'
-strings "${OUT}/libv240fix.so" | grep -q 'editorInputEdgePolicy=observe-only'
-strings "${OUT}/libv240fix.so" | grep -q 'editorHitPolicy=screen-to-world-rdutils-observe-only'
-strings "${OUT}/libv240fix.so" | grep -q 'editorHitMutation=0'
-strings "${OUT}/libv240fix.so" | grep -q 'calibrationPolicy=exact-Persistence-GetInputOffset-SetInputOffset-sentinel-v3'
-strings "${OUT}/libv240fix.so" | grep -q 'calibrationExecution=disabled-r16-after-r15-self-fuse-recovery'
-strings "${OUT}/libv240fix.so" | grep -q 'metadataInventoryRevision=2'
-strings "${OUT}/libv240fix.so" | grep -q 'editorHitExecution=disabled-r15-wide-metadata-inventory'
-strings "${OUT}/libv240fix.so" | grep -q 'sfbHookPolicy=dynamic-document-preprocess-before-bind'
-strings "${OUT}/libv240fix.so" | grep -q 'dynamicBridgeRegistrationPath=context-classloader-parent-native'
-strings "${OUT}/libv240fix.so" | grep -q 'editorProbePolicy=disabled-r18-original-editor-path-window-viewport-fix'
-strings "${OUT}/libv240fix.so" | grep -q 'editorProbeMutation=0'
-strings "${OUT}/libv240fix.so" | grep -q 'raycastProbePolicy=disabled-r10-superseded-by-scnEditor'
-strings "${OUT}/libv240fix.so" | grep -q 'uiHitPolicy=disabled-r9-device-proven-not-on-tile-path'
-strings "${OUT}/libv240fix.so" | grep -q 'stabilityRevision=19'
-strings "${OUT}/libv240fix.so" | grep -q 'activeTilePolicy=r21-transient-collider-sync-plus-full-width-window'
-strings "${OUT}/libv240fix.so" | grep -q 'windowViewportPolicy=short-edges-full-width'
-strings "${OUT}/libv240fix.so" | grep -q 'startupAudioPolicy=disabled-r19-not-device-calibration-root'
-strings "${OUT}/libv240fix.so" | grep -q 'calibrationR19Policy=exact-playerprefs-offset-sentinel-999-to-zero'
-strings "${OUT}/libv240fix.so" | grep -q 'calibration-r19-playerprefs-write.pending'
-strings "${OUT}/libv240fix.so" | grep -q 'editorProbeMetadataObjectsRva=0x22E8DF4'
-strings "${OUT}/libv240fix.so" | grep -q 'stabilityRevision=21'
-strings "${OUT}/libv240fix.so" | grep -q 'calibrationR20Policy=disabled-r21-symptom-write-forensic-only'
-strings "${OUT}/libv240fix.so" | grep -q 'calibrationR20Backend=PlayerPrefsJson'
-strings "${OUT}/libv240fix.so" | grep -q 'calibration-r20-playerprefsjson-write.pending'
-strings "${OUT}/libv240fix.so" | grep -q 'calibrationR21Policy=persisted-CalibrationPreset-FromDict-restore-confident'
-strings "${OUT}/libv240fix.so" | grep -q 'calibrationR21ConfidentOffsetExpected=24'
-strings "${OUT}/libv240fix.so" | grep -q 'tileR21Policy=ObjectsAtMouse-touch-SyncTransforms-before-original-RayCastAll'
-strings "${OUT}/libv240fix.so" | grep -q 'tileR21CoordinatesModified=0'
-strings "${OUT}/libv240fix.so" | grep -q 'editor-r21-tile-install.pending'
+grep -aFq 'nativeProbe=cache-post-bnm-scneditor-hitprobe-calibration-v2' "${OUT}/libv240fix.so"
+grep -aFq 'abiProbeRevision=13' "${OUT}/libv240fix.so"
+grep -aFq 'editorInputEdgePolicy=observe-only' "${OUT}/libv240fix.so"
+grep -aFq 'editorHitPolicy=screen-to-world-rdutils-observe-only' "${OUT}/libv240fix.so"
+grep -aFq 'editorHitMutation=0' "${OUT}/libv240fix.so"
+grep -aFq 'calibrationPolicy=exact-Persistence-GetInputOffset-SetInputOffset-sentinel-v3' "${OUT}/libv240fix.so"
+grep -aFq 'calibrationExecution=disabled-r16-after-r15-self-fuse-recovery' "${OUT}/libv240fix.so"
+grep -aFq 'metadataInventoryRevision=2' "${OUT}/libv240fix.so"
+grep -aFq 'editorHitExecution=disabled-r15-wide-metadata-inventory' "${OUT}/libv240fix.so"
+grep -aFq 'sfbHookPolicy=dynamic-document-preprocess-before-bind' "${OUT}/libv240fix.so"
+grep -aFq 'dynamicBridgeRegistrationPath=context-classloader-parent-native' "${OUT}/libv240fix.so"
+grep -aFq 'editorProbePolicy=disabled-r18-original-editor-path-window-viewport-fix' "${OUT}/libv240fix.so"
+grep -aFq 'editorProbeMutation=0' "${OUT}/libv240fix.so"
+grep -aFq 'raycastProbePolicy=disabled-r10-superseded-by-scnEditor' "${OUT}/libv240fix.so"
+grep -aFq 'uiHitPolicy=disabled-r9-device-proven-not-on-tile-path' "${OUT}/libv240fix.so"
+grep -aFq 'activeTilePolicy=r21-transient-collider-sync-plus-full-width-window' "${OUT}/libv240fix.so"
+grep -aFq 'windowViewportPolicy=short-edges-full-width' "${OUT}/libv240fix.so"
+grep -aFq 'startupAudioPolicy=disabled-r19-not-device-calibration-root' "${OUT}/libv240fix.so"
+grep -aFq 'calibrationR19Policy=disabled-r20-wrong-backend-forensic-only' "${OUT}/libv240fix.so"
+grep -aFq 'calibration-r19-playerprefs-write.pending' "${OUT}/libv240fix.so"
+grep -aFq 'editorProbeMetadataObjectsRva=0x22E8DF4' "${OUT}/libv240fix.so"
+grep -aFq 'stabilityRevision=21' "${OUT}/libv240fix.so"
+grep -aFq 'calibrationR20Policy=disabled-r21-symptom-write-forensic-only' "${OUT}/libv240fix.so"
+grep -aFq 'calibrationR20Backend=PlayerPrefsJson' "${OUT}/libv240fix.so"
+grep -aFq 'calibration-r20-playerprefsjson-write.pending' "${OUT}/libv240fix.so"
+grep -aFq 'calibrationR21Policy=persisted-CalibrationPreset-FromDict-restore-confident' "${OUT}/libv240fix.so"
+grep -aFq 'calibrationR21ConfidentOffsetExpected=24' "${OUT}/libv240fix.so"
+grep -aFq 'tileR21Policy=ObjectsAtMouse-touch-SyncTransforms-before-original-RayCastAll' "${OUT}/libv240fix.so"
+grep -aFq 'tileR21CoordinatesModified=0' "${OUT}/libv240fix.so"
+grep -aFq 'editor-r21-tile-install.pending' "${OUT}/libv240fix.so"
 sha256sum "${OUT}/libv240fix.so" | tee "${OUT}/SHA256SUMS.txt"
