@@ -22,6 +22,7 @@ class RuntimeR21RootFixContract(unittest.TestCase):
         self.assertIn("apply-v240-r20-playerprefsjson-calibration.py", self.r19)
         self.assertIn("apply-v240-r21-root-fixes.py", self.r20)
         self.assertIn("R21 supersedes the active R20 repair", self.r20)
+        self.assertIn("apply-v240-r22-calibration-persist.py", self.r21)
 
     def test_calibration_fix_targets_serialization_root_cause(self):
         s = self.r21
@@ -97,35 +98,45 @@ class RuntimeR21RootFixContract(unittest.TestCase):
         ):
             self.assertIn(marker, s)
 
-    def test_build_and_channel_publish_r21(self):
+    def test_build_and_channel_keep_r21_tile_fix_under_r22_calibration_successor(self):
         for marker in (
             "apply-v240-r21-root-fixes.py",
-            "stabilityRevision=21",
-            "calibrationR21Policy=persisted-CalibrationPreset-FromDict-restore-confident",
+            "apply-v240-r22-calibration-persist.py",
+            "stabilityRevision=22",
+            "calibrationR21Policy=disabled-r22-PersistenceLoad-already-restores-confident",
+            "calibrationR22Policy=SaveCurrentPreset-then-Persistence.Save-debounced",
             "tileR21Policy=ObjectsAtMouse-touch-SyncTransforms-before-original-RayCastAll",
             "! grep -q '    MaybeRepairCalibrationR20();'",
+            "! grep -q '    MaybeInstallCalibrationR21();'",
+            "MaybeInstallCalibrationR22();",
         ):
             self.assertIn(marker, self.build)
         self.assertIn("scripts/apply-v240-r21-root-fixes.py", self.workflow)
+        self.assertIn("scripts/apply-v240-r22-calibration-persist.py", self.workflow)
         self.assertIn("tests/test_v240_runtime_r21.py", self.workflow)
+        self.assertIn("tests/test_v240_runtime_r22.py", self.workflow)
         self.assertIn("test_v240_runtime_r21.py", self.workflow)
-        self.assertIn("Build r21 exact calibration confidence and editor collider sync", self.workflow)
+        self.assertIn("test_v240_runtime_r22.py", self.workflow)
+        self.assertIn("Build r22 calibration persistence and editor collider sync", self.workflow)
 
 
-    def test_final_binary_assertions_track_only_reachable_r21_contract(self):
+    def test_final_binary_assertions_track_only_reachable_r22_plus_r21_tile_contract(self):
         build = self.build
         final = build[build.index('ELF_HEADER='):]
         self.assertNotIn("stabilityRevision=19", final)
         self.assertNotIn("calibrationR19Policy=exact-playerprefs-offset-sentinel-999-to-zero", final)
         self.assertNotIn("calibration-r19-playerprefs-write.pending", final)
         self.assertNotIn("calibration-r20-playerprefsjson-write.pending", final)
+        self.assertNotIn("calibration-r21-install.pending", final)
+        self.assertNotIn("calibration-r21-confidence.pending", final)
         self.assertIn("require_binary_string()", final)
         self.assertIn("missing final runtime marker:", final)
         for marker in (
-            "stabilityRevision=21",
-            "calibrationR21Policy=persisted-CalibrationPreset-FromDict-restore-confident",
-            "calibration-r21-install.pending",
-            "calibration-r21-confidence.pending",
+            "stabilityRevision=22",
+            "calibrationR21Policy=disabled-r22-PersistenceLoad-already-restores-confident",
+            "calibrationR22Policy=SaveCurrentPreset-then-Persistence.Save-debounced",
+            "calibration-r22-persist-install.pending",
+            "calibration-r22-persist-call.pending",
             "tileR21Policy=ObjectsAtMouse-touch-SyncTransforms-before-original-RayCastAll",
             "editor-r21-tile-install.pending",
             "editor-r21-objects-call.pending",
@@ -133,7 +144,7 @@ class RuntimeR21RootFixContract(unittest.TestCase):
         ):
             self.assertIn(marker, final)
         self.assertNotIn('strings "${OUT}/libv240fix.so" | grep -q', build)
-        self.assertNotIn("readelf -Ws \"${OUT}/libv240fix.so\" | grep -q", build)
+        self.assertNotIn('readelf -Ws "${OUT}/libv240fix.so" | grep -q', build)
 
 
 if __name__ == "__main__":

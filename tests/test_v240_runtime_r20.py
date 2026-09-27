@@ -65,9 +65,9 @@ class RuntimeR20PlayerPrefsJsonContract(unittest.TestCase):
 
     def test_build_validates_r20_is_forensic_only_after_r21(self):
         for marker in (
-            "stabilityRevision=21",
+            "stabilityRevision=22",
             "calibrationR20Policy=disabled-r21-symptom-write-forensic-only",
-            "MaybeInstallCalibrationR21();",
+            "MaybeInstallCalibrationR22();",
             "MaybeInstallTileR21();",
         ):
             self.assertIn(marker, self.build)
@@ -76,7 +76,8 @@ class RuntimeR20PlayerPrefsJsonContract(unittest.TestCase):
         self.assertIn("tests/test_v240_runtime_r20.py", self.workflow)
         self.assertIn("test_v240_runtime_r20.py", self.workflow)
         self.assertIn("test_v240_runtime_r21.py", self.workflow)
-        self.assertIn("Build r21 exact calibration confidence and editor collider sync", self.workflow)
+        self.assertIn("test_v240_runtime_r22.py", self.workflow)
+        self.assertIn("Build r22 calibration persistence and editor collider sync", self.workflow)
 
 if __name__ == "__main__":
     unittest.main()
