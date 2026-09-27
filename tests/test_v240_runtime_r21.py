@@ -112,15 +112,28 @@ class RuntimeR21RootFixContract(unittest.TestCase):
         self.assertIn("Build r21 exact calibration confidence and editor collider sync", self.workflow)
 
 
-    def test_final_binary_assertions_do_not_require_superseded_r19_state(self):
+    def test_final_binary_assertions_track_only_reachable_r21_contract(self):
         build = self.build
-        self.assertNotIn("stabilityRevision=19", build[build.index('readelf -h'):])
-        self.assertNotIn("calibrationR19Policy=exact-playerprefs-offset-sentinel-999-to-zero",
-                         build[build.index('readelf -h'):])
-        self.assertIn("calibrationR19Policy=disabled-r20-wrong-backend-forensic-only",
-                      build[build.index('readelf -h'):])
-        self.assertIn("grep -aFq 'stabilityRevision=21'", build)
+        final = build[build.index('ELF_HEADER='):]
+        self.assertNotIn("stabilityRevision=19", final)
+        self.assertNotIn("calibrationR19Policy=exact-playerprefs-offset-sentinel-999-to-zero", final)
+        self.assertNotIn("calibration-r19-playerprefs-write.pending", final)
+        self.assertNotIn("calibration-r20-playerprefsjson-write.pending", final)
+        self.assertIn("require_binary_string()", final)
+        self.assertIn("missing final runtime marker:", final)
+        for marker in (
+            "stabilityRevision=21",
+            "calibrationR21Policy=persisted-CalibrationPreset-FromDict-restore-confident",
+            "calibration-r21-install.pending",
+            "calibration-r21-confidence.pending",
+            "tileR21Policy=ObjectsAtMouse-touch-SyncTransforms-before-original-RayCastAll",
+            "editor-r21-tile-install.pending",
+            "editor-r21-objects-call.pending",
+            "editor-r21-raycast-call.pending",
+        ):
+            self.assertIn(marker, final)
         self.assertNotIn('strings "${OUT}/libv240fix.so" | grep -q', build)
+        self.assertNotIn("readelf -Ws \"${OUT}/libv240fix.so\" | grep -q", build)
 
 
 if __name__ == "__main__":

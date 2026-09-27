@@ -274,37 +274,51 @@ if [[ ! -s "${LIB}" ]]; then LIB="${UPSTREAM}/app/src/main/obj/local/arm64-v8a/l
 test -s "${LIB}"
 cp "${LIB}" "${OUT}/libv240fix.so"
 
-readelf -h "${OUT}/libv240fix.so" | grep -q 'AArch64'
-readelf -Ws "${OUT}/libv240fix.so" | grep -q 'JNI_OnLoad'
-readelf -Ws "${OUT}/libv240fix.so" | grep -q 'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport'
-grep -aFq 'nativeProbe=cache-post-bnm-scneditor-hitprobe-calibration-v2' "${OUT}/libv240fix.so"
-grep -aFq 'abiProbeRevision=13' "${OUT}/libv240fix.so"
-grep -aFq 'editorInputEdgePolicy=observe-only' "${OUT}/libv240fix.so"
-grep -aFq 'editorHitPolicy=screen-to-world-rdutils-observe-only' "${OUT}/libv240fix.so"
-grep -aFq 'editorHitMutation=0' "${OUT}/libv240fix.so"
-grep -aFq 'calibrationPolicy=exact-Persistence-GetInputOffset-SetInputOffset-sentinel-v3' "${OUT}/libv240fix.so"
-grep -aFq 'calibrationExecution=disabled-r16-after-r15-self-fuse-recovery' "${OUT}/libv240fix.so"
-grep -aFq 'metadataInventoryRevision=2' "${OUT}/libv240fix.so"
-grep -aFq 'editorHitExecution=disabled-r15-wide-metadata-inventory' "${OUT}/libv240fix.so"
-grep -aFq 'sfbHookPolicy=dynamic-document-preprocess-before-bind' "${OUT}/libv240fix.so"
-grep -aFq 'dynamicBridgeRegistrationPath=context-classloader-parent-native' "${OUT}/libv240fix.so"
-grep -aFq 'editorProbePolicy=disabled-r18-original-editor-path-window-viewport-fix' "${OUT}/libv240fix.so"
-grep -aFq 'editorProbeMutation=0' "${OUT}/libv240fix.so"
-grep -aFq 'raycastProbePolicy=disabled-r10-superseded-by-scnEditor' "${OUT}/libv240fix.so"
-grep -aFq 'uiHitPolicy=disabled-r9-device-proven-not-on-tile-path' "${OUT}/libv240fix.so"
-grep -aFq 'activeTilePolicy=r21-transient-collider-sync-plus-full-width-window' "${OUT}/libv240fix.so"
-grep -aFq 'windowViewportPolicy=short-edges-full-width' "${OUT}/libv240fix.so"
-grep -aFq 'startupAudioPolicy=disabled-r19-not-device-calibration-root' "${OUT}/libv240fix.so"
-grep -aFq 'calibrationR19Policy=disabled-r20-wrong-backend-forensic-only' "${OUT}/libv240fix.so"
-grep -aFq 'calibration-r19-playerprefs-write.pending' "${OUT}/libv240fix.so"
-grep -aFq 'editorProbeMetadataObjectsRva=0x22E8DF4' "${OUT}/libv240fix.so"
-grep -aFq 'stabilityRevision=21' "${OUT}/libv240fix.so"
-grep -aFq 'calibrationR20Policy=disabled-r21-symptom-write-forensic-only' "${OUT}/libv240fix.so"
-grep -aFq 'calibrationR20Backend=PlayerPrefsJson' "${OUT}/libv240fix.so"
-grep -aFq 'calibration-r20-playerprefsjson-write.pending' "${OUT}/libv240fix.so"
-grep -aFq 'calibrationR21Policy=persisted-CalibrationPreset-FromDict-restore-confident' "${OUT}/libv240fix.so"
-grep -aFq 'calibrationR21ConfidentOffsetExpected=24' "${OUT}/libv240fix.so"
-grep -aFq 'tileR21Policy=ObjectsAtMouse-touch-SyncTransforms-before-original-RayCastAll' "${OUT}/libv240fix.so"
-grep -aFq 'tileR21CoordinatesModified=0' "${OUT}/libv240fix.so"
-grep -aFq 'editor-r21-tile-install.pending' "${OUT}/libv240fix.so"
+ELF_HEADER="${OUT}/ELF_HEADER.txt"
+ELF_SYMBOLS="${OUT}/ELF_SYMBOLS.txt"
+readelf -h "${OUT}/libv240fix.so" > "${ELF_HEADER}"
+readelf -Ws "${OUT}/libv240fix.so" > "${ELF_SYMBOLS}"
+grep -Fq 'AArch64' "${ELF_HEADER}"
+grep -Fq 'JNI_OnLoad' "${ELF_SYMBOLS}"
+grep -Fq 'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport' "${ELF_SYMBOLS}"
+
+require_binary_string() {
+  local value="$1"
+  if ! grep -aFq -- "$value" "${OUT}/libv240fix.so"; then
+    echo "missing final runtime marker: $value" >&2
+    exit 1
+  fi
+}
+
+# Only require strings that are reachable from the final r21 runtime/report. Historical
+# r19/r20 function-body markers may legitimately be removed by -Oz/linker dead stripping.
+for marker in \
+  'nativeProbe=cache-post-bnm-scneditor-hitprobe-calibration-v2' \
+  'abiProbeRevision=13' \
+  'metadataInventoryRevision=2' \
+  'sfbHookPolicy=dynamic-document-preprocess-before-bind' \
+  'dynamicBridgeRegistrationPath=context-classloader-parent-native' \
+  'editorProbePolicy=disabled-r18-original-editor-path-window-viewport-fix' \
+  'activeTilePolicy=r21-transient-collider-sync-plus-full-width-window' \
+  'windowViewportPolicy=short-edges-full-width' \
+  'startupAudioPolicy=disabled-r19-not-device-calibration-root' \
+  'calibrationR19Policy=disabled-r20-wrong-backend-forensic-only' \
+  'editorProbeMetadataObjectsRva=0x22E8DF4' \
+  'stabilityRevision=21' \
+  'calibrationR20Policy=disabled-r21-symptom-write-forensic-only' \
+  'calibrationR20Backend=PlayerPrefsJson' \
+  'calibrationR21Policy=persisted-CalibrationPreset-FromDict-restore-confident' \
+  'calibrationR21ConfidentOffsetExpected=24' \
+  'calibration-r21-install.pending' \
+  'calibration-r21-confidence.pending' \
+  'tileR21Policy=ObjectsAtMouse-touch-SyncTransforms-before-original-RayCastAll' \
+  'tileR21CoordinatesModified=0' \
+  'tileR21RaycastArgumentsModified=0' \
+  'editor-r21-tile-install.pending' \
+  'editor-r21-objects-call.pending' \
+  'editor-r21-raycast-call.pending'
+do
+  require_binary_string "$marker"
+done
+
 sha256sum "${OUT}/libv240fix.so" | tee "${OUT}/SHA256SUMS.txt"
