@@ -18,6 +18,8 @@ grep -Fq 'dev.hoonex.adofai.v240.dynamic' "${ENTRY}"
 grep -Fq 'public static void install(Context context)' "${ENTRY}"
 grep -Fq 'WINDOW_GUARD_REVISION = 25' "${ENTRY}"
 grep -Fq 'Application.ActivityLifecycleCallbacks' "${ENTRY}"
+grep -Fq 'markParentRuntimeHealthyOnGracefulStop(activity);' "${ENTRY}"
+grep -Fq 'getDeclaredMethod("markHealthy", File.class)' "${ENTRY}"
 grep -Fq 'LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES' "${ENTRY}"
 
 rm -rf "${OUT}"
@@ -30,5 +32,6 @@ mv "${OUT}/dex/classes.dex" "${OUT}/runtime.dex"
 test -s "${OUT}/runtime.dex"
 strings "${OUT}/runtime.dex" | grep -Fq 'Ldev/hoonex/adofai/v240/dynamic/RuntimeEntry;'
 strings "${OUT}/runtime.dex" | grep -Fq 'window viewport lifecycle guard r'
+strings "${OUT}/runtime.dex" | grep -Fq 'parent runtime graceful-stop health confirmation unavailable'
 sha256sum "${OUT}/runtime.dex" | tee "${OUT}/SHA256SUMS.txt"
 rm -rf "${OUT}/classes" "${OUT}/dex"

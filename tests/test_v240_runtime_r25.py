@@ -49,6 +49,14 @@ class RuntimeR25Contract(unittest.TestCase):
         self.assertIn("guardedViewportDecor = null", s)
         self.assertIn("Activity current = currentActivity()", s)
 
+    def test_graceful_stop_reuses_existing_lifecycle_guard_without_polling(self):
+        s = self.entry
+        self.assertIn("onActivityStopped(Activity activity)", s)
+        self.assertIn("markParentRuntimeHealthyOnGracefulStop(activity)", s)
+        self.assertIn('getDeclaredMethod("markHealthy", File.class)', s)
+        self.assertIn('"com.unity3d.player.UnityPlayerActivity".equals(type.getName())', s)
+        self.assertNotIn("boot health while", s)
+
     def test_layout_listener_cannot_self_trigger_forever(self):
         s = self.entry
         self.assertIn("boolean changed = false", s)

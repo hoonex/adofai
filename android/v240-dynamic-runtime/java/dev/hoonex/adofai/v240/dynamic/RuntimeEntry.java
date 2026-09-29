@@ -16,6 +16,7 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 
+import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
@@ -27,6 +28,7 @@ public final class RuntimeEntry {
     private static boolean windowLifecycleInstalled;
     private static View guardedViewportDecor;
     private static View.OnLayoutChangeListener viewportLayoutListener;
+    private static boolean parentRuntimeHealthConfirmed;
 
     private RuntimeEntry() {}
 
@@ -110,11 +112,14 @@ public final class RuntimeEntry {
 
             @Override public void onActivityPaused(Activity activity) {}
 
-            @Override public void onActivityStopped(Activity activity) {}
+            @Override public void onActivityStopped(Activity activity) {
+                markParentRuntimeHealthyOnGracefulStop(activity);
+            }
 
             @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) {}
 
             @Override public void onActivityDestroyed(Activity activity) {
+                markParentRuntimeHealthyOnGracefulStop(activity);
                 clearViewportLayoutGuard(activity);
             }
         });
@@ -128,6 +133,50 @@ public final class RuntimeEntry {
         if (activity == null || activity.isFinishing()) return false;
         Activity current = currentActivity();
         return current == null || current == activity;
+    }
+
+    /**
+     * Bootstrap v3 originally kept boot.pending for a fixed 10 s foreground window.
+     * A user could therefore exit normally twice during that window and be mistaken
+     * for two startup crashes. Existing v3 installs cannot replace their parent DEX
+     * through the hot channel, so the child runtime asks the parent's own markHealthy
+     * method to close the pending boot when Unity receives a graceful stop/destroy.
+     *
+     * Reflection is deliberately fail-open and relies only on bootstrap-v3 internals.
+     * Newer patcher builds also implement the lifecycle handling in the parent itself.
+     */
+    private static synchronized void markParentRuntimeHealthyOnGracefulStop(Activity activity) {
+        if (parentRuntimeHealthConfirmed || !isUnityPlayerActivityClass(activity)) return;
+        try {
+            ClassLoader dynamic = RuntimeEntry.class.getClassLoader();
+            Class<?> updater = Class.forName(
+                    "com.unity3d.player.V240RuntimeUpdater", true, dynamic);
+            Field loadedDirField = updater.getDeclaredField("loadedDir");
+            loadedDirField.setAccessible(true);
+            Object value = loadedDirField.get(null);
+            if (!(value instanceof File)) return;
+
+            File pending = new File((File) value, "boot.pending");
+            Method markHealthy = updater.getDeclaredMethod("markHealthy", File.class);
+            markHealthy.setAccessible(true);
+            markHealthy.invoke(null, pending);
+            if (!pending.exists()) {
+                parentRuntimeHealthConfirmed = true;
+                Log.i(TAG, "graceful stop confirmed parent runtime health");
+            }
+        } catch (Throwable error) {
+            Log.w(TAG, "parent runtime graceful-stop health confirmation unavailable", error);
+        }
+    }
+
+    private static boolean isUnityPlayerActivityClass(Activity activity) {
+        return activity != null && hasUnityPlayerActivityType(activity.getClass());
+    }
+
+    private static boolean hasUnityPlayerActivityType(Class<?> type) {
+        if (type == null) return false;
+        if ("com.unity3d.player.UnityPlayerActivity".equals(type.getName())) return true;
+        return hasUnityPlayerActivityType(type.getSuperclass());
     }
 
     private static synchronized void installViewportLayoutGuard(Activity activity) {

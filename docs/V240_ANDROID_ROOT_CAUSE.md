@@ -142,6 +142,30 @@ scrConductor.SaveCurrentPreset. It:
 It is ABI-guarded, fail-open, and self-fused. Raw PlayerPrefs keys and
 SetInputOffset(0) are not part of the active repair.
 
+## Runtime delivery and graceful-exit safety
+
+The cache channel requires bootstrap version 3 or newer. The current one-click patcher
+embeds bootstrap v3, while older pre-updater patched game APKs cannot consume this channel
+and must not be treated as current runtime evidence.
+
+Bootstrap v3 deliberately creates boot.pending before native loading and normally clears
+it after a 10-second health window. Audit found one false-positive case: two ordinary user
+exits inside that 10-second window could be counted as two interrupted boots and quarantine
+an otherwise healthy runtime.
+
+The production repair keeps the 10-second crash-detection deadline, but also treats Android's
+graceful UnityPlayerActivity stop/destroy lifecycle as positive health evidence:
+
+- new patcher builds handle this directly inside V240RuntimeUpdater;
+- the hot RuntimeEntry also invokes bootstrap v3's existing private markHealthy(File)
+  fail-open through parent-first reflection, so already-installed bootstrap-v3 devices gain
+  the protection without replacing their parent DEX;
+- the hot shim never deletes boot.pending itself and never duplicates rollback counters;
+  the parent updater remains the sole owner of health-marker and boot-failure state.
+
+A native abort or process death before Android delivers a graceful lifecycle transition still
+leaves boot.pending intact, so genuine startup-failure rollback remains active.
+
 ## Safety and proof boundary
 
 Production invariants:

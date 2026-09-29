@@ -1,8 +1,10 @@
 package com.unity3d.player;
 
 import android.app.Activity;
+import android.app.Application;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -68,6 +70,7 @@ final class V240RuntimeUpdater {
     private static volatile String channelState = "not-checked";
     private static File rootDir;
     private static File loadedDir;
+    private static boolean gracefulHealthLifecycleInstalled;
 
     private V240RuntimeUpdater() {}
 
@@ -97,6 +100,7 @@ final class V240RuntimeUpdater {
             try { quarantineActive(app, "startup_exception"); } catch (Throwable ignored) {}
         }
 
+        installGracefulHealthLifecycle(app);
         beginAsyncUpdateCheck(app);
         return true;
     }
@@ -210,6 +214,50 @@ final class V240RuntimeUpdater {
         } catch (Throwable error) {
             Log.w(TAG, "could not persist runtime health marker", error);
         }
+    }
+
+    /**
+     * A normal early Activity stop must not look like a native startup crash.
+     *
+     * boot.pending is still written before System.load() and the 10 s foreground
+     * health deadline remains active. This lifecycle path only confirms health when
+     * Android has delivered a graceful stop/destroy for UnityPlayerActivity.
+     */
+    private static synchronized void installGracefulHealthLifecycle(Context app) {
+        if (gracefulHealthLifecycleInstalled || !(app instanceof Application)) return;
+        ((Application) app).registerActivityLifecycleCallbacks(
+                new Application.ActivityLifecycleCallbacks() {
+            @Override public void onActivityCreated(Activity activity, Bundle state) {}
+            @Override public void onActivityStarted(Activity activity) {}
+            @Override public void onActivityResumed(Activity activity) {}
+            @Override public void onActivityPaused(Activity activity) {}
+
+            @Override public void onActivityStopped(Activity activity) {
+                markHealthyAfterGracefulStop(activity);
+            }
+
+            @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) {}
+
+            @Override public void onActivityDestroyed(Activity activity) {
+                markHealthyAfterGracefulStop(activity);
+            }
+        });
+        gracefulHealthLifecycleInstalled = true;
+    }
+
+    private static void markHealthyAfterGracefulStop(Activity activity) {
+        if (!cachedRuntimeLoaded || loadedDir == null || !isUnityPlayerActivity(activity)) return;
+        markHealthy(new File(loadedDir, "boot.pending"));
+    }
+
+    private static boolean isUnityPlayerActivity(Activity activity) {
+        return activity != null && hasUnityPlayerActivityType(activity.getClass());
+    }
+
+    private static boolean hasUnityPlayerActivityType(Class<?> type) {
+        if (type == null) return false;
+        if ("com.unity3d.player.UnityPlayerActivity".equals(type.getName())) return true;
+        return hasUnityPlayerActivityType(type.getSuperclass());
     }
 
     private static void recoverInterruptedBoot(Context app) throws Exception {

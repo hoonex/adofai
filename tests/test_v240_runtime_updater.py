@@ -71,6 +71,39 @@ class V240RuntimeUpdaterContractTest(unittest.TestCase):
         quarantine = source.index('quarantineVersion(active, "boot_crash")')
         self.assertLess(retry, quarantine)
 
+    def test_graceful_stop_does_not_consume_boot_crash_budget(self):
+        source = self.text(UPDATER)
+        dynamic = self.text(DYNAMIC_ENTRY)
+        for marker in (
+            "installGracefulHealthLifecycle(app);",
+            "registerActivityLifecycleCallbacks",
+            "onActivityStopped(Activity activity)",
+            "markHealthyAfterGracefulStop(activity);",
+            'markHealthy(new File(loadedDir, "boot.pending"));',
+            "isUnityPlayerActivity(Activity activity)",
+            '"com.unity3d.player.UnityPlayerActivity".equals(type.getName())',
+            "HEALTH_DELAY_MS = 10_000L",
+        ):
+            self.assertIn(marker, source)
+
+        # Existing bootstrap-v3 installs cannot replace the parent DEX through the hot
+        # channel, so RuntimeEntry closes the same pending marker through the parent's
+        # own private markHealthy implementation rather than duplicating rollback state.
+        for marker in (
+            "markParentRuntimeHealthyOnGracefulStop(activity);",
+            'getDeclaredField("loadedDir")',
+            'getDeclaredMethod("markHealthy", File.class)',
+            'new File((File) value, "boot.pending")',
+            "parentRuntimeHealthConfirmed",
+            "isUnityPlayerActivityClass(Activity activity)",
+            "markHealthy.invoke(null, pending)",
+        ):
+            self.assertIn(marker, dynamic)
+        shim = dynamic[dynamic.index(
+            "private static synchronized void markParentRuntimeHealthyOnGracefulStop"
+        ):]
+        self.assertNotIn("pending.delete()", shim)
+
     def test_quarantined_version_is_never_downloaded_again(self):
         source = self.text(UPDATER)
         check = source[source.index("private static void checkForUpdate"):]
