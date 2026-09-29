@@ -87,10 +87,16 @@ once(
 """
 )
 once(
-    """    g_dynamicDiagnosticsMethod = diagnostics;
+    """    g_dynamicBridgeClass = global;
+    g_dynamicBegin = begin;
+    g_dynamicAwait = await;
+    g_dynamicDiagnosticsMethod = diagnostics;
     g_dynamicBridgeReady.store(true, std::memory_order_release);
 """,
-    """    g_dynamicDiagnosticsMethod = diagnostics;
+    """    g_dynamicBridgeClass = global;
+    g_dynamicBegin = begin;
+    g_dynamicAwait = await;
+    g_dynamicDiagnosticsMethod = diagnostics;
     g_dynamicSaveMethod = save;
     g_dynamicFolderMethod = folder;
     g_sfbExtraBridgeReady.store(1);
