@@ -129,7 +129,44 @@ jobs:
           test -s "dist/v240-runtime-channel/runtime-${GITHUB_SHA}.zip"
           test -s dist/v240-runtime-channel/manifest.json
 
+      - name: Detect semantic runtime channel change
+        id: runtime-delta
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          CURRENT=.work/v240-current-channel
+          mkdir -p "${CURRENT}"
+          if gh release download v240-runtime-channel --pattern manifest.json --dir "${CURRENT}" --clobber >/dev/null 2>&1; then
+            export CURRENT_MANIFEST="${CURRENT}/manifest.json"
+            export CANDIDATE_MANIFEST="dist/v240-runtime-channel/manifest.json"
+            python3 - <<'PY3'
+          import json, os
+          current = json.load(open(os.environ['CURRENT_MANIFEST'], encoding='utf-8'))
+          candidate = json.load(open(os.environ['CANDIDATE_MANIFEST'], encoding='utf-8'))
+          semantic_keys = (
+              'schema',
+              'minBootstrap',
+              'sourceRepository',
+              'rollout',
+              'nativeSha256',
+              'dexSha256',
+          )
+          changed_keys = [key for key in semantic_keys if current.get(key) != candidate.get(key)]
+          changed = bool(changed_keys)
+          reason = ','.join(changed_keys) if changed_keys else 'payload-identical'
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write('changed=' + ('true' if changed else 'false') + '\n')
+              output.write('reason=' + reason + '\n')
+          print('runtime channel semantic change:', changed, reason)
+          PY3
+          else
+            echo 'changed=true' >> "${GITHUB_OUTPUT}"
+            echo 'reason=no-current-manifest' >> "${GITHUB_OUTPUT}"
+            echo 'runtime channel semantic change: true [no-current-manifest]'
+          fi
       - name: Publish stable manifest and immutable commit-addressed runtime asset
+        if: steps.runtime-delta.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

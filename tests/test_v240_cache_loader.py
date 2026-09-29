@@ -291,6 +291,13 @@ class RuntimeV240CacheContract(unittest.TestCase):
             self.assertIn(marker, self.build)
         self.assertIn('scripts/apply-v240-r28-objects-scope-tile-sync.py', self.workflow)
         self.assertIn('Build r28 exact ObjectsAtMouse collider synchronization', self.workflow)
+        self.assertIn('Detect semantic runtime channel change', self.workflow)
+        self.assertIn("'nativeSha256'", self.workflow)
+        self.assertIn("'dexSha256'", self.workflow)
+        self.assertIn("'rollout'", self.workflow)
+        self.assertIn("steps.runtime-delta.outputs.changed == 'true'", self.workflow)
+        self.assertIn("'payload-identical'", self.workflow)
+        self.assertIn("reason = ','.join(changed_keys)", self.workflow)
 
 
 if __name__ == '__main__':
