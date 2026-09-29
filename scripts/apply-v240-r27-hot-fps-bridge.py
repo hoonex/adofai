@@ -346,3 +346,8 @@ if s.count("BasicHook(") != 18:
     raise SystemExit(f"r27 expected 18 compiled hook sites, got {s.count('BasicHook(')}")
 
 path.write_text(s, encoding="utf-8")
+
+r28 = Path(__file__).with_name("apply-v240-r28-objects-scope-tile-sync.py")
+if not r28.is_file():
+    raise SystemExit(f"missing r28 overlay: {r28}")
+__import__("subprocess").run([sys.executable, str(r28), str(path)], check=True)

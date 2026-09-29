@@ -22,6 +22,7 @@ on:
       - 'scripts/apply-v240-r24-diagnostic-integrity.py'
       - 'scripts/apply-v240-r26-sfb-save-folder.py'
       - 'scripts/apply-v240-r27-hot-fps-bridge.py'
+      - 'scripts/apply-v240-r28-objects-scope-tile-sync.py'
       - 'scripts/build-v240-cache-native.sh'
       - 'scripts/build-v240-dynamic-runtime.sh'
       - 'tests/test_v240_cache_loader.py'
@@ -35,6 +36,7 @@ on:
       - 'tests/test_v240_runtime_r25.py'
       - 'tests/test_v240_runtime_r26.py'
       - 'tests/test_v240_runtime_r27.py'
+      - 'tests/test_v240_runtime_r28.py'
       - 'tests/test_v240_runtime_updater.py'
       - '.github/workflows/v240-runtime-channel.yml'
   workflow_dispatch:
@@ -70,7 +72,7 @@ jobs:
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
           sdkmanager 'platforms;android-35' 'build-tools;36.0.0' 'ndk;29.0.14206865'
 
-      - name: Build r23 exact editor raycast and calibration persistence
+      - name: Build r28 exact ObjectsAtMouse collider synchronization
         run: bash scripts/build-v240-cache-native.sh dist/v240-channel-native
 
       - name: Build hot-swappable dynamic DEX

@@ -32,6 +32,7 @@ R13_OVERLAY="${ROOT}/scripts/apply-v240-r13-hit-probe-calibration-fix.py"
 R15_OVERLAY="${ROOT}/scripts/apply-v240-r15-exact-calibration-and-wide-inventory.py"
 R26_OVERLAY="${ROOT}/scripts/apply-v240-r26-sfb-save-folder.py"
 R27_OVERLAY="${ROOT}/scripts/apply-v240-r27-hot-fps-bridge.py"
+R28_OVERLAY="${ROOT}/scripts/apply-v240-r28-objects-scope-tile-sync.py"
 R18_OVERLAY="${ROOT}/scripts/apply-v240-r18-window-audio-baseline.py"
 R19_OVERLAY="${ROOT}/scripts/apply-v240-r19-exact-calibration.py"
 R20_OVERLAY="${ROOT}/scripts/apply-v240-r20-playerprefsjson-calibration.py"
@@ -49,6 +50,7 @@ test -f "${R13_OVERLAY}"
 test -f "${R15_OVERLAY}"
 test -f "${R26_OVERLAY}"
 test -f "${R27_OVERLAY}"
+test -f "${R28_OVERLAY}"
 test -f "${R18_OVERLAY}"
 test -f "${R19_OVERLAY}"
 test -f "${R20_OVERLAY}"
@@ -197,7 +199,9 @@ grep -q 'calibrationExecution=enabled-r15-exact-persistence-self-fused' "${JNI}/
 grep -q 'editorHitExecution=disabled-r15-wide-metadata-inventory' "${JNI}/V240CacheLoader.cpp"
 ! grep -q 'GetMethod("get_inputOffset", 0)' "${JNI}/V240CacheLoader.cpp"
 ! grep -q 'GetMethod("set_inputOffset", 1)' "${JNI}/V240CacheLoader.cpp"
-grep -q 'activeTilePolicy=r23-exact-raycast-transient-collider-sync-plus-full-width-window' "${JNI}/V240CacheLoader.cpp"
+grep -q 'activeTilePolicy=r28-objects-scope-exact-raycast-sync-plus-full-width-window' "${JNI}/V240CacheLoader.cpp"
+grep -q 'tileRepairRevision=28' "${JNI}/V240CacheLoader.cpp"
+grep -q 'tileR28TouchGateRemoved=1' "${JNI}/V240CacheLoader.cpp"
 grep -q 'windowViewportPolicy=short-edges-full-width' "${JNI}/V240CacheLoader.cpp"
 grep -q 'startupAudioPolicy=disabled-r19-not-device-calibration-root' "${JNI}/V240CacheLoader.cpp"
 grep -q 'startupAudioMutation=disabled-r19' "${JNI}/V240CacheLoader.cpp"
@@ -333,7 +337,7 @@ for marker in \
   'sfbHookPolicy=dynamic-document-preprocess-before-bind' \
   'dynamicBridgeRegistrationPath=context-classloader-parent-native' \
   'editorProbePolicy=disabled-r18-original-editor-path-window-viewport-fix' \
-  'activeTilePolicy=r23-exact-raycast-transient-collider-sync-plus-full-width-window' \
+  'activeTilePolicy=r28-objects-scope-exact-raycast-sync-plus-full-width-window' \
   'windowViewportPolicy=short-edges-full-width' \
   'startupAudioPolicy=disabled-r19-not-device-calibration-root' \
   'calibrationR19Policy=disabled-r20-wrong-backend-forensic-only' \
@@ -349,7 +353,10 @@ for marker in \
   'calibrationR22PersistenceLoadConfidentStoreRva=0x1169674' \
   'calibration-r22-persist-install.pending' \
   'calibration-r22-persist-call.pending' \
-  'tileR21Policy=ObjectsAtMouse-touch-SyncTransforms-before-original-RayCastAll' \
+  'tileR21Policy=ObjectsAtMouse-all-calls-SyncTransforms-before-original-RayCastAll' \
+  'tileRepairRevision=28' \
+  'tileR28OwnershipBoundary=ObjectsAtMouse' \
+  'tileR28TouchGateRemoved=1' \
   'tileR23Resolution=RaycastAll-Vector2-Vector2-float-int-exact' \
   'tileR23ReturnType=UnityEngine.RaycastHit2D[]' \
   'tileR23MutationDelta=0' \
