@@ -37,6 +37,9 @@ grep -Fq 'DexClassLoader' "${UPDATER}"
 grep -Fq 'System.load(nativeLib.getAbsolutePath())' "${UPDATER}"
 grep -Fq 'bundleSha256' "${UPDATER}"
 grep -Fq 'rollout' "${UPDATER}"
+grep -Fq 'runtimeReadiness=' "${UPDATER}"
+grep -Fq 'loadedBootPending=' "${UPDATER}"
+grep -Fq 'loadedHealthyMarker=' "${UPDATER}"
 grep -Fq 'setReadOnly()' "${UPDATER}"
 grep -Fq 'setOnLongClickListener' "${COMPAT_REPORT}"
 grep -Fq 'ClipboardManager' "${COMPAT_REPORT}"
@@ -82,5 +85,11 @@ for marker in \
 done
 # The hot-swappable entrypoint must never be embedded in this parent ClassLoader.
 ! strings "${OUT}/v240-fixed-runtime.dex" | grep -Fq 'Ldev/hoonex/adofai/v240/dynamic/RuntimeEntry;'
+for diagnostic in   'runtimeReadiness='   'loadedBootPending='   'loadedHealthyMarker='; do
+  strings "${OUT}/v240-fixed-runtime.dex" | grep -Fq "${diagnostic}" || {
+    echo "missing updater diagnostic in compiled DEX: ${diagnostic}" >&2
+    exit 4
+  }
+done
 sha256sum "${OUT}/v240-fixed-runtime.dex" | tee "${OUT}/SHA256SUMS.txt"
 rm -rf "${OUT}/classes" "${OUT}/dex"

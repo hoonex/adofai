@@ -112,6 +112,12 @@ final class V240RuntimeUpdater {
     static String diagnosticText() {
         String active = rootDir == null ? "unknown" : readPointerQuiet(new File(rootDir, "active"));
         String previous = rootDir == null ? "unknown" : readPointerQuiet(new File(rootDir, "previous"));
+        String bootPending = loadedDir == null
+                ? "unknown"
+                : (new File(loadedDir, "boot.pending").isFile() ? "1" : "0");
+        String healthyMarker = loadedDir == null
+                ? "unknown"
+                : (new File(loadedDir, "healthy").isFile() ? "1" : "0");
         return "V240 runtime updater\n"
                 + "bootstrapVersion=" + BOOTSTRAP_VERSION + "\n"
                 + "codeCacheOnly=1\n"
@@ -122,11 +128,28 @@ final class V240RuntimeUpdater {
                 + "loadedVersion=" + loadedVersion + "\n"
                 + "activeVersion=" + active + "\n"
                 + "previousVersion=" + previous + "\n"
+                + "runtimeReadiness=" + runtimeReadiness(active) + "\n"
+                + "loadedBootPending=" + bootPending + "\n"
+                + "loadedHealthyMarker=" + healthyMarker + "\n"
                 + "shaVerification=" + shaVerification + "\n"
                 + "bootFailureCount=" + bootFailureCount + "\n"
                 + "channelState=" + channelState + "\n"
                 + "rollbackReason=" + rollbackReason + "\n"
                 + "lastError=" + lastError + "\n";
+    }
+
+    private static String runtimeReadiness(String active) {
+        if (rootDir == null) return "not-started";
+        if (channelState.startsWith("downloaded-restart-required:")) return "restart-required";
+        if (!cachedRuntimeLoaded) {
+            return active == null || "none".equals(active)
+                    ? "java-recovery-mode"
+                    : "active-not-loaded";
+        }
+        if (loadedDir == null || "none".equals(loadedVersion)) return "loaded-state-incomplete";
+        if (active == null || !loadedVersion.equals(active)) return "loaded-active-mismatch";
+        if (new File(loadedDir, "boot.pending").isFile()) return "loaded-pending-health";
+        return "loaded-health-confirmed";
     }
 
     private static void loadActiveCandidate(final Context app) throws Exception {

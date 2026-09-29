@@ -120,11 +120,15 @@ class V240RuntimeUpdaterContractTest(unittest.TestCase):
             '"loadedVersion=" + loadedVersion', '"activeVersion=" + active',
             '"previousVersion=" + previous',
             '"cachedRuntimeLoaded=" + (cachedRuntimeLoaded ? 1 : 0)',
+            '"runtimeReadiness=" + runtimeReadiness(active)',
+            '"loadedBootPending=" + bootPending',
+            '"loadedHealthyMarker=" + healthyMarker',
             '"shaVerification=" + shaVerification',
             '"bootFailureCount=" + bootFailureCount',
             '"rollbackReason=" + rollbackReason', '"lastError=" + lastError',
         ):
             self.assertIn(marker, source)
+        self.assertIn('active == null || "none".equals(active)', source)
 
     def test_dynamic_code_is_read_only_before_loading(self):
         source = self.text(UPDATER)
