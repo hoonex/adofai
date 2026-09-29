@@ -1,0 +1,56 @@
+name: Build ADOFAI 2.4 Signing Toolkit
+
+on:
+  push:
+    branches: [fix/v240-custom-bugfix]
+    paths:
+      - '.github/workflows/v240-signing-toolkit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install pinned Android signing tools
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager 'build-tools;36.0.0'
+
+      - name: Stage portable signing toolkit
+        run: |
+          set -euo pipefail
+          ROOT="${ANDROID_SDK_ROOT}/build-tools/36.0.0"
+          test -x "${ROOT}/zipalign"
+          test -x "${ROOT}/apksigner"
+          test -s "${ROOT}/lib/apksigner.jar"
+          "${ROOT}/apksigner" version
+          if ldd "${ROOT}/zipalign" | grep -q 'not found'; then
+            ldd "${ROOT}/zipalign"
+            exit 1
+          fi
+
+          rm -rf dist/v240-signing-toolkit
+          mkdir -p dist/v240-signing-toolkit/bin dist/v240-signing-toolkit/lib
+          cp "${ROOT}/zipalign" dist/v240-signing-toolkit/bin/
+          cp "${ROOT}/apksigner" dist/v240-signing-toolkit/bin/
+          cp "${ROOT}/lib/apksigner.jar" dist/v240-signing-toolkit/lib/
+          chmod +x dist/v240-signing-toolkit/bin/zipalign dist/v240-signing-toolkit/bin/apksigner
+          (
+            cd dist/v240-signing-toolkit
+            sha256sum bin/zipalign bin/apksigner lib/apksigner.jar > SHA256SUMS.txt
+          )
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adofai-v240-signing-toolkit
+          path: dist/v240-signing-toolkit/
+          if-no-files-found: error
+          retention-days: 7
