@@ -384,10 +384,10 @@ once(
 
 # R24's top-level count describes active installed hook sites.
 once(
-    """                                        (g_calibrationR22HookInstalled.load() ? 1 : 0) +
+    r"""                                        (g_calibrationR22HookInstalled.load() ? 1 : 0) +
                                         (g_tileR21HookInstalled.load() ? 2 : 0)) << '\n'
 """,
-    """                                        (g_calibrationR22HookInstalled.load() ? 1 : 0) +
+    r"""                                        (g_calibrationR22HookInstalled.load() ? 1 : 0) +
                                         (g_tileR21HookInstalled.load() ? 2 : 0) +
                                         (g_sfbExtraHookInstalled.load() ? 3 : 0)) << '\n'
 """

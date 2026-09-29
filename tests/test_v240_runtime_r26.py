@@ -59,6 +59,8 @@ class RuntimeR26Contract(unittest.TestCase):
             self.assertIn(marker, s)
         self.assertNotIn("SaveFilePanelAsync", s)
         self.assertNotIn("OpenFolderPanelAsync", s)
+        self.assertIn('r"""                                        (g_calibrationR22HookInstalled.load() ? 1 : 0) +', s)
+        self.assertIn("(g_sfbExtraHookInstalled.load() ? 3 : 0)) << '\\\\n'", s)
 
     def test_r26_keeps_original_open_and_tile_calibration_repairs(self):
         s = self.r26
