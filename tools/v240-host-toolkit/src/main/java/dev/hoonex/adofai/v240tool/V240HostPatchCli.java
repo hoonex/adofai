@@ -45,6 +45,18 @@ import java.util.zip.ZipFile;
 public final class V240HostPatchCli {
     private static final long SOURCE_BYTES = 370_092_054L;
     private static final String SOURCE_SHA256 = "630f519ae1ab3391aad95da90ebc296f4f0f8ae4ea41024ace7349d93926ef30";
+    private static final String[] CRITICAL_ORIGINAL_ENTRIES = {
+            "lib/arm64-v8a/libil2cpp.so",
+            "lib/arm64-v8a/libunity.so",
+            "lib/arm64-v8a/libmain.so",
+            "assets/bin/Data/Managed/Metadata/global-metadata.dat"
+    };
+    private static final String[] CRITICAL_ORIGINAL_SHA256 = {
+            "c86d7ff549eeef7ecef2c8471019f771e609b3ce7cccf3f775625531b43f3494",
+            "b18718a2452441d05d9a6eb39bd5cb8bb38603ac0fc740fcb04348bb8f36dfd0",
+            "8588e1be5a574f2a276696651713e39483904b245c56f91aec970c3170b710bc",
+            "26b6c4c711eb43815092925cad2fad99c9de12ba9665d880b7f3e6792823d6f9"
+    };
     private static final String ACTIVITY = "Lcom/unity3d/player/UnityPlayerActivity;";
     private static final String BOOTSTRAP = "Lcom/unity3d/player/V240Bootstrap;";
     private static final String PICKER = "com.unity3d.player.V240PickerActivity";
@@ -72,6 +84,7 @@ public final class V240HostPatchCli {
         if (!work.mkdirs()) throw new IllegalStateException("could not create work dir: " + work);
 
         Map<String, Fingerprint> nativeBefore = snapshotNative(source);
+        Map<String, String> criticalBefore = snapshotCriticalOriginalEntries(source);
         File manifest = new File(work, "AndroidManifest.xml");
         File patchedManifest = new File(work, "AndroidManifest-patched.xml");
         extract(source, "AndroidManifest.xml", manifest);
@@ -115,6 +128,7 @@ public final class V240HostPatchCli {
             requireEntry(zip, "lib/arm64-v8a/libv240fix.so");
         }
         assertNativePreserved(output, nativeBefore);
+        assertCriticalOriginalEntriesPreserved(output, criticalBefore);
         if (!containsBootstrapInvoke(patchedDex)) throw new IllegalStateException("bootstrap invoke missing after patch");
         AndroidManifestBlock verifyManifest = AndroidManifestBlock.load(patchedManifest);
         if (!packageName.equals(verifyManifest.getPackageName())) throw new IllegalStateException("package changed");
@@ -263,6 +277,57 @@ public final class V240HostPatchCli {
         }
     }
 
+    private static Map<String, String> snapshotCriticalOriginalEntries(File apk) throws Exception {
+        if (CRITICAL_ORIGINAL_ENTRIES.length != CRITICAL_ORIGINAL_SHA256.length) {
+            throw new IllegalStateException("critical original-entry contract is malformed");
+        }
+        Map<String, String> result = new HashMap<String, String>();
+        try (ZipFile zip = new ZipFile(apk)) {
+            for (int i = 0; i < CRITICAL_ORIGINAL_ENTRIES.length; ++i) {
+                String name = CRITICAL_ORIGINAL_ENTRIES[i];
+                String expected = CRITICAL_ORIGINAL_SHA256[i];
+                String actual = sha256ZipEntry(zip, name);
+                if (!expected.equals(actual)) {
+                    throw new IllegalStateException(
+                            "authoritative original entry SHA-256 mismatch: "
+                                    + name + " expected=" + expected + " actual=" + actual
+                    );
+                }
+                result.put(name, actual);
+            }
+        }
+        return result;
+    }
+
+    private static void assertCriticalOriginalEntriesPreserved(
+            File apk,
+            Map<String, String> before
+    ) throws Exception {
+        try (ZipFile zip = new ZipFile(apk)) {
+            for (Map.Entry<String, String> item : before.entrySet()) {
+                String actual = sha256ZipEntry(zip, item.getKey());
+                if (!item.getValue().equals(actual)) {
+                    throw new IllegalStateException(
+                            "critical original entry changed: "
+                                    + item.getKey()
+                                    + " expected=" + item.getValue()
+                                    + " actual=" + actual
+                    );
+                }
+            }
+        }
+    }
+
+    private static String sha256ZipEntry(ZipFile zip, String name) throws Exception {
+        ZipEntry entry = zip.getEntry(name);
+        if (entry == null || entry.getSize() == 0L) {
+            throw new IllegalStateException("missing/empty APK entry: " + name);
+        }
+        try (InputStream in = new BufferedInputStream(zip.getInputStream(entry))) {
+            return sha256(in);
+        }
+    }
+
     private static void requireEntry(ZipFile zip, String name) {
         ZipEntry e = zip.getEntry(name);
         if (e == null || e.getSize() == 0L) throw new IllegalStateException("missing/empty APK entry: " + name);
@@ -273,12 +338,16 @@ public final class V240HostPatchCli {
     }
 
     private static String sha256(File file) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
         try (InputStream in = new BufferedInputStream(new FileInputStream(file))) {
-            byte[] buffer = new byte[1024 * 1024];
-            int n;
-            while ((n = in.read(buffer)) >= 0) if (n != 0) digest.update(buffer, 0, n);
+            return sha256(in);
         }
+    }
+
+    private static String sha256(InputStream in) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] buffer = new byte[1024 * 1024];
+        int n;
+        while ((n = in.read(buffer)) >= 0) if (n != 0) digest.update(buffer, 0, n);
         StringBuilder out = new StringBuilder(64);
         for (byte b : digest.digest()) out.append(String.format(Locale.US, "%02x", b & 0xff));
         return out.toString();

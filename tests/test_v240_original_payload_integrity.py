@@ -7,6 +7,8 @@ PIPELINE = ROOT / "android/game-patcher/app/src/main/java/dev/hoonex/adofai/game
 HOST_TEST = ROOT / "android/game-patcher/app/src/test/java/dev/hoonex/adofai/gamepatcher/V240HostPatchTest.java"
 FINAL_WORKFLOW = ROOT / ".github/workflows/v240-final-release.yml"
 PATCHER_WORKFLOW = ROOT / ".github/workflows/v240-custom-patcher.yml"
+HOST_TOOLKIT = ROOT / "tools/v240-host-toolkit/src/main/java/dev/hoonex/adofai/v240tool/V240HostPatchCli.java"
+HOST_TOOLKIT_WORKFLOW = ROOT / ".github/workflows/v240-host-toolkit.yml"
 
 CRITICAL = {
     "lib/arm64-v8a/libil2cpp.so":
@@ -27,6 +29,8 @@ class V240OriginalPayloadIntegrityContract(unittest.TestCase):
         cls.host_test = HOST_TEST.read_text(encoding="utf-8")
         cls.final_workflow = FINAL_WORKFLOW.read_text(encoding="utf-8")
         cls.patcher_workflow = PATCHER_WORKFLOW.read_text(encoding="utf-8")
+        cls.host_toolkit = HOST_TOOLKIT.read_text(encoding="utf-8")
+        cls.host_toolkit_workflow = HOST_TOOLKIT_WORKFLOW.read_text(encoding="utf-8")
 
     def test_authoritative_critical_entry_hashes_are_pinned_in_patcher(self):
         for entry, digest in CRITICAL.items():
@@ -74,6 +78,32 @@ class V240OriginalPayloadIntegrityContract(unittest.TestCase):
         self.assertIn("assertCriticalOriginalEntriesPreserved", self.patcher_workflow)
         for digest in CRITICAL.values():
             self.assertIn(digest, self.patcher_workflow)
+
+    def test_standalone_host_toolkit_has_same_critical_entry_contract(self):
+        self.assertIn(
+            "Map<String, String> criticalBefore = snapshotCriticalOriginalEntries(source);",
+            self.host_toolkit,
+        )
+        self.assertIn(
+            "assertCriticalOriginalEntriesPreserved(output, criticalBefore);",
+            self.host_toolkit,
+        )
+        for entry, digest in CRITICAL.items():
+            self.assertIn(entry, self.host_toolkit)
+            self.assertIn(digest, self.host_toolkit)
+
+    def test_host_toolkit_ci_compiles_and_inspects_integrity_contract(self):
+        self.assertIn(
+            "'tests/test_v240_original_payload_integrity.py'",
+            self.host_toolkit_workflow,
+        )
+        self.assertIn("Verify authoritative original payload integrity contract",
+                      self.host_toolkit_workflow)
+        self.assertIn("V240HostPatchCli.class", self.host_toolkit_workflow)
+        self.assertIn("snapshotCriticalOriginalEntries", self.host_toolkit_workflow)
+        self.assertIn("assertCriticalOriginalEntriesPreserved", self.host_toolkit_workflow)
+        for digest in CRITICAL.values():
+            self.assertIn(digest, self.host_toolkit_workflow)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ on:
     branches: [fix/v240-custom-bugfix]
     paths:
       - 'tools/v240-host-toolkit/**'
+      - 'tests/test_v240_original_payload_integrity.py'
       - '.github/workflows/v240-host-toolkit.yml'
   workflow_dispatch:
 
@@ -23,6 +24,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Verify authoritative original payload integrity contract
+        run: python3 -m unittest discover -s tests -p 'test_v240_original_payload_integrity.py' -v
       - name: Build portable host patcher
         run: |
           set -euo pipefail
@@ -30,6 +33,18 @@ jobs:
           JAR=tools/v240-host-toolkit/build/libs/v240-host-patcher.jar
           test -s "$JAR"
           java -jar "$JAR" 2>&1 | grep -q 'usage:' || true
+          CLASS_DIR=.work/v240-host-toolkit-class
+          rm -rf "$CLASS_DIR"
+          mkdir -p "$CLASS_DIR"
+          (
+            cd "$CLASS_DIR"
+            jar xf "$GITHUB_WORKSPACE/$JAR" dev/hoonex/adofai/v240tool/V240HostPatchCli.class
+          )
+          CLASS="$CLASS_DIR/dev/hoonex/adofai/v240tool/V240HostPatchCli.class"
+          test -s "$CLASS"
+          for marker in             'snapshotCriticalOriginalEntries'             'assertCriticalOriginalEntriesPreserved'             'c86d7ff549eeef7ecef2c8471019f771e609b3ce7cccf3f775625531b43f3494'             'b18718a2452441d05d9a6eb39bd5cb8bb38603ac0fc740fcb04348bb8f36dfd0'             '8588e1be5a574f2a276696651713e39483904b245c56f91aec970c3170b710bc'             '26b6c4c711eb43815092925cad2fad99c9de12ba9665d880b7f3e6792823d6f9'; do
+            strings "$CLASS" | grep -Fq "$marker"
+          done
           mkdir -p dist/v240-host-toolkit
           cp "$JAR" dist/v240-host-toolkit/
           sha256sum "$JAR" | tee dist/v240-host-toolkit/SHA256SUMS.txt
