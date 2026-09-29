@@ -60,6 +60,8 @@ public final class V240HostPatchTest {
         assertTrue(nativeLib.isFile() && nativeLib.length() > 0L);
 
         Map<String, Fingerprint> nativeBefore = snapshotNative(source);
+        Map<String, String> criticalBefore =
+                V240PatchPipeline.snapshotCriticalOriginalEntries(source);
         String packageName;
         File manifestFile = new File(work, "source-manifest.xml");
         ApkMutator.extractEntry(source, "AndroidManifest.xml", manifestFile);
@@ -102,6 +104,7 @@ public final class V240HostPatchTest {
         ManifestStoragePatcher.assertV240Picker(patchedManifest);
 
         assertNativePreserved(output, nativeBefore);
+        V240PatchPipeline.assertCriticalOriginalEntriesPreserved(output, criticalBefore);
         deleteTree(work);
     }
 

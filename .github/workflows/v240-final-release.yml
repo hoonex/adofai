@@ -5,6 +5,7 @@ on:
     branches: [fix/v240-custom-bugfix]
     paths:
       - 'android/game-patcher/app/src/test/java/dev/hoonex/adofai/gamepatcher/V240HostPatchTest.java'
+      - 'android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/V240PatchPipeline.java'
       - 'android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/ApkMutator.java'
       - 'android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/V240DexBootstrapPatcher.java'
       - 'android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher/ManifestStoragePatcher.java'
@@ -14,6 +15,7 @@ on:
       - 'tools/adofai_compat.py'
       - 'tests/test_adofai_compat.py'
       - 'tests/test_v240_performance_runtime.py'
+      - 'tests/test_v240_original_payload_integrity.py'
       - 'tests/test_v240_opaque_event_bridge.py'
       - 'tests/test_v240_event_runtime_probe.py'
       - 'tests/test_v240_set_frame_rate_backport.py'
@@ -84,6 +86,9 @@ jobs:
 
       - name: Verify mobile performance and storage safety contract
         run: python3 -m unittest discover -s tests -p 'test_v240_performance_runtime.py'
+
+      - name: Verify authoritative original payload integrity contract
+        run: python3 -m unittest discover -s tests -p 'test_v240_original_payload_integrity.py' -v
 
       - name: Verify opaque event preservation contract
         run: python3 -m unittest discover -s tests -p 'test_v240_opaque_event_bridge.py' -v
@@ -253,6 +258,19 @@ jobs:
           unzip -l "${FINAL}" | grep -q 'classes2.dex'
           unzip -l "${FINAL}" | grep -q 'lib/arm64-v8a/libv240fix.so'
           unzip -l "${FINAL}" | grep -q 'lib/arm64-v8a/libil2cpp.so'
+
+          verify_preserved_entry() {
+            local entry="$1"
+            local expected="$2"
+            local actual
+            actual="$(unzip -p "${FINAL}" "${entry}" | sha256sum | awk '{print $1}')"
+            echo "preserved_entry_sha256 ${entry} ${actual}"
+            test "${actual}" = "${expected}"
+          }
+          verify_preserved_entry             'lib/arm64-v8a/libil2cpp.so'             'c86d7ff549eeef7ecef2c8471019f771e609b3ce7cccf3f775625531b43f3494'
+          verify_preserved_entry             'lib/arm64-v8a/libunity.so'             'b18718a2452441d05d9a6eb39bd5cb8bb38603ac0fc740fcb04348bb8f36dfd0'
+          verify_preserved_entry             'lib/arm64-v8a/libmain.so'             '8588e1be5a574f2a276696651713e39483904b245c56f91aec970c3170b710bc'
+          verify_preserved_entry             'assets/bin/Data/Managed/Metadata/global-metadata.dat'             '26b6c4c711eb43815092925cad2fad99c9de12ba9665d880b7f3e6792823d6f9'
 
       - uses: actions/upload-artifact@v4
         with:

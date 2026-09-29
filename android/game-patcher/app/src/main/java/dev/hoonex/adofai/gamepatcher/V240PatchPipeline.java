@@ -42,7 +42,23 @@ final class V240PatchPipeline {
     static final String OUTPUT_NAME = "ADOFAI-2.4.0-Custom-Bugfix.apk";
 
     private static final String LIBIL2CPP = "lib/arm64-v8a/libil2cpp.so";
+    private static final String LIBUNITY = "lib/arm64-v8a/libunity.so";
+    private static final String LIBMAIN = "lib/arm64-v8a/libmain.so";
+    private static final String GLOBAL_METADATA =
+            "assets/bin/Data/Managed/Metadata/global-metadata.dat";
     private static final String FIX_LIBRARY = "lib/arm64-v8a/libv240fix.so";
+    private static final String[] CRITICAL_ORIGINAL_ENTRIES = {
+            LIBIL2CPP,
+            LIBUNITY,
+            LIBMAIN,
+            GLOBAL_METADATA
+    };
+    private static final String[] CRITICAL_ORIGINAL_SHA256 = {
+            "c86d7ff549eeef7ecef2c8471019f771e609b3ce7cccf3f775625531b43f3494",
+            "b18718a2452441d05d9a6eb39bd5cb8bb38603ac0fc740fcb04348bb8f36dfd0",
+            "8588e1be5a574f2a276696651713e39483904b245c56f91aec970c3170b710bc",
+            "26b6c4c711eb43815092925cad2fad99c9de12ba9665d880b7f3e6792823d6f9"
+    };
     private static final String[] REQUIRED_RUNTIME_CLASSES = {
             "Lcom/unity3d/player/V240Bootstrap;",
             "Lcom/unity3d/player/FileSelector;",
@@ -96,6 +112,7 @@ final class V240PatchPipeline {
             }
 
             Map<String, EntryFingerprint> originalNative = snapshotNativeLibraries(source);
+            Map<String, String> originalCritical = snapshotCriticalOriginalEntries(source);
             try (ZipFile zip = new ZipFile(source)) {
                 requireEntry(zip, "AndroidManifest.xml");
                 requireEntry(zip, "classes.dex");
@@ -123,7 +140,9 @@ final class V240PatchPipeline {
             );
 
             progress(listener, "수정본 구조 검증 중…");
-            assertPatchedStructure(unsigned, work, packageName, originalNative);
+            assertPatchedStructure(
+                    unsigned, work, packageName, originalNative, originalCritical
+            );
 
             progress(listener, "수정 APK 재서명 및 검증 중…");
             SigningIdentity identity = SigningIdentity.loadOrCreate();
@@ -131,7 +150,7 @@ final class V240PatchPipeline {
             if (!identity.sha256.equals(signer)) {
                 throw new IllegalStateException("signer 검증 불일치");
             }
-            assertSignedStructure(signed, packageName);
+            assertSignedStructure(signed, packageName, originalCritical);
 
             progress(listener, "Downloads에 수정본 저장 중…");
             Uri output = publishToDownloads(context, signed);
@@ -166,7 +185,8 @@ final class V240PatchPipeline {
             File apk,
             File work,
             String packageName,
-            Map<String, EntryFingerprint> originalNative
+            Map<String, EntryFingerprint> originalNative,
+            Map<String, String> originalCritical
     ) throws Exception {
         ApkMutator.assertEntry(apk, "AndroidManifest.xml");
         ApkMutator.assertEntry(apk, "classes.dex");
@@ -193,9 +213,14 @@ final class V240PatchPipeline {
         ManifestStoragePatcher.assertV240Picker(manifest);
 
         assertOriginalNativeLibrariesPreserved(apk, originalNative);
+        assertCriticalOriginalEntriesPreserved(apk, originalCritical);
     }
 
-    private static void assertSignedStructure(File signed, String packageName) throws Exception {
+    private static void assertSignedStructure(
+            File signed,
+            String packageName,
+            Map<String, String> originalCritical
+    ) throws Exception {
         try (ZipFile zip = new ZipFile(signed)) {
             requireEntry(zip, "AndroidManifest.xml");
             requireEntry(zip, "classes.dex");
@@ -209,6 +234,7 @@ final class V240PatchPipeline {
         if (packageName == null || packageName.trim().isEmpty()) {
             throw new IllegalStateException("package name lost during signing");
         }
+        assertCriticalOriginalEntriesPreserved(signed, originalCritical);
     }
 
     private static void assertRuntimeDex(File dexFile) throws Exception {
@@ -241,6 +267,54 @@ final class V240PatchPipeline {
         return result;
     }
 
+    static Map<String, String> snapshotCriticalOriginalEntries(File apk) throws Exception {
+        if (CRITICAL_ORIGINAL_ENTRIES.length != CRITICAL_ORIGINAL_SHA256.length) {
+            throw new IllegalStateException("critical original-entry contract is malformed");
+        }
+        Map<String, String> result = new HashMap<String, String>();
+        try (ZipFile zip = new ZipFile(apk)) {
+            for (int i = 0; i < CRITICAL_ORIGINAL_ENTRIES.length; ++i) {
+                String name = CRITICAL_ORIGINAL_ENTRIES[i];
+                String expected = CRITICAL_ORIGINAL_SHA256[i];
+                String actual = sha256ZipEntry(zip, name);
+                if (!expected.equals(actual)) {
+                    throw new IllegalStateException(
+                            "authoritative original entry SHA-256 mismatch: "
+                                    + name + " expected=" + expected + " actual=" + actual
+                    );
+                }
+                result.put(name, actual);
+            }
+        }
+        return result;
+    }
+
+    static void assertCriticalOriginalEntriesPreserved(
+            File apk,
+            Map<String, String> original
+    ) throws Exception {
+        try (ZipFile zip = new ZipFile(apk)) {
+            for (Map.Entry<String, String> item : original.entrySet()) {
+                String actual = sha256ZipEntry(zip, item.getKey());
+                if (!item.getValue().equals(actual)) {
+                    throw new IllegalStateException(
+                            "critical original entry changed: "
+                                    + item.getKey()
+                                    + " expected=" + item.getValue()
+                                    + " actual=" + actual
+                    );
+                }
+            }
+        }
+    }
+
+    private static String sha256ZipEntry(ZipFile zip, String name) throws Exception {
+        ZipEntry entry = requireEntry(zip, name);
+        try (InputStream in = new BufferedInputStream(zip.getInputStream(entry))) {
+            return sha256(in);
+        }
+    }
+
     private static void assertOriginalNativeLibrariesPreserved(
             File patched,
             Map<String, EntryFingerprint> original
@@ -270,12 +344,16 @@ final class V240PatchPipeline {
     }
 
     private static String sha256(File file) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
         try (InputStream in = new BufferedInputStream(new FileInputStream(file))) {
-            byte[] buffer = new byte[1024 * 1024];
-            int count;
-            while ((count = in.read(buffer)) != -1) digest.update(buffer, 0, count);
+            return sha256(in);
         }
+    }
+
+    private static String sha256(InputStream in) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] buffer = new byte[1024 * 1024];
+        int count;
+        while ((count = in.read(buffer)) != -1) digest.update(buffer, 0, count);
         StringBuilder result = new StringBuilder(64);
         for (byte b : digest.digest()) result.append(String.format(Locale.US, "%02x", b & 0xff));
         return result.toString();
