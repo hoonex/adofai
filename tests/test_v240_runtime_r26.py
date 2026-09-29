@@ -64,7 +64,8 @@ class RuntimeR26Contract(unittest.TestCase):
         s = self.r26
         self.assertIn("MaybeInstallSfbHook();", s)
         self.assertIn("MaybeInstallTileR21();", s)
-        self.assertIn("MaybeInstallCalibrationR22();", s)
+        self.assertIn("MaybeInstallSfbExtraHooks();", s)
+        self.assertIn("MaybeInstallCalibrationR22();", self.build)
         self.assertIn("s.count(\"BasicHook(\") != 16", s)
 
     def test_r24_chains_r26_and_ci_tracks_it(self):
