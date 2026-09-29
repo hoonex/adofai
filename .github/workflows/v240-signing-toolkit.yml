@@ -35,24 +35,38 @@ jobs:
         run: |
           set -euo pipefail
           ROOT="${ANDROID_SDK_ROOT}/build-tools/36.0.0"
+          OUT='dist/v240-signing-toolkit'
           test -x "${ROOT}/zipalign"
           test -x "${ROOT}/apksigner"
           test -s "${ROOT}/lib/apksigner.jar"
           "${ROOT}/apksigner" version
-          if ldd "${ROOT}/zipalign" | grep -q 'not found'; then
-            ldd "${ROOT}/zipalign"
-            exit 1
-          fi
 
-          rm -rf dist/v240-signing-toolkit
-          mkdir -p dist/v240-signing-toolkit/bin dist/v240-signing-toolkit/lib
-          cp "${ROOT}/zipalign" dist/v240-signing-toolkit/bin/
-          cp "${ROOT}/apksigner" dist/v240-signing-toolkit/bin/
-          cp "${ROOT}/lib/apksigner.jar" dist/v240-signing-toolkit/lib/
-          chmod +x dist/v240-signing-toolkit/bin/zipalign dist/v240-signing-toolkit/bin/apksigner
+          CPP_PATH="$(ldd "${ROOT}/zipalign" | awk '$1 == "libc++.so" {print $3; exit}')"
+          test -n "${CPP_PATH}"
+          test -s "${CPP_PATH}"
+
+          rm -rf "${OUT}"
+          mkdir -p "${OUT}/lib" "${OUT}/lib64"
+          cp "${ROOT}/apksigner" "${OUT}/apksigner"
+          cp "${ROOT}/lib/apksigner.jar" "${OUT}/lib/apksigner.jar"
+          cp "${ROOT}/zipalign" "${OUT}/zipalign.bin"
+          cp "${CPP_PATH}" "${OUT}/lib64/libc++.so"
+
+          cat > "${OUT}/zipalign" <<'EOF'
+          #!/bin/bash
+          set -euo pipefail
+          SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+          export LD_LIBRARY_PATH="${SELF_DIR}/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+          exec "${SELF_DIR}/zipalign.bin" "$@"
+          EOF
+
+          chmod +x "${OUT}/apksigner" "${OUT}/zipalign" "${OUT}/zipalign.bin"
+          "${OUT}/apksigner" version
+          "${OUT}/zipalign" -h 2>&1 | grep -q 'Usage'
+
           (
-            cd dist/v240-signing-toolkit
-            sha256sum bin/zipalign bin/apksigner lib/apksigner.jar > SHA256SUMS.txt
+            cd "${OUT}"
+            sha256sum apksigner lib/apksigner.jar zipalign zipalign.bin lib64/libc++.so > SHA256SUMS.txt
           )
 
       - uses: actions/upload-artifact@v4
