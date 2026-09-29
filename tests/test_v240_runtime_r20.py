@@ -77,7 +77,7 @@ class RuntimeR20PlayerPrefsJsonContract(unittest.TestCase):
         self.assertIn("test_v240_runtime_r20.py", self.workflow)
         self.assertIn("test_v240_runtime_r21.py", self.workflow)
         self.assertIn("test_v240_runtime_r22.py", self.workflow)
-        self.assertIn("Build r23 exact editor raycast and calibration persistence", self.workflow)
+        self.assertIn("Build r28 exact ObjectsAtMouse collider synchronization", self.workflow)
 
 if __name__ == "__main__":
     unittest.main()

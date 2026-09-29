@@ -26,8 +26,12 @@ class RuntimeR28TileSyncContract(unittest.TestCase):
     def test_r28_removes_only_touch_gate_from_exact_objects_scope(self):
         s = self.r28
         self.assertIn("if (g_tileR21ObjectsDepth <= 0) {", s)
-        self.assertNotIn(
-            "g_tileR21ObjectsDepth <= 0 || !g_tileR21TouchActive",
+        self.assertIn(
+            "'    if (g_tileR21ObjectsDepth <= 0 || !g_tileR21TouchActive) {\\n'",
+            s,
+        )
+        self.assertIn(
+            "'    if (g_tileR21ObjectsDepth <= 0) {\\n'",
             s,
         )
         self.assertIn("!g_tileR21SyncedThisObjectsCall && g_tileR21SyncTransforms", s)
@@ -43,8 +47,12 @@ class RuntimeR28TileSyncContract(unittest.TestCase):
     def test_r28_removes_touch_telemetry_as_install_requirement(self):
         s = self.r28
         self.assertIn("const bool abi = objectsAbi && raycastAbi && sync;", s)
-        self.assertNotIn(
-            "const bool abi = objectsAbi && raycastAbi && touchAbi && sync;",
+        self.assertIn(
+            "'    const bool abi = objectsAbi && raycastAbi && touchAbi && sync;\\n'",
+            s,
+        )
+        self.assertIn(
+            "'    const bool abi = objectsAbi && raycastAbi && sync;\\n'",
             s,
         )
         self.assertIn('if (input) g_tileR21GetTouchCount = input.GetMethod("get_touchCount", 0);', s)

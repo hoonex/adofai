@@ -96,7 +96,7 @@ class RuntimeR22PersistenceContract(unittest.TestCase):
         self.assertIn("scripts/apply-v240-r22-calibration-persist.py", w)
         self.assertIn("tests/test_v240_runtime_r22.py", w)
         self.assertIn("test_v240_runtime_r22.py", w)
-        self.assertIn("Build r23 exact editor raycast and calibration persistence", w)
+        self.assertIn("Build r28 exact ObjectsAtMouse collider synchronization", w)
 
 
 if __name__ == "__main__":

@@ -48,7 +48,7 @@ class RuntimeR23ExactRaycastContract(unittest.TestCase):
         for marker in (
             "apply-v240-r23-exact-raycast-resolution.py",
             "stabilityRevision=23",
-            "activeTilePolicy=r23-exact-raycast-transient-collider-sync-plus-full-width-window",
+            "activeTilePolicy=r28-objects-scope-exact-raycast-sync-plus-full-width-window",
             "tileR23Resolution=RaycastAll-Vector2-Vector2-float-int-exact",
             "tileR23ReturnType=UnityEngine.RaycastHit2D[]",
             'MetadataTypeName(raycastInfo->return_type) == "UnityEngine.RaycastHit2D[]"',
@@ -60,7 +60,7 @@ class RuntimeR23ExactRaycastContract(unittest.TestCase):
         self.assertIn("scripts/apply-v240-r23-exact-raycast-resolution.py", w)
         self.assertIn("tests/test_v240_runtime_r23.py", w)
         self.assertIn("python3 -m unittest discover -s tests -p 'test_v240_*.py' -v", w)
-        self.assertIn("Build r23 exact editor raycast and calibration persistence", w)
+        self.assertIn("Build r28 exact ObjectsAtMouse collider synchronization", w)
 
 
 if __name__ == "__main__":
