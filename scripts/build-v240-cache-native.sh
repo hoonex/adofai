@@ -30,6 +30,7 @@ R11_OVERLAY="${ROOT}/scripts/apply-v240-r11-editor-probe.py"
 R12_OVERLAY="${ROOT}/scripts/apply-v240-r12-input-calibration.py"
 R13_OVERLAY="${ROOT}/scripts/apply-v240-r13-hit-probe-calibration-fix.py"
 R15_OVERLAY="${ROOT}/scripts/apply-v240-r15-exact-calibration-and-wide-inventory.py"
+R26_OVERLAY="${ROOT}/scripts/apply-v240-r26-sfb-save-folder.py"
 R18_OVERLAY="${ROOT}/scripts/apply-v240-r18-window-audio-baseline.py"
 R19_OVERLAY="${ROOT}/scripts/apply-v240-r19-exact-calibration.py"
 R20_OVERLAY="${ROOT}/scripts/apply-v240-r20-playerprefsjson-calibration.py"
@@ -45,6 +46,7 @@ test -f "${R11_OVERLAY}"
 test -f "${R12_OVERLAY}"
 test -f "${R13_OVERLAY}"
 test -f "${R15_OVERLAY}"
+test -f "${R26_OVERLAY}"
 test -f "${R18_OVERLAY}"
 test -f "${R19_OVERLAY}"
 test -f "${R20_OVERLAY}"
@@ -217,6 +219,12 @@ grep -q 'diagnosticRevision=24' "${JNI}/V240CacheLoader.cpp"
 grep -q 'activeHookPolicy=sfb-1-calibrationR22-1-tileR21-2' "${JNI}/V240CacheLoader.cpp"
 grep -q 'gameHooksInstalledSemantics=active-installed-hook-sites' "${JNI}/V240CacheLoader.cpp"
 grep -q 'historicalInactiveHookSitesExcluded=1' "${JNI}/V240CacheLoader.cpp"
+grep -q 'sfbExtraRevision=26' "${JNI}/V240CacheLoader.cpp"
+grep -q 'sfbExtraPolicy=exact-v240-sync-SaveFilePanel-OpenFolderPanel-parent-SAF' "${JNI}/V240CacheLoader.cpp"
+grep -q 'BasicHook(saveString, HookSfbSaveString, g_oldSfbSaveString)' "${JNI}/V240CacheLoader.cpp"
+grep -q 'BasicHook(saveFilters, HookSfbSaveFilters, g_oldSfbSaveFilters)' "${JNI}/V240CacheLoader.cpp"
+grep -q 'BasicHook(folder, HookSfbFolder, g_oldSfbFolder)' "${JNI}/V240CacheLoader.cpp"
+grep -q '    MaybeInstallSfbExtraHooks();' "${JNI}/V240CacheLoader.cpp"
 grep -Fq 'MetadataTypeName(raycastInfo->return_type) == "UnityEngine.RaycastHit2D[]"' "${JNI}/V240CacheLoader.cpp"
 grep -q '    MaybeInstallTileR21();' "${JNI}/V240CacheLoader.cpp"
 ! grep -q '    MaybeRepairCalibrationR19();' "${JNI}/V240CacheLoader.cpp"
@@ -340,6 +348,10 @@ for marker in \
   'activeHookPolicy=sfb-1-calibrationR22-1-tileR21-2' \
   'gameHooksInstalledSemantics=active-installed-hook-sites' \
   'historicalInactiveHookSitesExcluded=1' \
+  'sfbExtraRevision=26' \
+  'sfbExtraPolicy=exact-v240-sync-SaveFilePanel-OpenFolderPanel-parent-SAF' \
+  'sfb-r26-extra-install.pending' \
+  'sfb-r26-extra-call.pending' \
   'tileR21CoordinatesModified=0' \
   'tileR21RaycastArgumentsModified=0' \
   'editor-r21-tile-install.pending' \

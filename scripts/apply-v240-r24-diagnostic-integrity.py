@@ -71,3 +71,8 @@ if s.count("BasicHook(") != 13:
     raise SystemExit(f"r24 must add no hooks; expected thirteen compiled sites, got {s.count('BasicHook(')}")
 
 path.write_text(s, encoding="utf-8")
+
+r26 = Path(__file__).with_name("apply-v240-r26-sfb-save-folder.py")
+if not r26.is_file():
+    raise SystemExit(f"missing r26 overlay: {r26}")
+__import__("subprocess").run([sys.executable, str(r26), str(path)], check=True)

@@ -57,10 +57,17 @@ public final class DirectDocumentBridge {
     private static Method OPAQUE_PREPARE;
     private static Method MAP_REPAIR;
     private static Method BIND_SAVE;
+    private static Method PARENT_BEGIN_SAVE;
+    private static Method PARENT_BEGIN_FOLDER;
+    private static Method PARENT_AWAIT;
+    private static volatile String LAST_CHART_PATH = "";
 
     private static volatile String LAST_DIAGNOSTICS =
             "directBridge=ready\ndirectImports=0\ndirectLastState=0\n";
     private static final AtomicInteger IMPORTS = new AtomicInteger();
+    private static final AtomicInteger SAVE_REQUESTS = new AtomicInteger();
+    private static final AtomicInteger FOLDER_REQUESTS = new AtomicInteger();
+    private static final AtomicInteger PICKER_BRIDGE_ERRORS = new AtomicInteger();
 
     private DirectDocumentBridge() {}
 
@@ -137,7 +144,74 @@ public final class DirectDocumentBridge {
     }
 
     public static String diagnostics() {
-        return LAST_DIAGNOSTICS;
+        return LAST_DIAGNOSTICS +
+                "directSaveRequests=" + SAVE_REQUESTS.get() + "\n" +
+                "directFolderRequests=" + FOLDER_REQUESTS.get() + "\n" +
+                "directParentPickerErrors=" + PICKER_BRIDGE_ERRORS.get() + "\n" +
+                "directLastChartKnown=" + (LAST_CHART_PATH.length() > 0 ? 1 : 0) + "\n";
+    }
+
+    public static String save(String suggestedName, String mime, long timeoutMs) {
+        SAVE_REQUESTS.incrementAndGet();
+        try {
+            ensureParentPickerBridge();
+            String source = LAST_CHART_PATH.length() == 0 ? null : LAST_CHART_PATH;
+            Object raw = PARENT_BEGIN_SAVE.invoke(null,
+                    suggestedName == null ? "level.adofai" : suggestedName,
+                    mime == null || mime.length() == 0 ? "application/octet-stream" : mime,
+                    source);
+            int id = raw instanceof Integer ? ((Integer) raw).intValue() : -1;
+            if (id <= 0) return "E:save picker did not start";
+            String state = awaitParentPicker(id, timeoutMs);
+            if (state.startsWith("O:") && state.length() > 2) {
+                LAST_CHART_PATH = state.substring(2);
+            }
+            return state;
+        } catch (Throwable error) {
+            PICKER_BRIDGE_ERRORS.incrementAndGet();
+            Log.e(TAG, "save picker bridge failed", error);
+            return "E:" + safeMessage(error);
+        }
+    }
+
+    public static String folder(long timeoutMs) {
+        FOLDER_REQUESTS.incrementAndGet();
+        try {
+            ensureParentPickerBridge();
+            Object raw = PARENT_BEGIN_FOLDER.invoke(null);
+            int id = raw instanceof Integer ? ((Integer) raw).intValue() : -1;
+            if (id <= 0) return "E:folder picker did not start";
+            return awaitParentPicker(id, timeoutMs);
+        } catch (Throwable error) {
+            PICKER_BRIDGE_ERRORS.incrementAndGet();
+            Log.e(TAG, "folder picker bridge failed", error);
+            return "E:" + safeMessage(error);
+        }
+    }
+
+    private static String awaitParentPicker(int id, long timeoutMs) throws Exception {
+        Object raw = PARENT_AWAIT.invoke(null, Integer.valueOf(id),
+                Long.valueOf(Math.max(1L, timeoutMs)));
+        return raw instanceof String ? (String) raw : "E:parent picker returned no state";
+    }
+
+    private static void ensureParentPickerBridge() throws Exception {
+        if (PARENT_BEGIN_SAVE != null && PARENT_BEGIN_FOLDER != null && PARENT_AWAIT != null) return;
+        synchronized (COMPAT_LOCK) {
+            if (PARENT_BEGIN_SAVE != null && PARENT_BEGIN_FOLDER != null && PARENT_AWAIT != null) return;
+            ClassLoader loader = DirectDocumentBridge.class.getClassLoader();
+            Class<?> bridge = Class.forName("com.unity3d.player.V240AndroidBridge", true, loader);
+            Method beginSave = bridge.getDeclaredMethod(
+                    "beginSave", String.class, String.class, String.class);
+            Method beginFolder = bridge.getDeclaredMethod("beginFolder");
+            Method await = bridge.getDeclaredMethod("await", int.class, long.class);
+            beginSave.setAccessible(true);
+            beginFolder.setAccessible(true);
+            await.setAccessible(true);
+            PARENT_BEGIN_SAVE = beginSave;
+            PARENT_BEGIN_FOLDER = beginFolder;
+            PARENT_AWAIT = await;
+        }
     }
 
     public static final class PickerFragment extends Fragment {
@@ -303,6 +377,9 @@ public final class DirectDocumentBridge {
                     (grantFlags & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0) {
                 BIND_SAVE.invoke(null, context, chosenChart.uri, chosenChart.file);
                 stats.saveBound = 1;
+            }
+            if (chosenChart != null) {
+                LAST_CHART_PATH = chosenChart.file.getAbsolutePath();
             }
 
             String encoded;
