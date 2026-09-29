@@ -77,6 +77,7 @@ class RuntimeR26Contract(unittest.TestCase):
         for marker in (
             "sfbExtraRevision=26",
             "sfbExtraPolicy=exact-v240-sync-SaveFilePanel-OpenFolderPanel-parent-SAF",
+            "activeHookPolicy=sfb-open-1-sfb-save-folder-3-calibrationR22-1-tileR21-2",
         ):
             self.assertIn(marker, self.build)
 

@@ -216,7 +216,7 @@ grep -q 'calibrationR22PersistenceLoadConfidentStoreRva=0x1169674' "${JNI}/V240C
 grep -q 'calibrationR22PersistenceSaveRequests=' "${JNI}/V240CacheLoader.cpp"
 grep -q 'tileR23Resolution=RaycastAll-Vector2-Vector2-float-int-exact' "${JNI}/V240CacheLoader.cpp"
 grep -q 'diagnosticRevision=24' "${JNI}/V240CacheLoader.cpp"
-grep -q 'activeHookPolicy=sfb-1-calibrationR22-1-tileR21-2' "${JNI}/V240CacheLoader.cpp"
+grep -q 'activeHookPolicy=sfb-open-1-sfb-save-folder-3-calibrationR22-1-tileR21-2' "${JNI}/V240CacheLoader.cpp"
 grep -q 'gameHooksInstalledSemantics=active-installed-hook-sites' "${JNI}/V240CacheLoader.cpp"
 grep -q 'historicalInactiveHookSitesExcluded=1' "${JNI}/V240CacheLoader.cpp"
 grep -q 'sfbExtraRevision=26' "${JNI}/V240CacheLoader.cpp"
@@ -345,7 +345,7 @@ for marker in \
   'tileR23ReturnType=UnityEngine.RaycastHit2D[]' \
   'tileR23MutationDelta=0' \
   'diagnosticRevision=24' \
-  'activeHookPolicy=sfb-1-calibrationR22-1-tileR21-2' \
+  'activeHookPolicy=sfb-open-1-sfb-save-folder-3-calibrationR22-1-tileR21-2' \
   'gameHooksInstalledSemantics=active-installed-hook-sites' \
   'historicalInactiveHookSitesExcluded=1' \
   'sfbExtraRevision=26' \
