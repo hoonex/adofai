@@ -62,7 +62,8 @@ jobs:
 
           chmod +x "${OUT}/apksigner" "${OUT}/zipalign" "${OUT}/zipalign.bin"
           "${OUT}/apksigner" version
-          "${OUT}/zipalign" -h 2>&1 | grep -q 'Usage'
+          ZIPALIGN_HELP="$("${OUT}/zipalign" -h 2>&1 || true)"
+          grep -q 'Usage' <<< "${ZIPALIGN_HELP}"
 
           (
             cd "${OUT}"
