@@ -3,6 +3,7 @@ package dev.hoonex.adofai.gamepatcher;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import com.reandroid.arsc.chunk.xml.AndroidManifestBlock;
 
@@ -12,6 +13,7 @@ import org.junit.Test;
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.security.MessageDigest;
 import java.util.Enumeration;
@@ -20,6 +22,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
 
 /**
  * Host-side exact-source patch path for CI.
@@ -106,6 +109,51 @@ public final class V240HostPatchTest {
         assertNativePreserved(output, nativeBefore);
         V240PatchPipeline.assertCriticalOriginalEntriesPreserved(output, criticalBefore);
         deleteTree(work);
+    }
+
+    @Test
+    public void criticalEntrySha256DetectsArchiveTampering() throws Exception {
+        File archive = File.createTempFile("v240-critical-entry-", ".zip");
+        try {
+            String entryName = "critical.bin";
+            byte[] original = "authoritative-critical-bytes".getBytes("UTF-8");
+            byte[] tampered = "tampered-critical-bytes".getBytes("UTF-8");
+            Map<String, String> expected = new HashMap<String, String>();
+            expected.put(entryName, sha256(original));
+
+            writeSingleEntryZip(archive, entryName, original);
+            V240PatchPipeline.assertCriticalOriginalEntriesPreserved(archive, expected);
+
+            writeSingleEntryZip(archive, entryName, tampered);
+            try {
+                V240PatchPipeline.assertCriticalOriginalEntriesPreserved(archive, expected);
+                fail("tampered critical entry must be rejected");
+            } catch (IllegalStateException expectedFailure) {
+                assertTrue(
+                        expectedFailure.getMessage().contains("critical original entry changed")
+                );
+            }
+        } finally {
+            if (!archive.delete() && archive.exists()) {
+                throw new IllegalStateException("could not delete " + archive);
+            }
+        }
+    }
+
+    private static void writeSingleEntryZip(File output, String name, byte[] bytes) throws Exception {
+        try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(output, false))) {
+            zip.putNextEntry(new ZipEntry(name));
+            zip.write(bytes);
+            zip.closeEntry();
+        }
+    }
+
+    private static String sha256(byte[] bytes) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        digest.update(bytes);
+        StringBuilder out = new StringBuilder(64);
+        for (byte b : digest.digest()) out.append(String.format(Locale.US, "%02x", b & 0xff));
+        return out.toString();
     }
 
     private static void require(ZipFile zip, String name) {
