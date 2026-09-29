@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """R28: make the exact v2.4 transient-collider synchronization independent of Android touch timing.
 
-Internal audit result:
-- scnEditor.ObjectsAtMouse owns the transient floor-collider creation/enabling and the following
-  exact Physics2D.RaycastAll(Vector2, Vector2, float, int) calls.
-- R21/R23 correctly synchronized immediately before the original raycast, but unnecessarily gated
-  that repair on Input.touchCount > 0.
-- Unity's legacy mouse emulation may execute ObjectsAtMouse on a frame where touchCount is already
-  zero. That reintroduces device/timing dependence even though the repair point itself is exact.
+Authoritative v2.4 binary audit:
+- scnEditor.ObjectsAtMouse is RVA 0x22E8DF4.
+- It calls FloorMesh.GenerateCollider at 0x22E91BC, enables the generated behaviour at
+  0x22E91D0, and calls scrFloor.GenerateCollider at 0x22E9268.
+- The same method then immediately calls the exact
+  Physics2D.RaycastAll(Vector2, Vector2, float, int) (RVA 0x1B9FF44) at 0x22E9400
+  and again at 0x22E9454. There is no intervening collider mutation between those two queries.
+- R21/R23 correctly synchronized immediately before the first original raycast, but
+  unnecessarily gated that repair on Input.touchCount > 0. Legacy mouse emulation can reach
+  ObjectsAtMouse on a frame where touchCount is already zero, reintroducing device/timing
+  dependence even though the ownership boundary itself is exact.
 
-R28 keeps the same two exact hooks and the same raycast arguments/results. It only removes the
-touchCount gate: while execution is inside ObjectsAtMouse, the first exact RaycastAll always gets
-one Physics2D.SyncTransforms call. Calls outside ObjectsAtMouse remain byte-for-byte original.
+R28 keeps the same two exact hooks and every original raycast argument/result. It removes only
+the touchCount correctness gate: while execution is inside ObjectsAtMouse, the first exact
+RaycastAll gets one Physics2D.SyncTransforms call. That same synchronized physics state covers
+the second original query because no collider state changes between them. Calls outside
+ObjectsAtMouse remain original.
 """
 from pathlib import Path
 import sys

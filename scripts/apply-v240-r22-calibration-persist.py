@@ -2,23 +2,33 @@
 """R22: persist calibration at the actual mutation boundary; keep exact tile physics repair.
 
 Authoritative v2.4 binary evidence:
-- scrCalibrationPlanet.PostSong writes currentPreset.inputOffset then calls
-  scrConductor.SaveCurrentPreset at RVA 0x218576C.
-- SaveCurrentPreset only updates scrConductor.userPresets in memory. It never calls
+- ADOStartup.Startup calls Persistence.Load at 0x1F1C820 before LoadCalibration at
+  0x1F1C880. LoadCalibration calls CalibrationPreset.LoadDefaults then
+  scrConductor.UpdateCurrentAudioOutput.
+- UpdateCurrentAudioOutput copies the full 32-byte result of
+  GetSuitablePresetForCurrentAudioOutput(false) into currentPreset. Its fallback path
+  writes confident=false at 0x2185388.
+- scnSplash.GoToMenu reads currentPreset.confident (scrConductor statics +0x28):
+  false routes to ADOBase.GoToCalibration, true routes to GoToLevelSelect.
+- Persistence.Load explicitly writes confident=true into each loaded 32-byte user
+  preset at 0x1169674 before CalibrationPreset.FromDict at 0x11696B8. Therefore r21's
+  FromDict confidence mutation is redundant and is not the startup-calibration root cause.
+- scrConductor.SaveCurrentPreset at RVA 0x218576C has one direct caller.
+  scrCalibrationPlanet.PostSong is the only direct caller (callsite 0xB8A3F0; target RVA 0x218576C).
+  SaveCurrentPreset only updates scrConductor.userPresets in memory. It never calls
   Persistence.Save / WriteSaveToDisk.
-- Persistence.WriteSaveToDisk (RVA 0x1169E64) is reached through Persistence.Save
-  (RVA 0x115F748) -> SaveCo(0.5s), and serializes userPresets using
-  CalibrationPreset.ToDict before PlayerPrefsJson.SetList/SaveAllFiles.
-- Persistence.Load explicitly writes confident=true into the 32-byte preset at +24
-  before calling CalibrationPreset.FromDict. Therefore r21's FromDict confidence
-  mutation is redundant and is not the startup-calibration root cause.
+- Persistence.Save (RVA 0x115F748) schedules SaveCo(0.5s); the coroutine reaches
+  Persistence.WriteSaveToDisk (RVA 0x1169E64), which serializes userPresets through
+  CalibrationPreset.ToDict -> PlayerPrefsJson.SetList -> SaveAllFiles.
 
-R22 hooks the exact zero-argument SaveCurrentPreset. It calls the original first,
-then invokes the game's own debounced Persistence.Save. No offset, output identity,
-preset contents, or calibration confidence bytes are changed.
+R22 therefore closes the missing game-owned persistence boundary: it calls the exact
+zero-argument original SaveCurrentPreset first, then invokes the game's own debounced
+Persistence.Save. No offset, output identity, preset contents, or calibration confidence
+bytes are changed.
 
-The r21 tile fix remains active: it only synchronizes Physics2D transforms immediately
-before the first original RaycastAll inside touch-driven scnEditor.ObjectsAtMouse.
+The final tile successor is r28: it synchronizes Physics2D transforms once before the
+first exact RaycastAll while execution is inside scnEditor.ObjectsAtMouse, independent
+of Android touchCount timing.
 """
 from pathlib import Path
 import sys

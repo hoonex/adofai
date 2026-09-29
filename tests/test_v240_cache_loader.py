@@ -8,11 +8,14 @@ ENTRY = ROOT / 'android/v240-dynamic-runtime/java/dev/hoonex/adofai/v240/dynamic
 BUILD = ROOT / 'scripts/build-v240-cache-native.sh'
 R10 = ROOT / 'scripts/apply-v240-r10-raycast-probe.py'
 R11 = ROOT / 'scripts/apply-v240-r11-editor-probe.py'
+R22 = ROOT / 'scripts/apply-v240-r22-calibration-persist.py'
+R28 = ROOT / 'scripts/apply-v240-r28-objects-scope-tile-sync.py'
+ROOT_CAUSE = ROOT / 'docs/V240_ANDROID_ROOT_CAUSE.md'
 WORKFLOW = ROOT / '.github/workflows/v240-runtime-channel.yml'
 ROLLOUT = ROOT / 'android/v240-dynamic-runtime/channel-rollout.txt'
 
 
-class RuntimeR11Contract(unittest.TestCase):
+class RuntimeV240CacheContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.native = LOADER.read_text(encoding='utf-8')
@@ -21,6 +24,9 @@ class RuntimeR11Contract(unittest.TestCase):
         cls.build = BUILD.read_text(encoding='utf-8')
         cls.r10 = R10.read_text(encoding='utf-8')
         cls.r11 = R11.read_text(encoding='utf-8')
+        cls.r22 = R22.read_text(encoding='utf-8')
+        cls.r28 = R28.read_text(encoding='utf-8')
+        cls.root_cause = ROOT_CAUSE.read_text(encoding='utf-8')
         cls.workflow = WORKFLOW.read_text(encoding='utf-8')
 
     def test_committed_native_source_remains_r9_bounded_base(self):
@@ -201,6 +207,90 @@ class RuntimeR11Contract(unittest.TestCase):
             self.assertIn('editorProbeMutation=0', self.r11)
             self.assertIn('sfbOriginalCallUsed=0', self.native)
             self.assertNotIn('System.load(', self.entry)
+
+
+    def test_final_calibration_contract_uses_game_owned_persistence_boundary(self):
+        s = self.r22
+        for marker in (
+            'scrCalibrationPlanet.PostSong is the only direct caller',
+            'callsite 0xB8A3F0; target RVA 0x218576C',
+            'Persistence.Load at 0x1F1C820 before LoadCalibration at',
+            '0x1F1C880',
+            'fallback path',
+            'confident=false at 0x2185388',
+            'g_oldCalibrationR22SaveCurrentPreset(methodInfo);',
+            'g_calibrationR22PersistenceSave.Call();',
+            'saveCurrentPreset._isStatic',
+            'persistenceSave._isStatic',
+            'currentInfo->parameters_count == 0',
+            'persistenceInfo->parameters_count == 0',
+            'calibrationR22Policy=SaveCurrentPreset-then-Persistence.Save-debounced',
+        ):
+            self.assertIn(marker, s)
+        for forbidden in (
+            'SetInputOffset',
+            'currentPreset.confident =',
+            '*confident =',
+            'outputName =',
+            'inputOffset =',
+        ):
+            self.assertNotIn(forbidden, s)
+
+    def test_final_tile_contract_is_exact_objects_scope_sync_not_selection_hack(self):
+        s = self.r28
+        for marker in (
+            'scnEditor.ObjectsAtMouse is RVA 0x22E8DF4',
+            '0x22E91BC',
+            '0x22E91D0',
+            '0x22E9268',
+            '0x22E9400',
+            '0x22E9454',
+            'Physics2D.RaycastAll(Vector2, Vector2, float, int) (RVA 0x1B9FF44)',
+            'if (g_tileR21ObjectsDepth <= 0) {',
+            'g_tileR21SyncTransforms();',
+            'g_oldTileR21Raycast(origin, direction, distance, layerMask, methodInfo)',
+            'const bool abi = objectsAbi && raycastAbi && sync;',
+            'tileR28TouchGateRemoved=1',
+        ):
+            self.assertIn(marker, s)
+        # The old touch-gated expression remains in r28 only as the exact transform anchor;
+        # the emitted runtime is guarded by r28's own post-transform forbidden check.
+        for forbidden in (
+            'origin.x =',
+            'origin.y =',
+            'SelectFloor(',
+            'ScreenToWorldPoint',
+        ):
+            self.assertNotIn(forbidden, s)
+
+    def test_root_cause_evidence_is_pinned_to_authoritative_original(self):
+        s = self.root_cause
+        for marker in (
+            '630f519ae1ab3391aad95da90ebc296f4f0f8ae4ea41024ace7349d93926ef30',
+            'c86d7ff549eeef7ecef2c8471019f771e609b3ce7cccf3f775625531b43f3494',
+            'b18718a2452441d05d9a6eb39bd5cb8bb38603ac0fc740fcb04348bb8f36dfd0',
+            '8588e1be5a574f2a276696651713e39483904b245c56f91aec970c3170b710bc',
+            '26b6c4c711eb43815092925cad2fad99c9de12ba9665d880b7f3e6792823d6f9',
+            'Unity 2021.3.10f1',
+            'DEVICE_RUNTIME_UNVERIFIED',
+            '0x22E8DF4',
+            '0x1B9FF44',
+            '0x218576C',
+            '0x1169E64',
+        ):
+            self.assertIn(marker, s)
+
+    def test_channel_build_tracks_final_r22_r28_contracts(self):
+        for marker in (
+            'apply-v240-r22-calibration-persist.py',
+            'apply-v240-r28-objects-scope-tile-sync.py',
+            'calibrationR22Policy=SaveCurrentPreset-then-Persistence.Save-debounced',
+            'activeTilePolicy=r28-objects-scope-exact-raycast-sync-plus-full-width-window',
+            'tileRepairRevision=28',
+        ):
+            self.assertIn(marker, self.build)
+        self.assertIn('scripts/apply-v240-r28-objects-scope-tile-sync.py', self.workflow)
+        self.assertIn('Build r28 exact ObjectsAtMouse collider synchronization', self.workflow)
 
 
 if __name__ == '__main__':

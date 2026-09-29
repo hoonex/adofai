@@ -328,8 +328,9 @@ require_binary_string() {
   fi
 }
 
-# Only require strings reachable from the final r23 runtime/report. Historical
-# r19/r20/r21 calibration bodies may be removed by -Oz/linker dead stripping.
+# Only require strings reachable from the final r28 runtime/report. Historical
+# r19/r20/r21 calibration bodies may be removed by -Oz/linker dead stripping;
+# active calibration persistence is r22 and active tile synchronization is r28.
 for marker in \
   'nativeProbe=cache-post-bnm-scneditor-hitprobe-calibration-v2' \
   'abiProbeRevision=13' \
