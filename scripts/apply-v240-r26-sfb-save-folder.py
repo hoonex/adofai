@@ -435,3 +435,7 @@ if s.count("BasicHook(") != 16:
     raise SystemExit(f"r26 expected sixteen compiled hook sites, got {s.count('BasicHook(')}")
 
 path.write_text(s, encoding="utf-8")
+r27 = Path(__file__).with_name("apply-v240-r27-hot-fps-bridge.py")
+if not r27.is_file():
+    raise SystemExit(f"missing r27 overlay: {r27}")
+__import__("subprocess").run([sys.executable, str(r27), str(path)], check=True)

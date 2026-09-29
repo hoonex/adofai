@@ -49,7 +49,7 @@ class RuntimeR24DiagnosticIntegrityContract(unittest.TestCase):
         for marker in (
             "apply-v240-r24-diagnostic-integrity.py",
             "diagnosticRevision=24",
-            "activeHookPolicy=sfb-open-1-sfb-save-folder-3-calibrationR22-1-tileR21-2",
+            "activeHookPolicy=sfb-open-1-sfb-save-folder-3-calibrationR22-1-tileR21-2-fpsR27-2",
             "gameHooksInstalledSemantics=active-installed-hook-sites",
             "historicalInactiveHookSitesExcluded=1",
         ):

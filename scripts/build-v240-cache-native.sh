@@ -31,6 +31,7 @@ R12_OVERLAY="${ROOT}/scripts/apply-v240-r12-input-calibration.py"
 R13_OVERLAY="${ROOT}/scripts/apply-v240-r13-hit-probe-calibration-fix.py"
 R15_OVERLAY="${ROOT}/scripts/apply-v240-r15-exact-calibration-and-wide-inventory.py"
 R26_OVERLAY="${ROOT}/scripts/apply-v240-r26-sfb-save-folder.py"
+R27_OVERLAY="${ROOT}/scripts/apply-v240-r27-hot-fps-bridge.py"
 R18_OVERLAY="${ROOT}/scripts/apply-v240-r18-window-audio-baseline.py"
 R19_OVERLAY="${ROOT}/scripts/apply-v240-r19-exact-calibration.py"
 R20_OVERLAY="${ROOT}/scripts/apply-v240-r20-playerprefsjson-calibration.py"
@@ -47,6 +48,7 @@ test -f "${R12_OVERLAY}"
 test -f "${R13_OVERLAY}"
 test -f "${R15_OVERLAY}"
 test -f "${R26_OVERLAY}"
+test -f "${R27_OVERLAY}"
 test -f "${R18_OVERLAY}"
 test -f "${R19_OVERLAY}"
 test -f "${R20_OVERLAY}"
@@ -216,11 +218,16 @@ grep -q 'calibrationR22PersistenceLoadConfidentStoreRva=0x1169674' "${JNI}/V240C
 grep -q 'calibrationR22PersistenceSaveRequests=' "${JNI}/V240CacheLoader.cpp"
 grep -q 'tileR23Resolution=RaycastAll-Vector2-Vector2-float-int-exact' "${JNI}/V240CacheLoader.cpp"
 grep -q 'diagnosticRevision=24' "${JNI}/V240CacheLoader.cpp"
-grep -q 'activeHookPolicy=sfb-open-1-sfb-save-folder-3-calibrationR22-1-tileR21-2' "${JNI}/V240CacheLoader.cpp"
+grep -q 'activeHookPolicy=sfb-open-1-sfb-save-folder-3-calibrationR22-1-tileR21-2-fpsR27-2' "${JNI}/V240CacheLoader.cpp"
 grep -q 'gameHooksInstalledSemantics=active-installed-hook-sites' "${JNI}/V240CacheLoader.cpp"
 grep -q 'historicalInactiveHookSitesExcluded=1' "${JNI}/V240CacheLoader.cpp"
 grep -q 'sfbExtraRevision=26' "${JNI}/V240CacheLoader.cpp"
 grep -q 'sfbExtraPolicy=exact-v240-sync-SaveFilePanel-OpenFolderPanel-parent-SAF' "${JNI}/V240CacheLoader.cpp"
+grep -q 'fpsR27Revision=27' "${JNI}/V240CacheLoader.cpp"
+grep -q 'fpsR27Policy=hot-cache-Application-targetFrameRate-QualitySettings-vSync-reversible' "${JNI}/V240CacheLoader.cpp"
+grep -q 'BasicHook(setTarget, HookFpsR27SetTarget, g_oldFpsR27SetTarget)' "${JNI}/V240CacheLoader.cpp"
+grep -q 'BasicHook(setVsync, HookFpsR27SetVsync, g_oldFpsR27SetVsync)' "${JNI}/V240CacheLoader.cpp"
+grep -q '    MaybeInstallFpsR27();' "${JNI}/V240CacheLoader.cpp"
 grep -q 'BasicHook(saveString, HookSfbSaveString, g_oldSfbSaveString)' "${JNI}/V240CacheLoader.cpp"
 grep -q 'BasicHook(saveFilters, HookSfbSaveFilters, g_oldSfbSaveFilters)' "${JNI}/V240CacheLoader.cpp"
 grep -q 'BasicHook(folder, HookSfbFolder, g_oldSfbFolder)' "${JNI}/V240CacheLoader.cpp"
@@ -306,6 +313,8 @@ readelf -Ws "${OUT}/libv240fix.so" > "${ELF_SYMBOLS}"
 grep -Fq 'AArch64' "${ELF_HEADER}"
 grep -Fq 'JNI_OnLoad' "${ELF_SYMBOLS}"
 grep -Fq 'Java_com_unity3d_player_V240CompatibilityReport_nativeGetCompatibilityReport' "${ELF_SYMBOLS}"
+grep -Fq 'Java_com_unity3d_player_V240SettingsOverlay_nativeApply' "${ELF_SYMBOLS}"
+grep -Fq 'Java_com_unity3d_player_V240SettingsOverlay_nativeApplyTouchAssist' "${ELF_SYMBOLS}"
 
 require_binary_string() {
   local value="$1"
@@ -345,13 +354,19 @@ for marker in \
   'tileR23ReturnType=UnityEngine.RaycastHit2D[]' \
   'tileR23MutationDelta=0' \
   'diagnosticRevision=24' \
-  'activeHookPolicy=sfb-open-1-sfb-save-folder-3-calibrationR22-1-tileR21-2' \
+  'activeHookPolicy=sfb-open-1-sfb-save-folder-3-calibrationR22-1-tileR21-2-fpsR27-2' \
   'gameHooksInstalledSemantics=active-installed-hook-sites' \
   'historicalInactiveHookSitesExcluded=1' \
   'sfbExtraRevision=26' \
   'sfbExtraPolicy=exact-v240-sync-SaveFilePanel-OpenFolderPanel-parent-SAF' \
   'sfb-r26-extra-install.pending' \
   'sfb-r26-extra-call.pending' \
+  'fpsR27Revision=27' \
+  'fpsR27Policy=hot-cache-Application-targetFrameRate-QualitySettings-vSync-reversible' \
+  'fps-r27-install.pending' \
+  'fps-r27-target-call.pending' \
+  'fps-r27-vsync-call.pending' \
+  'fps-r27-apply.pending' \
   'tileR21CoordinatesModified=0' \
   'tileR21RaycastArgumentsModified=0' \
   'editor-r21-tile-install.pending' \
