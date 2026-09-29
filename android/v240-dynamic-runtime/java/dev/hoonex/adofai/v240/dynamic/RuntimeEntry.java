@@ -198,6 +198,7 @@ public final class RuntimeEntry {
             if (!isUnityActivity(activity)) return;
             final Window window = activity.getWindow();
             if (window == null) return;
+            boolean changed = false;
             if (Build.VERSION.SDK_INT >= 28) {
                 WindowManager.LayoutParams params = window.getAttributes();
                 if (params.layoutInDisplayCutoutMode !=
@@ -205,12 +206,17 @@ public final class RuntimeEntry {
                     params.layoutInDisplayCutoutMode =
                             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
                     window.setAttributes(params);
+                    changed = true;
                 }
             }
-            View decor = window.getDecorView();
-            if (decor != null) {
-                decor.requestLayout();
-                decor.invalidate();
+            // Layout listeners call this method too. Only invalidate after an actual
+            // policy transition; otherwise requestLayout() would feed the listener again.
+            if (changed) {
+                View decor = window.getDecorView();
+                if (decor != null) {
+                    decor.requestLayout();
+                    decor.invalidate();
+                }
             }
         } catch (Throwable error) {
             Log.w(TAG, "legacy full-width viewport normalization failed", error);

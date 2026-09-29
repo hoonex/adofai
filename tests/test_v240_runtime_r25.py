@@ -49,6 +49,15 @@ class RuntimeR25Contract(unittest.TestCase):
         self.assertIn("guardedViewportDecor = null", s)
         self.assertIn("Activity current = currentActivity()", s)
 
+    def test_layout_listener_cannot_self_trigger_forever(self):
+        s = self.entry
+        self.assertIn("boolean changed = false", s)
+        self.assertIn("changed = true", s)
+        self.assertIn("if (changed)", s)
+        normalize = s[s.index("private static void normalizeLegacyWindowViewport(Activity activity)"):]
+        normalize = normalize[:normalize.index("private static void scheduleLegacyGearRelocation")]
+        self.assertLess(normalize.index("if (changed)"), normalize.index("decor.requestLayout()"))
+
 
 if __name__ == "__main__":
     unittest.main()
