@@ -30,6 +30,7 @@ on:
       - 'tests/test_v240_runtime_r22.py'
       - 'tests/test_v240_runtime_r23.py'
       - 'tests/test_v240_runtime_r24.py'
+      - 'tests/test_v240_runtime_r25.py'
       - 'tests/test_v240_runtime_updater.py'
       - '.github/workflows/v240-runtime-channel.yml'
   workflow_dispatch:

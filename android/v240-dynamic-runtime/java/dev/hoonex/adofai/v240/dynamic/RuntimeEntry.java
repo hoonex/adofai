@@ -1,10 +1,12 @@
 package dev.hoonex.adofai.v240.dynamic;
 
 import android.app.Activity;
+import android.app.Application;
 import android.content.Context;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Bundle;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Gravity;
@@ -21,6 +23,10 @@ import java.lang.reflect.Method;
 public final class RuntimeEntry {
     private static final String TAG = "ADOFAI.V240Dynamic";
     private static final String LEGACY_GEAR_TAG = "adofai-v240-settings-button";
+    private static final int WINDOW_GUARD_REVISION = 25;
+    private static boolean windowLifecycleInstalled;
+    private static View guardedViewportDecor;
+    private static View.OnLayoutChangeListener viewportLayoutListener;
 
     private RuntimeEntry() {}
 
@@ -34,6 +40,7 @@ public final class RuntimeEntry {
         // as the thread context loader, then reach the stable parent V240CompatibilityReport via
         // normal parent-first delegation. Native resolves DirectDocumentBridge by name through the
         // context loader and reconciles SFB installation.
+        installWindowLifecycleGuard(app);
         registerDynamicBridgeViaParent();
         scheduleNativeReconciliation();
         scheduleLegacyWindowNormalization();
@@ -81,6 +88,85 @@ public final class RuntimeEntry {
     }
 
 
+    private static synchronized void installWindowLifecycleGuard(Context appContext) {
+        if (windowLifecycleInstalled || !(appContext instanceof Application)) return;
+        final Application app = (Application) appContext;
+        app.registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
+            @Override public void onActivityCreated(Activity activity, Bundle state) {
+                if (isUnityActivity(activity)) {
+                    normalizeLegacyWindowViewport(activity);
+                    installViewportLayoutGuard(activity);
+                }
+            }
+
+            @Override public void onActivityStarted(Activity activity) {}
+
+            @Override public void onActivityResumed(Activity activity) {
+                if (isUnityActivity(activity)) {
+                    normalizeLegacyWindowViewport(activity);
+                    installViewportLayoutGuard(activity);
+                }
+            }
+
+            @Override public void onActivityPaused(Activity activity) {}
+
+            @Override public void onActivityStopped(Activity activity) {}
+
+            @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) {}
+
+            @Override public void onActivityDestroyed(Activity activity) {
+                clearViewportLayoutGuard(activity);
+            }
+        });
+        windowLifecycleInstalled = true;
+        Activity activity = currentActivity();
+        if (activity != null) installViewportLayoutGuard(activity);
+        Log.i(TAG, "window viewport lifecycle guard r" + WINDOW_GUARD_REVISION + " installed");
+    }
+
+    private static boolean isUnityActivity(Activity activity) {
+        if (activity == null || activity.isFinishing()) return false;
+        Activity current = currentActivity();
+        return current == null || current == activity;
+    }
+
+    private static synchronized void installViewportLayoutGuard(Activity activity) {
+        if (!isUnityActivity(activity)) return;
+        Window window = activity.getWindow();
+        if (window == null) return;
+        View decor = window.getDecorView();
+        if (decor == null || guardedViewportDecor == decor) return;
+
+        if (guardedViewportDecor != null && viewportLayoutListener != null) {
+            try { guardedViewportDecor.removeOnLayoutChangeListener(viewportLayoutListener); }
+            catch (Throwable ignored) {}
+        }
+        if (viewportLayoutListener == null) {
+            viewportLayoutListener = new View.OnLayoutChangeListener() {
+                @Override public void onLayoutChange(View v, int left, int top, int right, int bottom,
+                                                     int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                    Activity current = currentActivity();
+                    if (current != null && !current.isFinishing()) {
+                        normalizeLegacyWindowViewport(current);
+                    }
+                }
+            };
+        }
+        guardedViewportDecor = decor;
+        decor.addOnLayoutChangeListener(viewportLayoutListener);
+    }
+
+    private static synchronized void clearViewportLayoutGuard(Activity activity) {
+        if (guardedViewportDecor == null || viewportLayoutListener == null || activity == null) return;
+        try {
+            Window window = activity.getWindow();
+            if (window != null && window.getDecorView() == guardedViewportDecor) {
+                guardedViewportDecor.removeOnLayoutChangeListener(viewportLayoutListener);
+                guardedViewportDecor = null;
+            }
+        } catch (Throwable ignored) {}
+    }
+
     private static void scheduleLegacyWindowNormalization() {
         final Handler main = new Handler(Looper.getMainLooper());
         // V240Bootstrap's parent class reapplies its historical window policy during the
@@ -102,9 +188,14 @@ public final class RuntimeEntry {
     }
 
     private static void normalizeLegacyWindowViewport() {
+        final Activity activity = currentActivity();
+        if (activity == null || activity.isFinishing()) return;
+        normalizeLegacyWindowViewport(activity);
+    }
+
+    private static void normalizeLegacyWindowViewport(Activity activity) {
         try {
-            final Activity activity = currentActivity();
-            if (activity == null || activity.isFinishing()) return;
+            if (!isUnityActivity(activity)) return;
             final Window window = activity.getWindow();
             if (window == null) return;
             if (Build.VERSION.SDK_INT >= 28) {
