@@ -36,6 +36,7 @@ R20_OVERLAY="${ROOT}/scripts/apply-v240-r20-playerprefsjson-calibration.py"
 R21_OVERLAY="${ROOT}/scripts/apply-v240-r21-root-fixes.py"
 R22_OVERLAY="${ROOT}/scripts/apply-v240-r22-calibration-persist.py"
 R23_OVERLAY="${ROOT}/scripts/apply-v240-r23-exact-raycast-resolution.py"
+R24_OVERLAY="${ROOT}/scripts/apply-v240-r24-diagnostic-integrity.py"
 test -f "${SRC}"
 test -f "${BRIDGE}"
 test -f "${ENTRY}"
@@ -50,6 +51,7 @@ test -f "${R20_OVERLAY}"
 test -f "${R21_OVERLAY}"
 test -f "${R22_OVERLAY}"
 test -f "${R23_OVERLAY}"
+test -f "${R24_OVERLAY}"
 python3 - "${SRC}" "${BRIDGE}" "${ENTRY}" <<'PY'
 from pathlib import Path
 import sys
@@ -211,6 +213,10 @@ grep -q 'calibrationR22Policy=SaveCurrentPreset-then-Persistence.Save-debounced'
 grep -q 'calibrationR22PersistenceLoadConfidentStoreRva=0x1169674' "${JNI}/V240CacheLoader.cpp"
 grep -q 'calibrationR22PersistenceSaveRequests=' "${JNI}/V240CacheLoader.cpp"
 grep -q 'tileR23Resolution=RaycastAll-Vector2-Vector2-float-int-exact' "${JNI}/V240CacheLoader.cpp"
+grep -q 'diagnosticRevision=24' "${JNI}/V240CacheLoader.cpp"
+grep -q 'activeHookPolicy=sfb-1-calibrationR22-1-tileR21-2' "${JNI}/V240CacheLoader.cpp"
+grep -q 'gameHooksInstalledSemantics=active-installed-hook-sites' "${JNI}/V240CacheLoader.cpp"
+grep -q 'historicalInactiveHookSitesExcluded=1' "${JNI}/V240CacheLoader.cpp"
 grep -Fq 'MetadataTypeName(raycastInfo->return_type) == "UnityEngine.RaycastHit2D[]"' "${JNI}/V240CacheLoader.cpp"
 grep -q '    MaybeInstallTileR21();' "${JNI}/V240CacheLoader.cpp"
 ! grep -q '    MaybeRepairCalibrationR19();' "${JNI}/V240CacheLoader.cpp"
@@ -330,6 +336,10 @@ for marker in \
   'tileR23Resolution=RaycastAll-Vector2-Vector2-float-int-exact' \
   'tileR23ReturnType=UnityEngine.RaycastHit2D[]' \
   'tileR23MutationDelta=0' \
+  'diagnosticRevision=24' \
+  'activeHookPolicy=sfb-1-calibrationR22-1-tileR21-2' \
+  'gameHooksInstalledSemantics=active-installed-hook-sites' \
+  'historicalInactiveHookSitesExcluded=1' \
   'tileR21CoordinatesModified=0' \
   'tileR21RaycastArgumentsModified=0' \
   'editor-r21-tile-install.pending' \
