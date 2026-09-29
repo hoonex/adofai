@@ -92,6 +92,9 @@ once(
     g_dynamicAwait = await;
     g_dynamicDiagnosticsMethod = diagnostics;
     g_dynamicBridgeReady.store(true, std::memory_order_release);
+    g_dynamicBridgeMethodResolution.store(1);
+    return true;
+}
 """,
     """    g_dynamicBridgeClass = global;
     g_dynamicBegin = begin;
@@ -101,6 +104,9 @@ once(
     g_dynamicFolderMethod = folder;
     g_sfbExtraBridgeReady.store(1);
     g_dynamicBridgeReady.store(true, std::memory_order_release);
+    g_dynamicBridgeMethodResolution.store(1);
+    return true;
+}
 """
 )
 
