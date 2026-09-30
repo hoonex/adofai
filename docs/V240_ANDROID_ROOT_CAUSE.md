@@ -31,6 +31,10 @@ The original player identifies as **Unity 2021.3.10f1**.
 
 ## Editor tile selection
 
+The broader Android editor failure map and evidence ranking are maintained in
+[`V240_EDITOR_STRUCTURAL_AUDIT.md`](V240_EDITOR_STRUCTURAL_AUDIT.md). Do not add another
+tile mutation without reconciling it with that audit.
+
 ### Original v2.4 path
 
 Exact metadata/disassembly establishes:
