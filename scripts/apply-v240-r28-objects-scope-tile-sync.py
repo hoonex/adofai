@@ -131,3 +131,8 @@ if s.count("BasicHook(") != 18:
     raise SystemExit(f"r28 adds no hooks; expected 18 compiled hook sites, got {s.count('BasicHook(')}")
 
 path.write_text(s, encoding="utf-8")
+
+r29 = Path(__file__).with_name("apply-v240-r29-il2cpp-resolver-fallback.py")
+if not r29.is_file():
+    raise SystemExit(f"missing r29 overlay: {r29}")
+__import__("subprocess").run([sys.executable, str(r29), str(path)], check=True)

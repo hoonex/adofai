@@ -33,6 +33,7 @@ R15_OVERLAY="${ROOT}/scripts/apply-v240-r15-exact-calibration-and-wide-inventory
 R26_OVERLAY="${ROOT}/scripts/apply-v240-r26-sfb-save-folder.py"
 R27_OVERLAY="${ROOT}/scripts/apply-v240-r27-hot-fps-bridge.py"
 R28_OVERLAY="${ROOT}/scripts/apply-v240-r28-objects-scope-tile-sync.py"
+R29_OVERLAY="${ROOT}/scripts/apply-v240-r29-il2cpp-resolver-fallback.py"
 R18_OVERLAY="${ROOT}/scripts/apply-v240-r18-window-audio-baseline.py"
 R19_OVERLAY="${ROOT}/scripts/apply-v240-r19-exact-calibration.py"
 R20_OVERLAY="${ROOT}/scripts/apply-v240-r20-playerprefsjson-calibration.py"
@@ -51,6 +52,7 @@ test -f "${R15_OVERLAY}"
 test -f "${R26_OVERLAY}"
 test -f "${R27_OVERLAY}"
 test -f "${R28_OVERLAY}"
+test -f "${R29_OVERLAY}"
 test -f "${R18_OVERLAY}"
 test -f "${R19_OVERLAY}"
 test -f "${R20_OVERLAY}"
@@ -202,6 +204,10 @@ grep -q 'editorHitExecution=disabled-r15-wide-metadata-inventory' "${JNI}/V240Ca
 grep -q 'activeTilePolicy=r28-objects-scope-exact-raycast-sync-plus-full-width-window' "${JNI}/V240CacheLoader.cpp"
 grep -q 'tileRepairRevision=28' "${JNI}/V240CacheLoader.cpp"
 grep -q 'tileR28TouchGateRemoved=1' "${JNI}/V240CacheLoader.cpp"
+grep -q 'tileResolverRevision=29' "${JNI}/V240CacheLoader.cpp"
+grep -q 'tileR29ResolverPolicy=RTLD_DEFAULT-then-method-owner-NOLOAD-then-SONAME-NOLOAD' "${JNI}/V240CacheLoader.cpp"
+grep -q 'ResolveIcallR29(void\* managedMethodPointer)' "${JNI}/V240CacheLoader.cpp"
+grep -Fq 'dlopen("libil2cpp.so", RTLD_NOW | RTLD_NOLOAD)' "${JNI}/V240CacheLoader.cpp"
 grep -q 'windowViewportPolicy=short-edges-full-width' "${JNI}/V240CacheLoader.cpp"
 grep -q 'startupAudioPolicy=disabled-r19-not-device-calibration-root' "${JNI}/V240CacheLoader.cpp"
 grep -q 'startupAudioMutation=disabled-r19' "${JNI}/V240CacheLoader.cpp"
@@ -358,6 +364,15 @@ for marker in \
   'tileRepairRevision=28' \
   'tileR28OwnershipBoundary=ObjectsAtMouse' \
   'tileR28TouchGateRemoved=1' \
+  'tileResolverRevision=29' \
+  'tileR29ResolverPolicy=RTLD_DEFAULT-then-method-owner-NOLOAD-then-SONAME-NOLOAD' \
+  'tileR29EditorClassReady=' \
+  'tileR29PhysicsClassReady=' \
+  'tileR29PrimitiveTypesReady=' \
+  'tileR29ObjectsAbiReady=' \
+  'tileR29RaycastAbiReady=' \
+  'tileR29ResolveSymbolPath=' \
+  'tileR29ResolveIcallResult=' \
   'tileR23Resolution=RaycastAll-Vector2-Vector2-float-int-exact' \
   'tileR23ReturnType=UnityEngine.RaycastHit2D[]' \
   'tileR23MutationDelta=0' \
