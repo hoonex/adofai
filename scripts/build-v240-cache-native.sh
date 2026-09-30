@@ -34,6 +34,7 @@ R26_OVERLAY="${ROOT}/scripts/apply-v240-r26-sfb-save-folder.py"
 R27_OVERLAY="${ROOT}/scripts/apply-v240-r27-hot-fps-bridge.py"
 R28_OVERLAY="${ROOT}/scripts/apply-v240-r28-objects-scope-tile-sync.py"
 R29_OVERLAY="${ROOT}/scripts/apply-v240-r29-il2cpp-resolver-fallback.py"
+R30_OVERLAY="${ROOT}/scripts/apply-v240-r30-tile-result-observation.py"
 R18_OVERLAY="${ROOT}/scripts/apply-v240-r18-window-audio-baseline.py"
 R19_OVERLAY="${ROOT}/scripts/apply-v240-r19-exact-calibration.py"
 R20_OVERLAY="${ROOT}/scripts/apply-v240-r20-playerprefsjson-calibration.py"
@@ -53,6 +54,7 @@ test -f "${R26_OVERLAY}"
 test -f "${R27_OVERLAY}"
 test -f "${R28_OVERLAY}"
 test -f "${R29_OVERLAY}"
+test -f "${R30_OVERLAY}"
 test -f "${R18_OVERLAY}"
 test -f "${R19_OVERLAY}"
 test -f "${R20_OVERLAY}"
@@ -201,13 +203,21 @@ grep -q 'calibrationExecution=enabled-r15-exact-persistence-self-fused' "${JNI}/
 grep -q 'editorHitExecution=disabled-r15-wide-metadata-inventory' "${JNI}/V240CacheLoader.cpp"
 ! grep -q 'GetMethod("get_inputOffset", 0)' "${JNI}/V240CacheLoader.cpp"
 ! grep -q 'GetMethod("set_inputOffset", 1)' "${JNI}/V240CacheLoader.cpp"
-grep -q 'activeTilePolicy=r28-objects-scope-exact-raycast-sync-plus-full-width-window' "${JNI}/V240CacheLoader.cpp"
+grep -q 'activeTilePolicy=r30-read-only-original-raycast-and-objects-results' "${JNI}/V240CacheLoader.cpp"
 grep -q 'tileRepairRevision=28' "${JNI}/V240CacheLoader.cpp"
 grep -q 'tileR28TouchGateRemoved=1' "${JNI}/V240CacheLoader.cpp"
 grep -q 'tileResolverRevision=29' "${JNI}/V240CacheLoader.cpp"
 grep -q 'tileR29ResolverPolicy=RTLD_DEFAULT-then-method-owner-NOLOAD-then-SONAME-NOLOAD' "${JNI}/V240CacheLoader.cpp"
 grep -q 'ResolveIcallR29(void\* managedMethodPointer)' "${JNI}/V240CacheLoader.cpp"
 grep -Fq 'dlopen("libil2cpp.so", RTLD_NOW | RTLD_NOLOAD)' "${JNI}/V240CacheLoader.cpp"
+grep -q 'tileResultRevision=30' "${JNI}/V240CacheLoader.cpp"
+grep -q 'tileR30Policy=read-only-two-raycasts-plus-final-objects-result' "${JNI}/V240CacheLoader.cpp"
+grep -q 'tileR30Mutation=0' "${JNI}/V240CacheLoader.cpp"
+grep -q 'tileR30SyncRetired=1' "${JNI}/V240CacheLoader.cpp"
+grep -q 'tileR30FirstRaycastLastCount=' "${JNI}/V240CacheLoader.cpp"
+grep -q 'tileR30SecondRaycastLastCount=' "${JNI}/V240CacheLoader.cpp"
+grep -q 'tileR30ObjectsLastCount=' "${JNI}/V240CacheLoader.cpp"
+! grep -Fq 'g_tileR21SyncTransforms();' "${JNI}/V240CacheLoader.cpp"
 grep -q 'windowViewportPolicy=short-edges-full-width' "${JNI}/V240CacheLoader.cpp"
 grep -q 'startupAudioPolicy=disabled-r19-not-device-calibration-root' "${JNI}/V240CacheLoader.cpp"
 grep -q 'startupAudioMutation=disabled-r19' "${JNI}/V240CacheLoader.cpp"
@@ -334,9 +344,10 @@ require_binary_string() {
   fi
 }
 
-# Only require strings reachable from the final r28 runtime/report. Historical
+# Only require strings reachable from the final runtime/report. Historical
 # r19/r20/r21 calibration bodies may be removed by -Oz/linker dead stripping;
-# active calibration persistence is r22 and active tile synchronization is r28.
+# active calibration persistence is r22. R28/R29 remain historical device evidence,
+# while r30 keeps the proven hook sites read-only and observes original query results.
 for marker in \
   'nativeProbe=cache-post-bnm-scneditor-hitprobe-calibration-v2' \
   'abiProbeRevision=13' \
@@ -344,7 +355,7 @@ for marker in \
   'sfbHookPolicy=dynamic-document-preprocess-before-bind' \
   'dynamicBridgeRegistrationPath=context-classloader-parent-native' \
   'editorProbePolicy=disabled-r18-original-editor-path-window-viewport-fix' \
-  'activeTilePolicy=r28-objects-scope-exact-raycast-sync-plus-full-width-window' \
+  'activeTilePolicy=r30-read-only-original-raycast-and-objects-results' \
   'windowViewportPolicy=short-edges-full-width' \
   'startupAudioPolicy=disabled-r19-not-device-calibration-root' \
   'calibrationR19Policy=disabled-r20-wrong-backend-forensic-only' \
@@ -360,7 +371,7 @@ for marker in \
   'calibrationR22PersistenceLoadConfidentStoreRva=0x1169674' \
   'calibration-r22-persist-install.pending' \
   'calibration-r22-persist-call.pending' \
-  'tileR21Policy=ObjectsAtMouse-all-calls-SyncTransforms-before-original-RayCastAll' \
+  'tileR21Policy=ObjectsAtMouse-original-results-observe-only-r30' \
   'tileRepairRevision=28' \
   'tileR28OwnershipBoundary=ObjectsAtMouse' \
   'tileR28TouchGateRemoved=1' \
@@ -373,6 +384,22 @@ for marker in \
   'tileR29RaycastAbiReady=' \
   'tileR29ResolveSymbolPath=' \
   'tileR29ResolveIcallResult=' \
+  'tileResultRevision=30' \
+  'tileR30Policy=read-only-two-raycasts-plus-final-objects-result' \
+  'tileR30Mutation=0' \
+  'tileR30SyncRetired=1' \
+  'tileR30ObjectsLastCount=' \
+  'tileR30ObjectsMaxCount=' \
+  'tileR30FirstRaycastLastCount=' \
+  'tileR30SecondRaycastLastCount=' \
+  'tileR30FirstRaycastMaxCount=' \
+  'tileR30SecondRaycastMaxCount=' \
+  'tileR30FirstOriginX1000=' \
+  'tileR30FirstOriginY1000=' \
+  'tileR30SecondOriginX1000=' \
+  'tileR30SecondOriginY1000=' \
+  'tileR30FirstLayerMask=' \
+  'tileR30SecondLayerMask=' \
   'tileR23Resolution=RaycastAll-Vector2-Vector2-float-int-exact' \
   'tileR23ReturnType=UnityEngine.RaycastHit2D[]' \
   'tileR23MutationDelta=0' \

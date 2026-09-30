@@ -10,6 +10,7 @@ R10 = ROOT / 'scripts/apply-v240-r10-raycast-probe.py'
 R11 = ROOT / 'scripts/apply-v240-r11-editor-probe.py'
 R22 = ROOT / 'scripts/apply-v240-r22-calibration-persist.py'
 R28 = ROOT / 'scripts/apply-v240-r28-objects-scope-tile-sync.py'
+R30 = ROOT / 'scripts/apply-v240-r30-tile-result-observation.py'
 ROOT_CAUSE = ROOT / 'docs/V240_ANDROID_ROOT_CAUSE.md'
 WORKFLOW = ROOT / '.github/workflows/v240-runtime-channel.yml'
 ROLLOUT = ROOT / 'android/v240-dynamic-runtime/channel-rollout.txt'
@@ -26,6 +27,7 @@ class RuntimeV240CacheContract(unittest.TestCase):
         cls.r11 = R11.read_text(encoding='utf-8')
         cls.r22 = R22.read_text(encoding='utf-8')
         cls.r28 = R28.read_text(encoding='utf-8')
+        cls.r30 = R30.read_text(encoding='utf-8')
         cls.root_cause = ROOT_CAUSE.read_text(encoding='utf-8')
         cls.workflow = WORKFLOW.read_text(encoding='utf-8')
 
@@ -236,7 +238,7 @@ class RuntimeV240CacheContract(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, s)
 
-    def test_final_tile_contract_is_exact_objects_scope_sync_not_selection_hack(self):
+    def test_r28_historical_tile_contract_was_exact_scope_not_selection_hack(self):
         s = self.r28
         for marker in (
             'scnEditor.ObjectsAtMouse is RVA 0x22E8DF4',
@@ -280,17 +282,19 @@ class RuntimeV240CacheContract(unittest.TestCase):
         ):
             self.assertIn(marker, s)
 
-    def test_channel_build_tracks_final_r22_r28_contracts(self):
+    def test_channel_build_tracks_final_r22_r30_contracts(self):
         for marker in (
             'apply-v240-r22-calibration-persist.py',
             'apply-v240-r28-objects-scope-tile-sync.py',
+            'apply-v240-r30-tile-result-observation.py',
             'calibrationR22Policy=SaveCurrentPreset-then-Persistence.Save-debounced',
-            'activeTilePolicy=r28-objects-scope-exact-raycast-sync-plus-full-width-window',
-            'tileRepairRevision=28',
+            'activeTilePolicy=r30-read-only-original-raycast-and-objects-results',
+            'tileResultRevision=30',
+            'tileR30Mutation=0',
         ):
             self.assertIn(marker, self.build)
-        self.assertIn('scripts/apply-v240-r28-objects-scope-tile-sync.py', self.workflow)
-        self.assertIn('Build r28 exact ObjectsAtMouse collider synchronization', self.workflow)
+        self.assertIn('scripts/apply-v240-r30-tile-result-observation.py', self.workflow)
+        self.assertIn('Build final v2.4 tile runtime', self.workflow)
         self.assertIn('Detect semantic runtime channel change', self.workflow)
         self.assertIn("'nativeSha256'", self.workflow)
         self.assertIn("'dexSha256'", self.workflow)

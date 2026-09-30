@@ -70,19 +70,20 @@ class RuntimeR28TileSyncContract(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, s)
 
-    def test_build_and_channel_require_r28_final_markers(self):
+    def test_build_keeps_r28_history_but_r30_is_final_active_policy(self):
         for marker in (
             "R28_OVERLAY",
-            "activeTilePolicy=r28-objects-scope-exact-raycast-sync-plus-full-width-window",
             "tileRepairRevision=28",
             "tileR28OwnershipBoundary=ObjectsAtMouse",
             "tileR28TouchGateRemoved=1",
-            "tileR21Policy=ObjectsAtMouse-all-calls-SyncTransforms-before-original-RayCastAll",
+            "activeTilePolicy=r30-read-only-original-raycast-and-objects-results",
+            "tileR21Policy=ObjectsAtMouse-original-results-observe-only-r30",
+            "tileR30SyncRetired=1",
         ):
             self.assertIn(marker, self.build)
         self.assertIn("scripts/apply-v240-r28-objects-scope-tile-sync.py", self.workflow)
         self.assertIn("tests/test_v240_runtime_r28.py", self.workflow)
-        self.assertIn("Build r28 exact ObjectsAtMouse collider synchronization", self.workflow)
+        self.assertIn("Build final v2.4 tile runtime", self.workflow)
 
 
 if __name__ == "__main__":

@@ -92,7 +92,7 @@ class RuntimeR27HotFpsContract(unittest.TestCase):
             self.assertIn(marker, self.build)
         self.assertIn("scripts/apply-v240-r27-hot-fps-bridge.py", self.workflow)
         self.assertIn("tests/test_v240_runtime_r27.py", self.workflow)
-        self.assertIn("Build r28 exact ObjectsAtMouse collider synchronization", self.workflow)
+        self.assertIn("Build final v2.4 tile runtime", self.workflow)
 
 
 if __name__ == "__main__":

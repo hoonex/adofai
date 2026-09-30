@@ -59,22 +59,34 @@ Device logs already proved Android touch-to-legacy-mouse down edges are present 
 SelectFloor is reached only rarely. That rules out the earlier missing-GetMouseButtonDown
 model and places the defect after input delivery, in the world-hit path.
 
-### Production repair
+### Device result and current observation boundary
 
-The active r28 policy keeps the original selection and coordinates intact. It scopes an
-exact Physics2D.RaycastAll(Vector2, Vector2, float, int) hook to execution inside
-scnEditor.ObjectsAtMouse and calls Unity's own Physics2D.SyncTransforms() once before
-the first original raycast. The original origin, direction, distance, layer mask, result
-array, and SelectFloor behavior are unchanged. The second raycast observes the same
-synchronized world because no collider state changes between the two calls.
+R28/R29 tested the same-frame Physics2D synchronization hypothesis without changing
+selection or raycast arguments. On the affected phone, runtime 3701b119 loaded healthy
+and proved all of the following on-device:
 
-Input.touchCount is telemetry only, not a correctness gate. This matters because legacy
-mouse emulation and touch lifetime can cross frame boundaries differently on Android.
+- the exact ObjectsAtMouse and four-argument RaycastAll hooks installed;
+- the exact ABI guards passed;
+- il2cpp_resolve_icall was obtained through the already-loaded libil2cpp owner;
+- Physics2D.SyncTransforms resolved and executed;
+- ObjectsAtMouse and RaycastAll were actually called during touch interaction.
 
-The tablet being healthy is compatible with this root cause: the original code contains
-a same-frame synchronization hazard whose observed stale/current physics state can depend
-on runtime/frame timing. The repair removes that dependency at the exact query boundary;
-it does not assume a device-specific coordinate scale or force a selection.
+Tile selection still failed. Therefore the SyncTransforms hypothesis is **device-falsified**
+and is not an active repair.
+
+R30 keeps the two already-proven hook sites as read-only observation boundaries and restores
+the original Physics2D query behavior. It does not call SyncTransforms, change origin,
+direction, distance, layer mask, return arrays, or SelectFloor. It records bounded counts
+for each of the two original RaycastHit2D[] results and the final GameObject[] returned by
+ObjectsAtMouse, together with the original query arguments.
+
+Exact original disassembly also establishes that ObjectsAtMouse combines the two RaycastAll
+arrays before filtering the combined hits into its final GameObject[] result. The next
+device result can therefore distinguish a Physics2D query miss from post-raycast filtering
+without another speculative mutation.
+
+Input.touchCount remains telemetry only, not a correctness gate. The healthy tablet remains
+the control and is not modified for comparison.
 
 ## Repeating startup calibration
 
