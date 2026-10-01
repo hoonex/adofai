@@ -489,6 +489,39 @@ This means one report can distinguish several broad cases without another mutati
 The trace is bounded, read-only and tied to a click sequence. Global totals remain secondary
 evidence.
 
+### Offline r31 report analyzer
+
+`tools/analyze_v240_r31_report.py` parses the copied compatibility report without changing the
+runtime or game state:
+
+```bash
+python3 tools/analyze_v240_r31_report.py report.txt
+cat report.txt | python3 tools/analyze_v240_r31_report.py -
+cat report.txt | python3 tools/analyze_v240_r31_report.py --json
+```
+
+The analyzer first verifies the r31 runtime contract: revision, read-only policy, input ABI,
+seven-method ABI/install masks, self-fuse readiness and recovery state. It refuses to present
+a normal analysis status when those gates are incomplete.
+
+Per transaction, the route names are evidence boundaries rather than root-cause claims:
+
+- `SELECT_FLOOR_REACHED`: the exact SelectFloor boundary was entered;
+- `TILE_DRAG_REACHED` / `CAMERA_DRAG_REACHED`: the pointer entered an explicit drag path;
+- `WORLD_HIT_WITHOUT_SELECT`: a positive world hit was observed but SelectFloor was not;
+- `WORLD_QUERY_NO_HIT`: a query ran and zero-hit evidence is complete enough to say so;
+- `WORLD_QUERY_AMBIGUOUS`: query counters contain incomplete/sentinel evidence;
+- `NON_FLOOR_EDITOR_PATH`: SmartObjectSelect/GizmoAtMouse ran without floor selection;
+- `PRE_WORLD_QUERY_PATH`: no world-query/select/drag boundary was observed;
+- `ACTIVE_TRANSACTION` / `SUPERSEDED_TRANSACTION`: the transaction is incomplete;
+- `MIXED_EXPLICIT_PATH`: multiple explicit terminal paths ran, so the analyzer deliberately
+  does not choose one.
+
+The analyzer sorts the eight ring-buffer slots by transaction sequence, preserves malformed
+records as warnings, and exposes the same result as JSON for future automated comparison.
+It must not be used to infer that a route itself is defective; the route only identifies the
+smallest observed boundary for the next evidence or repair decision.
+
 ## Current working model
 
 The strongest current model is not “Physics2D is broken on this phone”.
