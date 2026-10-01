@@ -211,8 +211,11 @@ def classify_transaction(txn: dict[str, Any]) -> dict[str, Any]:
     elif world_query:
         ray_counts = [ray1_count, ray2_count]
         ray_sentinel_error = any(count in {-1, -2} for count in ray_counts)
+        # Exact v2.4 static reconstruction shows SmartObjectSelect(bool) calls
+        # ObjectsAtMouse internally. R31 keeps only the last per-call object/ray snapshot,
+        # so multiple ObjectsAtMouse invocations cannot prove that every query was empty.
         zero_hit_proven = (
-            obj_calls > 0
+            obj_calls == 1
             and obj_last == 0
             and not ray_sentinel_error
         ) or (
@@ -227,7 +230,10 @@ def classify_transaction(txn: dict[str, Any]) -> dict[str, Any]:
             boundary = "World picking ran with no positive observed hit; inspect coordinate conversion, collider/layer eligibility, and query inputs from this same transaction."
         else:
             route = "WORLD_QUERY_AMBIGUOUS"
-            boundary = "World picking ran, but result counters are not sufficient for a positive/zero-hit conclusion; inspect the raw transaction before changing behavior."
+            if obj_calls > 1:
+                boundary = "Multiple ObjectsAtMouse calls ran in this transaction, while r31 retains only the last per-call object/ray snapshot; a zero-hit conclusion would discard earlier query evidence."
+            else:
+                boundary = "World picking ran, but result counters are not sufficient for a positive/zero-hit conclusion; inspect the raw transaction before changing behavior."
     elif smart_calls > 0 or gizmo_calls > 0:
         route = "NON_FLOOR_EDITOR_PATH"
         boundary = "SmartObjectSelect/GizmoAtMouse ran without an observed world-query/select/drag path; inspect editor object arbitration before floor selection."
@@ -244,6 +250,7 @@ def classify_transaction(txn: dict[str, Any]) -> dict[str, Any]:
         "boundary": boundary,
         "world_query": world_query,
         "positive_world_hit": positive_world_hit,
+        "objects_snapshot_complete": obj_calls <= 1,
         "pointer_max_delta_px": [txn["maxd"][0] / 100.0, txn["maxd"][1] / 100.0],
         "screen_start_px": [txn["start"][0] / 100.0, txn["start"][1] / 100.0],
         "screen_end_px": [txn["end"][0] / 100.0, txn["end"][1] / 100.0],

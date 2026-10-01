@@ -130,6 +130,22 @@ class V240R31ReportAnalyzerTest(unittest.TestCase):
         self.assertEqual(zero_hit["route"], "WORLD_QUERY_NO_HIT")
         self.assertEqual(pre_world["route"], "PRE_WORLD_QUERY_PATH")
 
+    def test_multiple_objects_calls_cannot_prove_zero_hit_from_last_snapshot(self):
+        txn = analyzer.analyze_report(
+            report(txn_line(0, 1, obj=(2, 0), ray=(4, 0, 0)))
+        )["transactions"][0]
+        self.assertEqual(txn["route"], "WORLD_QUERY_AMBIGUOUS")
+        self.assertFalse(txn["objects_snapshot_complete"])
+        self.assertIn("Multiple ObjectsAtMouse calls", txn["boundary"])
+
+    def test_multiple_objects_calls_can_still_prove_positive_last_hit(self):
+        txn = analyzer.analyze_report(
+            report(txn_line(0, 1, obj=(2, 3), ray=(4, 3, 0)))
+        )["transactions"][0]
+        self.assertEqual(txn["route"], "WORLD_HIT_WITHOUT_SELECT")
+        self.assertFalse(txn["objects_snapshot_complete"])
+        self.assertTrue(txn["positive_world_hit"])
+
     def test_explicit_camera_and_tile_drag_paths_are_not_conflated(self):
         camera = analyzer.analyze_report(
             report(txn_line(0, 1, obj=(0, -3), ray=(0, -3, -3), drag=(1, 0, 0)))

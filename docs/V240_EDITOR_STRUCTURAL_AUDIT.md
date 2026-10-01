@@ -206,6 +206,48 @@ The old prose interpretation was too strong. Any final reconstruction must expla
 This is a strong reason to reconstruct the whole `HandleMouseActions -> ObjectsAtMouse`
 control flow instead of adding another isolated physics patch.
 
+### Exact v2.4 call-graph refinement
+
+A second pass over the authoritative arm64 `libil2cpp.so` resolves more of the exact
+selection graph:
+
+- `HandleMouseActions` directly calls `ObjectsAtMouse` at `0x22E480C` and
+  `0x22E71C0`;
+- both direct paths then call the function at `0x22E9910`, with the bool argument
+  respectively `false` and `true`;
+- `0x22E9910` itself calls `ObjectsAtMouse` at `0x22E994C`, compares the new object
+  array with a cached previous array when cycling is allowed, maintains a modulo selection
+  index, and returns one object from the hit set. Together with the exact metadata ABI/name,
+  this identifies `scnEditor.SmartObjectSelect(bool)` at RVA `0x22E9910`;
+- the function at `0x22EA828` reads the current pointer/camera state, calls the exact
+  four-argument `Physics2D.RaycastAll` at `0x22EA914`, filters the hit to the
+  `TransformGizmo` type and returns it. Together with the exact metadata ABI/name, this
+  identifies `scnEditor.GizmoAtMouse()` at RVA `0x22EA828`;
+- `HandleMouseActions` calls that `GizmoAtMouse` path at `0x22E7134` and stores its
+  result in editor state;
+- `HandleMouseActions` reaches `SelectFloor` through three distinct callsites:
+  `0x22E564C`, `0x22E6AA0` and `0x22E7838`. All three pass the same second bool
+  argument value `true`;
+- inside `ObjectsAtMouse`, the exact RaycastAll callsites remain `0x22E9400` and
+  `0x22E9454`. They derive layer masks from two separate editor integer fields
+  (`self+0x824` and `self+0x820`) and merge the returned hit arrays afterward.
+
+This changes the interpretation of the old counters. One logical pointer-selection path can
+execute a direct `ObjectsAtMouse` and then another `ObjectsAtMouse` inside
+`SmartObjectSelect`; these are sequential top-level calls, not recursive invocations of the
+same active wrapper.
+
+R31 counts every completed outer `ObjectsAtMouse` call in a pointer transaction, but its
+`objectsLastCount` and `ray1/ray2` fields are overwritten by each successive call. Therefore
+a transaction with `objCalls > 1` and a final zero count does **not** prove that every query
+in that transaction was empty. The offline analyzer deliberately reports that case as
+`WORLD_QUERY_AMBIGUOUS` rather than manufacturing a zero-hit conclusion. A positive final
+snapshot remains valid positive evidence.
+
+This exact nested-at-the-state-machine-level structure also explains why raw global
+Objects/Raycast totals cannot be interpreted as a fixed call ratio without reconstructing
+which `HandleMouseActions` branch ran.
+
 ## Structural failure map
 
 ### 1. Tap is classified as a drag or camera operation
