@@ -254,3 +254,8 @@ if s.count("BasicHook(") != 18:
     raise SystemExit(f"r30 adds no hooks; expected 18 compiled hook sites, got {s.count('BasicHook(')}")
 
 path.write_text(s, encoding="utf-8")
+
+r31 = Path(__file__).with_name("apply-v240-r31-editor-transaction-trace.py")
+if not r31.is_file():
+    raise SystemExit(f"missing r31 overlay: {r31}")
+__import__("subprocess").run([sys.executable, str(r31), str(path)], check=True)

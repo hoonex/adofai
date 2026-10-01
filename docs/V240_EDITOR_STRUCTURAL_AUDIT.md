@@ -409,58 +409,85 @@ zero-argument SaveCurrentPreset, calls the original first, then schedules the ga
 The phone has proved the R22 hook installs, but the latest report had not exercised the
 SaveCurrentPreset boundary yet. Keep its device-verification status separate.
 
-## Current r30 purpose
+## Current r30/r31 purpose
 
-Runtime `ba5d72262ba8dff4c29e25f5e5abb4db8d5953dc` is intentionally observational for tile
-picking.
+Runtime `ba5d72262ba8dff4c29e25f5e5abb4db8d5953dc` (r30) is intentionally
+observational for tile picking. It restored the original raycast behavior and records the
+original RaycastAll counts, final ObjectsAtMouse count, origins, distances and layer masks.
+It is not a repair.
 
-It restores the original raycast behavior and records:
+R31 is the next observation layer produced from this structural audit. It does **not** add
+another tile mutation. It keeps the r30 original-query path and adds exact-ABI-guarded,
+pass-through hooks for:
 
-- each observed original RaycastAll result count;
-- final ObjectsAtMouse result count;
-- original origin, direction, distance and layer mask.
+- `HandleMouseActions()`;
+- `SelectFloor(scrFloor, bool)`;
+- `SmartObjectSelect(bool)`;
+- `GizmoAtMouse()`;
+- `DragCamera(Vector3)`;
+- `DragTilesStart()`;
+- `DragTiles(Vector3)`.
 
-It must not be promoted as a repair.
+The existing r30 ObjectsAtMouse/RaycastAll wrappers feed the same pointer transaction. Only
+the latest eight transactions are retained in memory; there is no per-frame log stream.
+A transaction starts on legacy left-mouse down and remains open through mouse-up plus one
+additional HandleMouseActions pass so delayed selection decisions are not lost at a frame
+boundary.
+
+The first r31 phase intentionally avoids direct reads/writes of editor internals such as
+`pointerDownObjectType`, `previouslyFoundObjects`, `selectedObjectIndexOfBunch` or
+`mousePosition0`. Those fields are valuable, but method-boundary evidence is safer and
+already separates several structural branches without relying on uncertain field ABI.
+
+R31 must not be promoted as a repair.
 
 ## New debugging rule
 
-Do not create r31 merely because one r30 counter is surprising.
+Do not create another speculative mutation merely because one r30/r31 value is surprising.
 
-Before the next mutation:
+Before the next behavior change:
 
-1. reconstruct the exact v2.4 `HandleMouseActions` predecessor branches leading to
-   `SelectFloor`;
-2. reconstruct the conditional branches inside `ObjectsAtMouse` well enough to explain the
-   60/60/30 device counter relationship;
-3. map pointer-down ownership, drag/camera transitions, object overlap/cycling and UI gates;
-4. correlate the Android window/surface, Unity screen coordinates, camera pixel rect and
-   world query coordinates;
-5. only then choose the smallest repair boundary.
+1. use the correlated transaction to determine whether the failed tap enters world-hit,
+   SmartObjectSelect/gizmo, SelectFloor, tile-drag, or camera-drag paths;
+2. explain the conditional ObjectsAtMouse/Raycast relationship rather than assuming a fixed
+   number of queries per call;
+3. compare pointer displacement against accidental drag/camera activity;
+4. compare screen-space tap coordinates with the world-query origins from the same
+   transaction;
+5. only if these boundaries remain ambiguous, add exact-ABI reads for the smallest necessary
+   editor state fields;
+6. only then choose the smallest repair boundary.
 
-## Preferred next device instrumentation, if still necessary
+## R31 transaction fields
 
-If exact static reconstruction cannot identify the failed branch, use one bounded
-transaction trace rather than another family of unrelated counters.
+Each `editorTraceR31TxnN` record is one bounded pointer transaction and currently contains:
 
-For each of the last few pointer transactions, capture one correlated record containing:
+- sequence/state;
+- start/end `Input.mousePosition`;
+- Unity `Screen.width/height`;
+- starting touch count;
+- HandleMouseActions/held-frame counts;
+- release observation and one post-release Handle frame;
+- maximum pointer displacement;
+- ObjectsAtMouse call count and last final object count;
+- exact r30 RaycastAll counts/origins/layer masks;
+- SmartObjectSelect call/non-null result counts;
+- GizmoAtMouse call/non-null result counts;
+- SelectFloor call/non-null/cameraJump values;
+- DragCamera / DragTilesStart / DragTiles call counts.
 
-- Unity frame id;
-- touch phase/count and legacy mouse down/held/up;
-- touch position and Input.mousePosition;
-- Screen width/height and camera pixelRect;
-- camera ScreenToWorldPoint result;
-- pointer-down object type;
-- drag/free-angle/camera-pan state;
-- ObjectsAtMouse invocation and which conditional query branch executed;
-- each original RaycastAll count plus origin/mask;
-- final found-object count and coarse object categories;
-- `previouslyFoundObjects` count and `selectedObjectIndexOfBunch`;
-- SmartObjectSelect outcome;
-- exact branch that called SelectFloor, MultiSelectFloors, deselection, decoration selection,
-  gizmo drag, tile drag, or camera drag.
+This means one report can distinguish several broad cases without another mutation:
 
-The trace must be bounded, read-only and tied to a single click id. Global totals alone are
-no longer sufficient evidence.
+- no transaction at all -> legacy pointer transaction boundary failed;
+- transaction + drag calls -> tap/drag arbitration becomes a leading cause;
+- transaction + raycast/object hits + no SelectFloor -> post-hit selection arbitration becomes
+  a leading cause;
+- transaction + no world-hit calls -> an earlier HandleMouseActions/UI/mode branch won;
+- SelectFloor called but visible selection still fails -> the defect is downstream of the
+  selection decision.
+
+The trace is bounded, read-only and tied to a click sequence. Global totals remain secondary
+evidence.
 
 ## Current working model
 

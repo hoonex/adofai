@@ -35,6 +35,7 @@ R27_OVERLAY="${ROOT}/scripts/apply-v240-r27-hot-fps-bridge.py"
 R28_OVERLAY="${ROOT}/scripts/apply-v240-r28-objects-scope-tile-sync.py"
 R29_OVERLAY="${ROOT}/scripts/apply-v240-r29-il2cpp-resolver-fallback.py"
 R30_OVERLAY="${ROOT}/scripts/apply-v240-r30-tile-result-observation.py"
+R31_OVERLAY="${ROOT}/scripts/apply-v240-r31-editor-transaction-trace.py"
 R18_OVERLAY="${ROOT}/scripts/apply-v240-r18-window-audio-baseline.py"
 R19_OVERLAY="${ROOT}/scripts/apply-v240-r19-exact-calibration.py"
 R20_OVERLAY="${ROOT}/scripts/apply-v240-r20-playerprefsjson-calibration.py"
@@ -55,6 +56,7 @@ test -f "${R27_OVERLAY}"
 test -f "${R28_OVERLAY}"
 test -f "${R29_OVERLAY}"
 test -f "${R30_OVERLAY}"
+test -f "${R31_OVERLAY}"
 test -f "${R18_OVERLAY}"
 test -f "${R19_OVERLAY}"
 test -f "${R20_OVERLAY}"
@@ -217,6 +219,17 @@ grep -q 'tileR30SyncRetired=1' "${JNI}/V240CacheLoader.cpp"
 grep -q 'tileR30FirstRaycastLastCount=' "${JNI}/V240CacheLoader.cpp"
 grep -q 'tileR30SecondRaycastLastCount=' "${JNI}/V240CacheLoader.cpp"
 grep -q 'tileR30ObjectsLastCount=' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorTraceRevision=31' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorTraceR31Policy=bounded-read-only-pointer-transaction' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorTraceR31Mutation=0' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorTraceR31Slots=8' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorTraceR31InstalledMask=' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorTraceR31LatestSeq=' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editorTraceR31Txn' "${JNI}/V240CacheLoader.cpp"
+grep -q 'release:' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editor-r31-trace-install.pending' "${JNI}/V240CacheLoader.cpp"
+grep -q 'editor-r31-trace-call-' "${JNI}/V240CacheLoader.cpp"
+grep -q 'MaybeInstallEditorTraceR31();' "${JNI}/V240CacheLoader.cpp"
 ! grep -Fq 'g_tileR21SyncTransforms();' "${JNI}/V240CacheLoader.cpp"
 grep -q 'windowViewportPolicy=short-edges-full-width' "${JNI}/V240CacheLoader.cpp"
 grep -q 'startupAudioPolicy=disabled-r19-not-device-calibration-root' "${JNI}/V240CacheLoader.cpp"
@@ -400,6 +413,16 @@ for marker in \
   'tileR30SecondOriginY1000=' \
   'tileR30FirstLayerMask=' \
   'tileR30SecondLayerMask=' \
+  'editorTraceRevision=31' \
+  'editorTraceR31Policy=bounded-read-only-pointer-transaction' \
+  'editorTraceR31Mutation=0' \
+  'editorTraceR31Slots=8' \
+  'editorTraceR31InstalledMask=' \
+  'editorTraceR31LatestSeq=' \
+  'editorTraceR31Txn' \
+  'release:' \
+  'editor-r31-trace-install.pending' \
+  'editor-r31-trace-call-' \
   'tileR23Resolution=RaycastAll-Vector2-Vector2-float-int-exact' \
   'tileR23ReturnType=UnityEngine.RaycastHit2D[]' \
   'tileR23MutationDelta=0' \
