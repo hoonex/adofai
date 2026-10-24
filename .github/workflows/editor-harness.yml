@@ -44,11 +44,18 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install Android platform
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+        run: |
+          # ubuntu-latest provides an Android SDK; setup-android@v3 currently
+          # fails while trying to install the removed "tools" package.
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          test -n "$sdk_root"
+          sdkmanager_path="$(command -v sdkmanager || true)"
+          if [ -z "$sdkmanager_path" ]; then
+            sdkmanager_path="$(find "$sdk_root/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          fi
+          test -x "$sdkmanager_path"
+          "$sdkmanager_path" --sdk_root="$sdk_root" --install 'platforms;android-35' 'build-tools;35.0.0'
 
       - name: Verify modern editor source contracts
         run: |
