@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 
-EXPECTED_SOURCE_BLOB = "629a33f4860873064f59688c8a7ac32931e28de7"
+EXPECTED_SOURCE_BLOB = "a102f95a9e178686926a1aa19bbbd2120b6162e3"
 
 
 def git_blob_sha(data: bytes) -> str:

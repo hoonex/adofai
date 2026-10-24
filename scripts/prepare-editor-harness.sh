@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="${ROOT}/android/editor-harness/app"
 GEN="${APP}/generated/java/com/unity3d/player"
 TEMPLATE="${ROOT}/android/mobile-editor-shell/src/com/unity3d/player/MobileEditorShell.java"
+TILE_MAP="${ROOT}/android/mobile-editor-shell/src/com/unity3d/player/MobileTileMapView.java"
 SAF_SELECTOR="${APP}/src/main/java/com/unity3d/player/FileSelector.java"
 BUNDLE_WORKSPACE="${APP}/src/main/java/com/unity3d/player/BundleWorkspace.java"
 LOOPBACK_SERVER="${APP}/src/main/java/com/unity3d/player/LoopbackZipServer.java"
@@ -14,6 +15,8 @@ MAIN_ACTIVITY="${APP}/src/main/java/dev/hoonex/adofai/editorharness/MainActivity
 
 rm -rf "${APP}/generated"
 mkdir -p "${GEN}"
+test -s "${TILE_MAP}"
+cp "${TILE_MAP}" "${GEN}/MobileTileMapView.java"
 
 python3 "${ROOT}/tools/apply_mobile_editor_document_safety.py" \
   "${TEMPLATE}" \
@@ -49,6 +52,8 @@ grep -q 'Unexpected trailing content after JSON value' "${GEN}/MobileEditorShell
 grep -q 'requestClose' "${GEN}/MobileEditorShell.java"
 grep -q 'confirmOpenPath' "${GEN}/MobileEditorShell.java"
 grep -q 'confirmSaveAndPreview' "${GEN}/MobileEditorShell.java"
+grep -q 'new MobileTileMapView' "${GEN}/MobileEditorShell.java"
+grep -q 'class MobileTileMapView' "${GEN}/MobileTileMapView.java"
 grep -q 'Unsaved changes' "${GEN}/MobileEditorShell.java"
 grep -q 'Discard & open' "${GEN}/MobileEditorShell.java"
 grep -q 'Save & preview' "${GEN}/MobileEditorShell.java"

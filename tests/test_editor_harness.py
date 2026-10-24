@@ -142,6 +142,8 @@ class CompanionEditorTests(unittest.TestCase):
 
     def test_prepare_script_keeps_safety_chain_then_bundle_companion_only(self):
         text = PREPARE.read_text(encoding="utf-8")
+        self.assertIn('cp "${TILE_MAP}" "${GEN}/MobileTileMapView.java"', text)
+        self.assertIn("new MobileTileMapView", text)
         lossless = text.index("apply_mobile_editor_document_safety.py")
         strict = text.index("apply_mobile_editor_json_strictness.py")
         picker = text.index("apply_mobile_editor_picker_serialization.py")

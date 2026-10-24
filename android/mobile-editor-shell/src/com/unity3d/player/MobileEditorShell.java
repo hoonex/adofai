@@ -69,6 +69,7 @@ public final class MobileEditorShell {
     private static TextView pathView;
     private static TextView statusView;
     private static FrameLayout contentView;
+    private static int selectedFloor;
 
     private MobileEditorShell() {}
 
@@ -204,7 +205,7 @@ public final class MobileEditorShell {
         tabsScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout tabs = new LinearLayout(owner);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
-        String[] names = new String[] {"Chart", "Settings", "Events", "Raw"};
+        String[] names = new String[] {"Chart", "Settings", "Events", "Raw", "Tiles"};
         for (int i = 0; i < names.length; i++) {
             final int tab = i;
             Button button = actionButton(names[i]);
@@ -279,6 +280,8 @@ public final class MobileEditorShell {
             child = buildSettingsTab();
         } else if (tab == 2) {
             child = buildEventsTab();
+        } else if (tab == 4) {
+            child = buildTilesTab();
         } else {
             child = buildRawTab();
         }
@@ -349,6 +352,76 @@ public final class MobileEditorShell {
         });
         body.addView(apply);
         return scroll(body);
+    }
+
+    private static View buildTilesTab() {
+        final LinearLayout body = new LinearLayout(activity);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(0, dp(4), 0, dp(6));
+        final TextView selection = text("", 15, Color.WHITE);
+        body.addView(selection);
+        body.addView(text("Tap a floor to select. Drag to pan, pinch to zoom. "
+                + "Selection does not edit geometry. Path display is schematic; "
+                + "animated effects remain game-owned.", 12, Color.rgb(175, 175, 185)));
+
+        try {
+            final MobileTileMapView[] mapHolder = new MobileTileMapView[1];
+            final Runnable updateSelection = new Runnable() {
+                @Override public void run() {
+                    MobileTileMapView map = mapHolder[0];
+                    if (map != null) {
+                        selection.setText("Selected floor: " + selectedFloor
+                                + " / " + (map.floorCount() - 1));
+                    }
+                }
+            };
+            final MobileTileMapView map = new MobileTileMapView(activity, document,
+                    selectedFloor, new MobileTileMapView.FloorListener() {
+                @Override public void onFloorSelected(int floor) {
+                    selectedFloor = floor;
+                    updateSelection.run();
+                }
+            });
+            mapHolder[0] = map;
+            if (selectedFloor >= map.floorCount()) selectedFloor = map.floorCount() - 1;
+            map.selectFloor(selectedFloor, false);
+            updateSelection.run();
+
+            LinearLayout controls = new LinearLayout(activity);
+            controls.setOrientation(LinearLayout.HORIZONTAL);
+            Button previous = actionButton("◀ Prev");
+            previous.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    selectedFloor = Math.max(0, selectedFloor - 1);
+                    map.selectFloor(selectedFloor, true);
+                    updateSelection.run();
+                }
+            });
+            controls.addView(previous, new LinearLayout.LayoutParams(0, dp(48), 1f));
+            Button next = actionButton("Next ▶");
+            next.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    selectedFloor = Math.min(map.floorCount() - 1, selectedFloor + 1);
+                    map.selectFloor(selectedFloor, true);
+                    updateSelection.run();
+                }
+            });
+            controls.addView(next, new LinearLayout.LayoutParams(0, dp(48), 1f));
+            Button events = actionButton("Events");
+            events.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) { showTab(2); }
+            });
+            controls.addView(events, new LinearLayout.LayoutParams(0, dp(48), 1f));
+            body.addView(controls);
+            body.addView(map, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        } catch (IllegalArgumentException error) {
+            // Unsupported/oversized charts remain fully editable through Chart/Raw.
+            // Never rewrite unknown geometry to make the map display.
+            body.addView(text("Tile map unavailable: " + error.getMessage(),
+                    14, Color.rgb(245, 145, 120)));
+        }
+        return body;
     }
 
     private static JSONArray parseAngleData(String text) throws JSONException {
@@ -536,7 +609,7 @@ public final class MobileEditorShell {
                 try {
                     boolean decoration = group.getSelectedItemPosition() == 1;
                     JSONObject event = new JSONObject();
-                    event.put("floor", 0);
+                    event.put("floor", selectedFloor);
                     if (decoration) {
                         event.put("eventType", "AddDecoration");
                         event.put("decorationImage", "");
@@ -698,6 +771,7 @@ public final class MobileEditorShell {
             document = parsed;
             currentPath = path;
             dirty = false;
+            selectedFloor = 0;
             updatePath();
             setStatus("Loaded successfully", false);
             showTab(currentTab);

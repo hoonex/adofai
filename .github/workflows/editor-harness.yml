@@ -4,10 +4,13 @@ on:
   push:
     branches:
       - feat/modern-mobile-editor
+      - feat/modern-mobile-editor-tiles
     paths:
       - 'android/editor-harness/**'
       - 'android/mobile-editor-shell/**'
       - 'scripts/prepare-editor-harness.sh'
+      - 'tests/test_modern_tile_selection.py'
+      - 'tests/test_editor_harness.py'
       - 'tools/apply_mobile_editor_document_safety.py'
       - 'tools/apply_mobile_editor_json_strictness.py'
       - 'tools/apply_mobile_editor_picker_serialization.py'
@@ -46,6 +49,12 @@ jobs:
 
       - name: Install Android platform
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Verify modern editor source contracts
+        run: |
+          python3 -m unittest discover -s tests -p 'test_mobile_editor*.py'
+          python3 -m unittest discover -s tests -p 'test_editor_harness.py'
+          python3 -m unittest discover -s tests -p 'test_modern_tile_selection.py'
 
       - name: Prepare canonical companion sources
         run: bash scripts/prepare-editor-harness.sh
