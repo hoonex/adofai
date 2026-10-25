@@ -39,13 +39,10 @@ final class PayloadAssets {
             throw new IllegalStateException("embedded editor payload is missing or unexpectedly small");
         }
 
-        File lib = null;
-        try {
-            File candidate = new File(workDir, "payload-libOctober.so");
-            copyAsset(context, "payload/libOctober.so", candidate);
-            if (candidate.length() >= 4096L) lib = candidate;
-        } catch (java.io.FileNotFoundException ignored) {
-        } catch (java.io.IOException ignored) {
+        File lib = new File(workDir, "payload-libOctober.so");
+        copyAsset(context, "payload/libOctober.so", lib);
+        if (lib.length() < 4096L) {
+            throw new IllegalStateException("native libOctober payload is missing or unexpectedly small");
         }
         return new Payload(dex, lib);
     }

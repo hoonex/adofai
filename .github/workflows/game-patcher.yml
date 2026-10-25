@@ -1,13 +1,25 @@
-name: Legacy ADOFAI Game Patcher (manual only)
+name: Build ADOFAI 3.3.1 Custom Game Builder
 
 on:
+  push:
+    branches:
+      - feat/modern-mobile-editor-tiles
+    paths:
+      - 'android/game-patcher/**'
+      - 'android/mobile-editor-shell/**'
+      - 'tools/apply_hitmargin_*.py'
+      - 'tools/apply_mobile_editor_*.py'
+      - 'scripts/build-payload.sh'
+      - 'scripts/prepare-upstream.sh'
+      - '.github/workflows/game-patcher.yml'
+      - 'tests/test_modern_game_upgrade.py'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: legacy-game-patcher-${{ github.ref }}
+  group: modern-game-builder-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -25,15 +37,26 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - uses: android-actions/setup-android@v3
-
       - name: Install reproducible Android toolchain
         run: |
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager \
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          test -n "$SDK_ROOT"
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          fi
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" --install \
             'platforms;android-35' \
             'build-tools;36.0.0' \
             'ndk;29.0.14206865'
+
+      - name: Verify production game builder safety contracts
+        run: |
+          python3 -m unittest discover -s tests -p 'test_game_patcher_contract.py'
+          python3 -m unittest discover -s tests -p 'test_modern_game_upgrade.py'
+          python3 -m unittest discover -s tests -p 'test_modern_tile_selection.py'
 
       - name: Build canonical editor payload
         run: bash scripts/build-payload.sh .work/game-patcher-payload
@@ -49,7 +72,7 @@ jobs:
           test -s "$ASSETS/classes2.dex"
           test -s "$ASSETS/libOctober.so"
 
-      - name: Compile legacy game patcher
+      - name: Compile production game builder
         run: gradle --no-daemon -p android/game-patcher :app:testDebugUnitTest :app:assembleDebug
 
       - name: Stage artifact

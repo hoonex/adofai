@@ -16,6 +16,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 final class PatchPipeline {
     interface Listener {
@@ -97,6 +101,7 @@ final class PatchPipeline {
                 if (!identity.sha256.equals(digest)) {
                     throw new IllegalStateException("signer drift detected while signing " + name);
                 }
+                verifyOriginalGameEntries(source, signed);
                 outputs.add(signed);
             }
 
@@ -127,10 +132,45 @@ final class PatchPipeline {
         if (!InstalledGame.PACKAGE_NAME.equals(json.optString("package"))) return null;
         if (!InstalledGame.EXPECTED_VERSION_NAME.equals(json.optString("sourceVersionName"))) return null;
         if (json.optLong("sourceVersionCode", -1L) != InstalledGame.EXPECTED_VERSION_CODE) return null;
+        if (!"adofai-mobile-editor-prepared-v1".equals(json.optString("format"))) {
+            throw new IllegalStateException("unknown prepared game report format");
+        }
+        String signer = json.optString("signerSha256");
+        if (!signer.equals(SigningIdentity.loadOrCreate().sha256)) {
+            throw new IllegalStateException("prepared game signer differs from device keystore");
+        }
+        JSONArray manifest = json.optJSONArray("apks");
+        if (manifest == null || manifest.length() != list.length) {
+            throw new IllegalStateException("prepared game split count does not match report");
+        }
+        Set<String> expectedNames = new HashSet<String>();
+        for (int index = 0; index < manifest.length(); index++) {
+            JSONObject entry = manifest.optJSONObject(index);
+            if (entry == null) throw new IllegalStateException("invalid prepared game report entry");
+            String name = entry.optString("name", "");
+            if (!name.endsWith(".apk") || name.indexOf('/') >= 0 || name.indexOf('\\') >= 0 ||
+                name.contains("..") || !expectedNames.add(name)) {
+                throw new IllegalStateException("invalid or duplicate prepared game split: " + name);
+            }
+            File apk = new File(dir, name);
+            if (!apk.isFile() || !apk.getCanonicalFile().getParentFile().equals(dir.getCanonicalFile()) ||
+                apk.length() != entry.optLong("size", -1L) ||
+                !sha256(apk).equals(entry.optString("sha256"))) {
+                throw new IllegalStateException("prepared game split integrity mismatch: " + name);
+            }
+        }
+        if (!expectedNames.contains("base.apk")) {
+            throw new IllegalStateException("prepared game base.apk is missing");
+        }
+        for (File file : list) {
+            if (!expectedNames.contains(file.getName())) {
+                throw new IllegalStateException("unreported game split: " + file.getName());
+            }
+        }
         List<File> apks = new ArrayList<File>();
         Collections.addAll(apks, list);
         Collections.sort(apks, Comparator.comparing(File::getName));
-        return new PreparedSet(dir, apks, json.optString("signerSha256"));
+        return new PreparedSet(dir, apks, signer);
     }
 
     private static void writeReport(File report, InstalledGame game, List<File> apks, String signer) throws Exception {
@@ -167,6 +207,46 @@ final class PatchPipeline {
         StringBuilder out = new StringBuilder(64);
         for (byte b : digest.digest()) out.append(String.format(java.util.Locale.US, "%02x", b & 0xff));
         return out.toString();
+    }
+
+    /**
+     * Preserve official Unity binaries, metadata, and game assets byte-for-byte
+     * even when an APK container must be resigned. These critical entries are
+     * not ours to replace. Hash only files that actually occur in the source
+     * split; the set differs between Android App Bundle configurations.
+     */
+    private static void verifyOriginalGameEntries(File original, File patched) throws Exception {
+        try (ZipFile before = new ZipFile(original);
+             ZipFile after = new ZipFile(patched)) {
+            for (String name : new String[] {
+                "lib/arm64-v8a/libil2cpp.so",
+                "lib/arm64-v8a/libunity.so",
+                "lib/arm64-v8a/libmain.so",
+                "assets/bin/Data/Managed/Metadata/global-metadata.dat"
+            }) {
+                ZipEntry source = before.getEntry(name);
+                if (source == null) continue;
+                ZipEntry destination = after.getEntry(name);
+                if (destination == null || source.getSize() != destination.getSize() ||
+                    !sha256ZipEntry(before, source).equals(sha256ZipEntry(after, destination))) {
+                    throw new IllegalStateException("original Unity entry changed: " + name);
+                }
+            }
+        }
+    }
+
+    private static String sha256ZipEntry(ZipFile archive, ZipEntry entry) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (InputStream in = new BufferedInputStream(archive.getInputStream(entry), 1024 * 1024)) {
+            byte[] buffer = new byte[1024 * 1024];
+            int count;
+            while ((count = in.read(buffer)) != -1) digest.update(buffer, 0, count);
+        }
+        StringBuilder result = new StringBuilder();
+        for (byte value : digest.digest()) {
+            result.append(String.format(java.util.Locale.US, "%02x", value & 255));
+        }
+        return result.toString();
     }
 
     private static String readText(File file) throws Exception {

@@ -20,6 +20,9 @@ final class ApkMutator {
     private static final int BUFFER = 1024 * 1024;
 
     static void mutateBase(File sourceApk, File outputApk, File payloadDex, File workDir) throws Exception {
+        // A preexisting second dex is not owned by this patcher. Refuse to
+        // silently replace someone else's classes rather than hiding them.
+        assertEntryAbsent(sourceApk, "classes2.dex");
         copyFile(sourceApk, outputApk);
         File originalDex = new File(workDir, "base-classes.dex");
         File patchedDex = new File(workDir, "base-classes-patched.dex");
@@ -59,6 +62,10 @@ final class ApkMutator {
     }
 
     static void mutateArm64(File sourceApk, File outputApk, File nativePayload) throws Exception {
+        if (nativePayload == null || !nativePayload.isFile() || nativePayload.length() < 4096L) {
+            throw new IllegalStateException("missing verified arm64 editor library");
+        }
+        assertEntryAbsent(sourceApk, "lib/arm64-v8a/libOctober.so");
         copyFile(sourceApk, outputApk);
         try (ZipArchive zip = new ZipArchive(outputApk.toPath())) {
             deleteSignatureEntries(zip);
@@ -137,6 +144,15 @@ final class ApkMutator {
             ZipEntry entry = zip.getEntry(name);
             if (entry == null || entry.getSize() == 0L) {
                 throw new IllegalStateException("patched APK missing entry: " + name);
+            }
+        }
+    }
+
+    private static void assertEntryAbsent(File apk, String name) throws Exception {
+        try (ZipFile zip = new ZipFile(apk)) {
+            if (zip.getEntry(name) != null) {
+                throw new IllegalStateException(
+                    "refusing to overwrite pre-existing APK entry: " + name);
             }
         }
     }
