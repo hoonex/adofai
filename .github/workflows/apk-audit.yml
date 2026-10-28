@@ -1,0 +1,26 @@
+name: Static APK metadata audit tests
+
+on:
+  push:
+    branches:
+      - feat/modern-mobile-editor-tiles
+    paths:
+      - tools/apk_remote_audit.py
+      - tests/test_apk_remote_audit.py
+      - .github/workflows/apk-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify read-only APK ZIP/manifest analysis
+        run: python -m unittest discover -s tests -p test_apk_remote_audit.py -v
