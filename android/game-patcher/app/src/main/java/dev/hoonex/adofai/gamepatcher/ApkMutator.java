@@ -62,14 +62,30 @@ final class ApkMutator {
     }
 
     static void mutateArm64(File sourceApk, File outputApk, File nativePayload) throws Exception {
+        assertEntryAbsent(sourceApk, "lib/arm64-v8a/libOctober.so");
+        copyFile(sourceApk, outputApk);
+        injectArm64IntoExisting(outputApk, nativePayload);
+    }
+
+    /**
+     * Install the editor native library into an already modified APK.
+     * This is required for monolithic 3.3.1 packages: the base APK and arm64
+     * runtime are the same source file, so a separate arm64 split must not be
+     * constructed or submitted to PackageInstaller.
+     *
+     * Never overwrite an existing libOctober.so: it may belong to another
+     * modification, and silently replacing it would risk breaking the game.
+     */
+    static void injectArm64IntoExisting(File modifiedApk, File nativePayload) throws Exception {
         if (nativePayload == null || !nativePayload.isFile() || nativePayload.length() < 4096L) {
             throw new IllegalStateException("missing verified arm64 editor library");
         }
-        assertEntryAbsent(sourceApk, "lib/arm64-v8a/libOctober.so");
-        copyFile(sourceApk, outputApk);
-        try (ZipArchive zip = new ZipArchive(outputApk.toPath())) {
+        if (!modifiedApk.isFile()) {
+            throw new IllegalStateException("patched base APK is missing");
+        }
+        assertEntryAbsent(modifiedApk, "lib/arm64-v8a/libOctober.so");
+        try (ZipArchive zip = new ZipArchive(modifiedApk.toPath())) {
             deleteSignatureEntries(zip);
-            zip.delete("lib/arm64-v8a/libOctober.so");
             FullFileSource library = new FullFileSource(
                 nativePayload.toPath(), "lib/arm64-v8a/libOctober.so", Deflater.NO_COMPRESSION
             );
