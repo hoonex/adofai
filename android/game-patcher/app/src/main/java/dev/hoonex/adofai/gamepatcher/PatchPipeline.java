@@ -52,7 +52,11 @@ final class PatchPipeline {
         assertOwned(context, workDir);
 
         long reserve = 512L * 1024L * 1024L;
-        long required = game.totalBytes + game.baseApk.length() + game.arm64Apk.length() + reserve;
+        boolean monolithic = game.baseApk.equals(game.arm64Apk);
+        // A monolithic APK is copied only once before signing; there is no
+        // separate arm64 split output or duplicate PackageInstaller stream.
+        long required = game.totalBytes + game.baseApk.length()
+                + (monolithic ? 0L : game.arm64Apk.length()) + reserve;
         File spaceProbe = externalRoot;
         StatFs stat = new StatFs(spaceProbe.getAbsolutePath());
         long available = stat.getAvailableBytes();
@@ -74,15 +78,21 @@ final class PatchPipeline {
             SigningIdentity identity = SigningIdentity.loadOrCreate();
 
             File unsignedBase = new File(workDir, "base-unsigned.apk");
-            File unsignedArm64 = new File(workDir, "arm64-unsigned.apk");
+            File unsignedArm64 = monolithic
+                    ? unsignedBase : new File(workDir, "arm64-unsigned.apk");
 
             progress(listener, "base APK에 Editor bootstrap/DEX 주입 중…");
             ApkMutator.mutateBase(game.baseApk, unsignedBase, payload.classes2Dex, workDir);
             ApkMutator.assertEntry(unsignedBase, "classes.dex");
             ApkMutator.assertEntry(unsignedBase, "classes2.dex");
 
-            progress(listener, "arm64 split에 libOctober 주입 중…");
-            ApkMutator.mutateArm64(game.arm64Apk, unsignedArm64, payload.libOctober);
+            if (monolithic) {
+                progress(listener, "단일 APK에 arm64 libOctober 주입 중…");
+                ApkMutator.injectArm64IntoExisting(unsignedBase, payload.libOctober);
+            } else {
+                progress(listener, "arm64 split에 libOctober 주입 중…");
+                ApkMutator.mutateArm64(game.arm64Apk, unsignedArm64, payload.libOctober);
+            }
             ApkMutator.assertEntry(unsignedArm64, "lib/arm64-v8a/libOctober.so");
 
             List<File> outputs = new ArrayList<File>();
@@ -126,7 +136,9 @@ final class PatchPipeline {
         File dir = new File(root, "prepared-game/apks");
         File report = new File(root, "prepared-game/report.json");
         File[] list = dir.listFiles((file, name) -> name.endsWith(".apk"));
-        if (!report.isFile() || list == null || list.length < 2) return null;
+        // Both monolithic APKs (one stream) and app-bundle split installations
+        // (multiple streams) are valid, provided every manifest hash checks out.
+        if (!report.isFile() || list == null || list.length < 1) return null;
         String raw = readText(report);
         JSONObject json = new JSONObject(raw);
         if (!InstalledGame.PACKAGE_NAME.equals(json.optString("package"))) return null;
