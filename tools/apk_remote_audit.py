@@ -173,7 +173,9 @@ def read_entry(source, entry):
     elif entry["method"] == 8:
         decoder = zlib.decompressobj(-15)
         payload = decoder.decompress(packed, MAX_MANIFEST + 1)
-        payload += decoder.flush()
+        if len(payload) > MAX_MANIFEST:
+            raise AuditError("decompressed manifest exceeded cap")
+        payload += decoder.flush(max(1, MAX_MANIFEST + 1 - len(payload)))
         if not decoder.eof:
             raise AuditError("incomplete deflate stream")
     else:
@@ -185,7 +187,9 @@ def read_entry(source, entry):
 
 def _utf8len(b: bytes, off: int):
     x = b[off]
-    return (x & 0x7f) << 8 | b[off + 1], off + 2 if x & 0x80 else off + 1
+    if x & 0x80:
+        return ((x & 0x7f) << 8) | b[off + 1], off + 2
+    return x, off + 1
 
 
 def _utf16len(b: bytes, off: int):
