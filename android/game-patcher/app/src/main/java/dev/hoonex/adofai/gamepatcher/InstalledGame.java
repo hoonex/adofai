@@ -104,6 +104,36 @@ final class InstalledGame {
         return new InstalledGame(versionName, versionCode, base, arm64, apks, total);
     }
 
+    /**
+     * Validate an APK explicitly selected through Android's document picker.
+     * This does not authenticate the publisher's signature; it only checks that
+     * the archive is structurally a supported monolithic 3.3.1 ARM64 install.
+     * Split-only APK inputs fail closed instead of silently losing assets.
+     */
+    static InstalledGame inspectStandalone(Context context, File apk) throws Exception {
+        if (apk == null || !apk.isFile() || !apk.canRead()) {
+            throw new IllegalStateException("선택한 APK를 읽을 수 없습니다.");
+        }
+        PackageInfo info = context.getPackageManager().getPackageArchiveInfo(
+                apk.getAbsolutePath(), 0);
+        if (info == null || !PACKAGE_NAME.equals(info.packageName)) {
+            throw new IllegalStateException("ADOFAI 게임 APK인지 확인할 수 없습니다.");
+        }
+        long code = Build.VERSION.SDK_INT >= 28 ? info.getLongVersionCode() : info.versionCode;
+        String name = info.versionName == null ? "" : info.versionName;
+        if (!EXPECTED_VERSION_NAME.equals(name) || code != EXPECTED_VERSION_CODE) {
+            throw new IllegalStateException(
+                    "3.3.1(300382) 전용입니다. 선택 파일: " + name + " (" + code + ")");
+        }
+        if (!hasEntry(apk, "classes.dex") ||
+                !hasEntry(apk, "lib/arm64-v8a/libil2cpp.so")) {
+            throw new IllegalStateException(
+                    "완전한 단일 ARM64 APK가 아닙니다. 분할 APK는 설치본 방식으로 검사하세요.");
+        }
+        return new InstalledGame(name, code, apk, apk,
+                Collections.singletonList(apk), apk.length());
+    }
+
     static boolean isInstalled(Context context) {
         try {
             context.getPackageManager().getPackageInfo(PACKAGE_NAME, 0);
