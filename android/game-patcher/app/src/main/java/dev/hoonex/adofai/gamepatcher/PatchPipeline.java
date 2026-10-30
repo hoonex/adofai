@@ -39,8 +39,15 @@ final class PatchPipeline {
     }
 
     static PreparedSet prepare(Context context, Listener listener) throws Exception {
-        progress(listener, "3.3.1 설치본 확인 중…");
-        InstalledGame game = InstalledGame.inspect(context);
+        return prepare(context, listener, null);
+    }
+
+    static PreparedSet prepare(Context context, Listener listener, File selectedSource) throws Exception {
+        progress(listener, selectedSource == null
+                ? "3.3.1 설치본 확인 중…" : "선택한 APK 버전과 구조 검사 중…");
+        InstalledGame game = selectedSource == null
+                ? InstalledGame.inspect(context)
+                : InstalledGame.inspectStandalone(context, selectedSource);
 
         File externalRoot = context.getExternalFilesDir(null);
         if (externalRoot == null) throw new IllegalStateException("외부 앱 저장소를 사용할 수 없습니다.");
