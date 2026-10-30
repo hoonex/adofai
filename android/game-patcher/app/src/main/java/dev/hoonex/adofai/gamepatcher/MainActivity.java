@@ -9,6 +9,9 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.StatFs;
+import android.database.Cursor;
+import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.view.View;
 import android.view.ViewGroup;
@@ -18,6 +21,9 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -30,6 +36,7 @@ import java.util.concurrent.Executors;
  * only when the user has explicitly removed the differently signed original.
  */
 public final class MainActivity extends Activity {
+    private static final int SOURCE_APK_PICKER = 4401;
     private static final int BACKGROUND = Color.rgb(15, 16, 21);
     private static final int PANEL = Color.rgb(27, 29, 38);
     private static final int MUTED = Color.rgb(171, 178, 194);
@@ -43,6 +50,8 @@ public final class MainActivity extends Activity {
     private TextView stateText;
     private TextView detailText;
     private Button prepareButton;
+    private Button sourceApkButton;
+    private File selectedSourceApk;
     private Button uninstallButton;
     private Button installButton;
     private CheckBox backupConsent;
@@ -84,8 +93,8 @@ public final class MainActivity extends Activity {
         title.setPadding(0, dp(6), 0, dp(8));
         root.addView(title);
         root.addView(text(
-            "설치된 정품 ADOFAI를 기반으로 에디터 기능을 통합한 전체 게임 APK 세트를 생성합니다. " +
-            "테스트 에디터만 설치하는 앱이 아닙니다.",
+            "설치된 ADOFAI 3.3.1 또는 사용자가 직접 선택한 완전한 단일 APK를 " +
+            "기반으로 에디터가 통합된 게임을 별도 생성합니다. 실제 기기 검증 전의 실험용 빌더입니다.",
             14, MUTED, false
         ));
 
@@ -111,6 +120,15 @@ public final class MainActivity extends Activity {
             "게임 버전이 달라졌다면 안전하게 중단합니다.",
             13, MUTED, false
         ));
+        root.addView(text(
+            "3.3.1이 휴대폰에 설치되지 않아도 Drive/파일 앱에서 단일 ARM64 APK를 선택할 수 있습니다. " +
+            "선택한 파일은 이 앱의 전용 저장소로만 복사하며, 발행자 서명을 검증하지 않으므로 " +
+            "출처가 불명확한 APK는 사용하지 마세요.",
+            12, MUTED, false
+        ));
+        sourceApkButton = button("Drive / 파일에서 3.3.1 APK 선택", false);
+        sourceApkButton.setOnClickListener(v -> chooseSourceApk());
+        root.addView(sourceApkButton);
         prepareButton = button("전체 Custom 게임 빌드", true);
         prepareButton.setOnClickListener(v -> prepareGame());
         root.addView(prepareButton);
@@ -169,10 +187,13 @@ public final class MainActivity extends Activity {
                     prepared.signerSha256 + "\n원본: " +
                     (originalInstalled ? "설치됨" : "설치되지 않음"), false);
             } else {
-                setStatus(originalInstalled ? "원본 게임 감지됨" : "원본 게임 미설치",
-                    originalInstalled
-                        ? "빌드를 누르면 3.3.1 버전과 원본 split 구성을 검증합니다."
-                        : "먼저 공식 ADOFAI 3.3.1을 설치해야 새 빌드를 생성할 수 있습니다.",
+                setStatus(selectedSourceApk != null ? "선택한 3.3.1 APK 준비됨" :
+                    (originalInstalled ? "원본 게임 감지됨" : "원본 게임 미설치"),
+                    selectedSourceApk != null
+                        ? "Drive에서 선택한 단일 APK로 빌드할 수 있습니다. 출처·서명은 확인되지 않았습니다."
+                        : (originalInstalled
+                            ? "빌드를 누르면 설치된 3.3.1 및 원본 split을 검증합니다."
+                            : "휴대폰에 3.3.1을 설치하거나 Drive에서 단일 APK를 선택하세요."),
                     false);
             }
         }
@@ -207,7 +228,8 @@ public final class MainActivity extends Activity {
     }
 
     private void prepareGame() {
-        if (busy || !originalInstalled) return;
+        if (busy || (!originalInstalled && selectedSourceApk == null)) return;
+        final File selectedInput = selectedSourceApk;
         busy = true;
         prepared = null;
         backupConsent.setChecked(false);
@@ -221,16 +243,100 @@ public final class MainActivity extends Activity {
                         if (!isFinishing() && !isDestroyed()) {
                             setStatus("Custom 게임 빌드 중", message, false);
                         }
-                    })
+                    }), selectedInput
                 );
+                if (selectedInput != null) selectedInput.delete();
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
                     prepared = result;
+                    selectedSourceApk = null;
                     busy = false;
                     refreshState();
                 });
             } catch (Exception error) {
                 showFailure("빌드 실패", error);
+            }
+        });
+    }
+
+    private void chooseSourceApk() {
+        if (busy) return;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.setType("*/*");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivityForResult(intent, SOURCE_APK_PICKER);
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != SOURCE_APK_PICKER || resultCode != RESULT_OK ||
+                data == null || data.getData() == null || busy) return;
+        final Uri source = data.getData();
+        busy = true;
+        setStatus("선택한 APK 복사 중…", "원본 Drive 파일을 변경하지 않습니다.", false);
+        updateButtons();
+        worker.execute(() -> {
+            try {
+                File root = getExternalFilesDir(null);
+                if (root == null) throw new IllegalStateException("앱 전용 저장소가 없습니다.");
+                File dir = new File(root, "selected-source");
+                if (!dir.isDirectory() && !dir.mkdirs()) {
+                    throw new IllegalStateException("APK 작업 폴더를 만들 수 없습니다.");
+                }
+                long announced = -1L;
+                try (Cursor cursor = getContentResolver().query(
+                        source, new String[]{OpenableColumns.SIZE}, null, null, null)) {
+                    if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)) {
+                        announced = cursor.getLong(0);
+                    }
+                }
+                final long maximum = 6L * 1024L * 1024L * 1024L;
+                if (announced > maximum) throw new IllegalStateException("APK 최대 6GiB");
+                long free = new StatFs(root.getAbsolutePath()).getAvailableBytes();
+                if (announced > 0 && (announced > (free - 768L * 1024 * 1024) / 3)) {
+                    throw new IllegalStateException(
+                            "선택한 APK를 패치하기에 저장공간이 부족합니다. " +
+                            "게임 크기의 약 3배 이상 빈 공간이 필요합니다.");
+                }
+                File temp = new File(dir, "incoming.apk");
+                try {
+                    long copied = 0;
+                    try (InputStream in = getContentResolver().openInputStream(source);
+                         FileOutputStream out = new FileOutputStream(temp, false)) {
+                        if (in == null) throw new IllegalStateException("Drive 파일을 열 수 없습니다.");
+                        byte[] chunk = new byte[1024 * 1024];
+                        int count;
+                        while ((count = in.read(chunk)) != -1) {
+                            copied += count;
+                            if (copied > maximum) throw new IllegalStateException("APK 최대 6GiB 초과");
+                            out.write(chunk, 0, count);
+                        }
+                        out.getFD().sync();
+                    }
+                    if (announced > 0 && announced != copied) {
+                        throw new IllegalStateException("APK 파일이 불완전하게 복사됐습니다.");
+                    }
+                    InstalledGame.inspectStandalone(this, temp);
+                    File dest = new File(dir, "source.apk");
+                    if (dest.exists() && !dest.delete()) {
+                        throw new IllegalStateException("이전 선택 파일을 교체할 수 없습니다.");
+                    }
+                    if (!temp.renameTo(dest)) {
+                        throw new IllegalStateException("선택 APK의 이름 변경에 실패했습니다.");
+                    }
+                    runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) return;
+                        selectedSourceApk = dest;
+                        prepared = null;
+                        busy = false;
+                        refreshState();
+                    });
+                } finally {
+                    if (temp.exists()) temp.delete();
+                }
+            } catch (Exception error) {
+                showFailure("APK 선택 실패", error);
             }
         });
     }
@@ -295,7 +401,8 @@ public final class MainActivity extends Activity {
 
     private void updateButtons() {
         if (prepareButton == null) return;
-        prepareButton.setEnabled(!busy && originalInstalled);
+        prepareButton.setEnabled(!busy && (originalInstalled || selectedSourceApk != null));
+        if (sourceApkButton != null) sourceApkButton.setEnabled(!busy);
         uninstallButton.setEnabled(!busy && prepared != null &&
             originalInstalled && backupConsent.isChecked());
         installButton.setEnabled(!busy && prepared != null &&
