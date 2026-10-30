@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feat/modern-mobile-editor-tiles
+      - feat/331-drive-apk-source
     paths:
       - 'android/game-patcher/**'
       - 'android/mobile-editor-shell/**'
