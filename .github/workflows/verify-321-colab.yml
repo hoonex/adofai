@@ -1,0 +1,56 @@
+name: Verify ADOFAI 3.2.1 private Colab builder
+on:
+  push:
+    branches:
+      - feat/321-private-colab-game-build
+    paths:
+      - 'colab/ADOFAI_321_Private_Cloud_Custom_Build.ipynb'
+      - '.github/workflows/verify-331-colab.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Verify notebook syntax and stage isolated Java CLI
+        run: |
+          python3 - <<'PY'
+          import ast,json,shutil,pathlib
+          root=pathlib.Path('.')
+          note=json.loads((root/'colab/ADOFAI_321_Private_Cloud_Custom_Build.ipynb').read_text())
+          assert len(note['cells'])==5
+          all_code='\n'.join(''.join(c['source']) for c in note['cells'] if c['cell_type']=='code')
+          assert "str(m.get('versionName'))=='3.2.1'" in all_code
+          assert "str(m.get('versionCode'))=='300381'" in all_code
+          assert "ADOFAI-3.2.1-Custom-UNVERIFIED.apk" in all_code
+          assert "'gameplayVerified':False" in all_code
+          for i,c in enumerate(note['cells']):
+              if c['cell_type']=='code':
+                  compile(''.join(c['source']),f'cell{i}','exec')
+          tree=ast.parse(''.join(note['cells'][3]['source']))
+          vals={}
+          for statement in tree.body[:2]:
+              vals[statement.targets[0].id]=ast.literal_eval(statement.value)
+          root=pathlib.Path('/tmp/adofai321-verify')
+          java=root/'src/main/java/dev/hoonex/adofai/gamepatcher'
+          java.mkdir(parents=True)
+          upstream=pathlib.Path('android/game-patcher/app/src/main/java/dev/hoonex/adofai/gamepatcher')
+          for name in ('ApkMutator.java','DexBootstrapPatcher.java','V240DexBootstrapPatcher.java','ManifestStoragePatcher.java'):
+              shutil.copyfile(upstream/name,java/name)
+          (java/'CloudPatcherMain.java').write_text(vals['JAVA_SOURCE'])
+          (java/'InstalledGame.java').write_text('package dev.hoonex.adofai.gamepatcher; final class InstalledGame { static final String PACKAGE_NAME="com.fizzd.connectedworlds"; }\n')
+          (root/'build.gradle').write_text(vals['GRADLE_SOURCE'])
+          (root/'settings.gradle').write_text("pluginManagement { repositories { gradlePluginPortal(); google(); mavenCentral() } }\nrootProject.name='adofai321-cloud-patcher'\n")
+          print('Cloud notebook source and Java CLI staged')
+          PY
+      - name: Compile standalone Java APK patch tool
+        run: gradle --no-daemon -p /tmp/adofai321-verify installDist
