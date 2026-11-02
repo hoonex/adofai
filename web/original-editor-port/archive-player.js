@@ -6,7 +6,7 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const api=()=>window.ADOFAIChartPort;
-const ctx={zip:null,entry:'',zipName:'',songUrl:'',imageUrl:'',chartName:'',timings:[],bpmAt:[],speedChanges:[],pauses:[],twirlAt:[],travelDegrees:[],rotationStart:[],entryAngleDegrees:[],baseBpm:120,playerIndex:0,judged:new Set(),playing:false,frame:0,lastActive:-1,good:0,miss:0,estimate:[],inputFile:null};
+const ctx={zip:null,entry:'',zipName:'',songUrl:'',imageUrl:'',chartName:'',timings:[],bpmAt:[],speedChanges:[],pauses:[],twirlAt:[],travelDegrees:[],rotationStart:[],entryAngleDegrees:[],baseBpm:120,playerIndex:0,judged:new Set(),playing:false,frame:0,lastActive:-1,good:0,miss:0,estimate:[],inputFile:null,lazyZip:false,archiveBytes:0};
 const safe = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const norm=a=>((a%360)+360)%360;
 function msg(text,isError=false){const el=$('archiveStatus');if(el){el.textContent=text;el.dataset.error=isError?'true':'false'} const chart=$('chartStatus');if(chart)chart.textContent=text;}
@@ -29,41 +29,121 @@ function resolveAsset(filename){
  for(const p of prefer){const exact=all.find(n=>n===p)||all.find(n=>n.toLowerCase()===p.toLowerCase());if(exact)return exact;}
  const base=path.split('/').pop().toLowerCase();return all.find(n=>n.split('/').pop().toLowerCase()===base)||null;
 }
-async function mediaAssets(){
- disposeMedia();let doc=api().saveObject();let song=resolveAsset(doc.settings?.songFilename||'');
- if(!song&&ctx.zip)song=resolveAsset('audio.ogg');
- if(song){const file=ctx.zip.file(song);if(file){const b=await file.async('blob');if(b.size>80*1024*1024){msg('음원 파일이 너무 커서 메모리에 올리지 않았습니다.',true)}else {ctx.songUrl=URL.createObjectURL(new Blob([b],{type:/\.ogg$/i.test(song)?'audio/ogg':'audio/mpeg'}));$('chartAudio').src=ctx.songUrl;$('chartAudioName').textContent=song.split('/').pop();}}}
- const background=resolveAsset(doc.settings?.bgImage)||resolveAsset(doc.settings?.previewImage);
- if(background&&/\.(jpe?g|png|webp|gif)$/i.test(background)){
-  const bytes=await ctx.zip.file(background).async('blob');if(bytes.size<20*1024*1024){ctx.imageUrl=URL.createObjectURL(bytes);$('chartBackdrop').style.backgroundImage='url("'+ctx.imageUrl+'")';}
+function zipAdapter(entries){
+ // unzipit exposes on-demand entry readers. Do not decompress large assets
+ // just to inspect the ZIP central directory.
+ const files=Object.create(null);
+ for(const [name,e] of Object.entries(entries)){
+   if(name==='__proto__'||name==='constructor')continue;
+   files[name]={dir:!!e.isDirectory,size:Number(e.size)||0};
  }
- $('archiveAssets').textContent=(ctx.zip?Object.keys(ctx.zip.files).filter(n=>!ctx.zip.files[n].dir).length:0)+'개 파일 · 음악 '+(song?'찾음':'없음')+' · 이미지 '+(background?'찾음':'없음');
+ return {
+   files,
+   file(name){
+     const entry=entries[name];if(!entry||entry.isDirectory)return null;
+     return {
+       async async(format){
+         if(format==='string')return entry.text();
+         if(format==='blob')return entry.blob();
+         if(format==='arraybuffer')return entry.arrayBuffer();
+         throw Error('지원하지 않는 ZIP 파일 읽기 방식: '+format);
+       }
+     };
+   }
+ };
+}
+async function openLocalArchive(file){
+ const first=new Uint8Array(await file.slice(0,8).arrayBuffer());
+ const signature=(first[0]<<24|first[1]<<16|first[2]<<8|first[3])>>>0;
+ if(first[0]!==80||first[1]!==75){
+   if(first[0]===55&&first[1]===122)throw Error('7z 파일은 ZIP이 아닙니다. ZIP 형식으로 받은 레벨을 선택하세요.');
+   if(first[0]===82&&first[1]===97&&first[2]===114)throw Error('RAR 파일은 아직 열 수 없습니다. ZIP 형식의 레벨을 선택하세요.');
+   throw Error('이 파일은 ZIP 형식이 아닙니다 (처음 4바이트 확인).');
+ }
+ // Keep the already-tested small archive path and use truly lazy unzipit
+ // for large archives instead of JSZip.loadAsync(file.arrayBuffer()).
+ const LAZY_THRESHOLD=32*1024*1024;
+ if(file.size>=LAZY_THRESHOLD){
+   if(!window.unzipit?.unzip)throw Error('대용량 ZIP 로더를 불러오지 못했습니다.');
+   const result=await window.unzipit.unzip(file); // File is slice-read, not buffered.
+   return {zip:zipAdapter(result.entries),lazy:true};
+ }
+ if(!window.JSZip)throw Error('ZIP 라이브러리를 불러오지 못했습니다.');
+ return {zip:await window.JSZip.loadAsync(await file.arrayBuffer(),{checkCRC32:true}),lazy:false};
+}
+async function mediaAssets(){
+ disposeMedia();
+ const doc=api().saveObject();if(!doc)return;
+ let song=resolveAsset(doc.settings?.songFilename||'');
+ if(!song&&ctx.zip)song=Object.keys(ctx.zip.files).find(n=>/\.(ogg|mp3|wav|flac|m4a)$/i.test(n)&&!ctx.zip.files[n].dir)||null;
+ let foundSong=false,tooBigSong=false;
+ if(song){
+  const entry=ctx.zip.file(song),meta=ctx.zip.files[song];
+  if(entry){
+   if((meta?.size||0)>110*1024*1024){
+     tooBigSong=true;
+     $('chartAudioName').textContent=song.split('/').pop()+' (큰 음악 · 별도 선택)';
+   }else{
+    const b=await entry.async('blob');
+    if(b.size>110*1024*1024){tooBigSong=true;}
+    else {
+     const type=/\.ogg$/i.test(song)?'audio/ogg':/\.wav$/i.test(song)?'audio/wav':/\.m4a$/i.test(song)?'audio/mp4':/\.flac$/i.test(song)?'audio/flac':'audio/mpeg';
+     ctx.songUrl=URL.createObjectURL(new Blob([b],{type}));
+     $('chartAudio').src=ctx.songUrl;
+     $('chartAudioName').textContent=song.split('/').pop();
+     foundSong=true;
+    }
+   }
+  }
+ }
+ const background=resolveAsset(doc.settings?.bgImage)||resolveAsset(doc.settings?.previewImage);
+ let imageFound=false;
+ if(background&&/\.(jpe?g|png|webp|gif)$/i.test(background)&&ctx.zip.files[background]?.size<22*1024*1024){
+  const bytes=await ctx.zip.file(background).async('blob');
+  if(bytes.size<22*1024*1024){
+    ctx.imageUrl=URL.createObjectURL(bytes);
+    $('chartBackdrop').style.backgroundImage='url("'+ctx.imageUrl+'")';
+    imageFound=true;
+  }
+ }
+ const count=Object.values(ctx.zip?.files||{}).filter(x=>!x.dir).length;
+ $('archiveAssets').textContent=count+'개 파일 · 음악 '+(foundSong?'연결됨':tooBigSong?'너무 커서 수동 선택 필요':'없음')+' · 이미지 '+(imageFound?'찾음':'없음')+
+  (ctx.lazyZip?' · 큰 ZIP 필요한 파일만 읽기':'');
+ if(tooBigSong)msg('맵은 열었지만 음악이 110MB를 넘어 자동 재생은 제한했습니다. 상단에서 음악을 별도로 선택할 수 있습니다.');
 }
 async function openZip(file){
  try{
-  if(!window.JSZip)throw Error('ZIP 라이브러리를 불러오지 못했습니다.');
-  msg('ZIP 압축을 읽는 중…');stopPlay();
-  const arr=await file.arrayBuffer();
-  if(arr.byteLength>250*1024*1024)throw Error('250MB를 넘는 ZIP은 브라우저 메모리 제한으로 지원하지 않습니다.');
-  const zip=await JSZip.loadAsync(arr,{checkCRC32:true});
+  msg('압축파일 목록을 확인하는 중…');stopPlay();
+  const {zip,lazy}=await openLocalArchive(file);
   const primary=pickChart(Object.keys(zip.files));
+  const meta=zip.files[primary];
+  if(meta?.size>40*1024*1024)throw Error('차트 JSON이 40MB를 넘어 현재 편집기로 처리할 수 없습니다.');
   const s=await zip.file(primary).async('string');
   const doc=api().parseChart(s);
-  const angles=Array.isArray(doc.angleData)?doc.angleData.length:doc.pathData.length;
+  const angles=Array.isArray(doc.angleData)?doc.angleData.length:typeof doc.pathData==='string'?doc.pathData.length:0;
   if(angles>50000)throw Error('타일 5만 개 초과 차트는 아직 열 수 없습니다.');
-  // Only change port state after CRC/JSON validation. Failed ZIPs do not replace a chart.
-  ctx.zip=zip;ctx.entry=primary;ctx.zipName=file.name;ctx.chartName=primary.split('/').pop();ctx.inputFile=file;
+  ctx.zip=zip;ctx.entry=primary;ctx.zipName=file.name;ctx.chartName=primary.split('/').pop();ctx.inputFile=file;ctx.lazyZip=lazy;ctx.archiveBytes=file.size;
   api().loadObject(doc,ctx.chartName);
-  await mediaAssets();updateTiming();
-  $('chartZipSave').disabled=false;$('chartSave').textContent='ZIP 저장';$('chartSaveAs').textContent='차트만 저장';
-  msg(file.name+' 불러오기 성공 · '+primary+' · '+(angles+1)+'개 타일 · 음악 '+(ctx.songUrl?'연결됨':'없음'));
+  // A missing/unreadable media file must not invalidate the successfully
+  // imported chart; report media failure separately.
+  let mediaWarning='';
+  try{await mediaAssets()}catch(e){mediaWarning=' · 리소스 일부 연결 실패: '+e.message;console.warn('media assets',e);}
+  updateTiming();
+  $('chartZipSave').disabled=lazy;$('chartZipSave').title=lazy?'대용량 ZIP은 차트만 저장됩니다. 원본 ZIP은 수정되지 않습니다.':'음악 등 원본 리소스를 포함해 ZIP으로 저장합니다.';
+  $('chartSave').textContent=lazy?'차트만 저장':'ZIP 저장';
+  $('chartSaveAs').textContent='차트만 저장';
+  msg(file.name+' 불러오기 성공 · '+primary+' · '+(angles+1)+'개 타일 · 음악 '+(ctx.songUrl?'연결됨':'없음')+
+      (lazy?' · 대용량 모드: 전체 ZIP 저장 대신 .adofai 저장':'')+mediaWarning);
   $('chartStageBody')?.scrollIntoView({block:'nearest'});
- }catch(err){msg('ZIP 열기 실패: '+err.message,true);console.error('ZIP failed',err);}
+ }catch(err){
+  msg('ZIP 열기 실패: '+err.message,true);
+  console.error('ZIP failed',err);
+ }
 }
-function flushZipMode(){ctx.zip=null;ctx.entry='';ctx.zipName='';ctx.chartName='';ctx.inputFile=null;stopPlay();disposeMedia();$('chartZipSave').disabled=true;$('chartSave').textContent='저장';$('chartSaveAs').textContent='다른 이름 저장';$('archiveAssets').textContent='';}
+function flushZipMode(){ctx.zip=null;ctx.entry='';ctx.zipName='';ctx.chartName='';ctx.inputFile=null;ctx.lazyZip=false;ctx.archiveBytes=0;stopPlay();disposeMedia();$('chartZipSave').disabled=true;$('chartSave').textContent='저장';$('chartSaveAs').textContent='다른 이름 저장';$('archiveAssets').textContent='';}
 function interceptInput(e){
  const file=e.target?.files?.[0];if(!file)return;
- if(/\.(zip|adofai\.zip)$/i.test(file.name)){
+ if(/\.(zip|adofai\.zip|tuf)$/i.test(file.name)){
    e.stopImmediatePropagation();e.preventDefault();
    openZip(file);e.target.value='';return;
  }
@@ -74,6 +154,7 @@ function interceptInput(e){
 function download(blob,name){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),20000)}
 async function saveZip(chooseName=false){
  if(!ctx.zip||!ctx.entry){msg('먼저 ZIP 파일을 열어주세요.',true);return}
+ if(ctx.lazyZip){msg('대용량 ZIP 원본을 재압축하지 않습니다. 차트만 저장 버튼으로 .adofai 파일을 저장하세요.',true);return}
  try{
   msg('음악·백업·이미지를 보존하면서 ZIP을 저장하는 중…');
   const doc=api().saveObject();if(!doc)throw Error('열린 차트가 없습니다.');
@@ -85,7 +166,7 @@ async function saveZip(chooseName=false){
   download(compressed,name);msg('ZIP 생성 완료: '+name+' · 원본 음악·백업 등 유지');
  }catch(e){msg('ZIP 저장 실패: '+e.message,true);console.error(e)}
 }
-function onSaveCapture(e){if(!ctx.zip)return;e.preventDefault();e.stopImmediatePropagation();saveZip(false)}
+function onSaveCapture(e){if(!ctx.zip)return;e.preventDefault();e.stopImmediatePropagation();if(ctx.lazyZip){onSaveAsCapture(e);return;}saveZip(false)}
 function onSaveAsCapture(e){if(!ctx.zip)return;e.preventDefault();e.stopImmediatePropagation();const doc=api().saveObject();if(!doc)return;download(new Blob([JSON.stringify(doc,null,2)+'\n'],{type:'application/json'}),ctx.chartName||'level.adofai');msg('.adofai 단독 파일 저장 완료');}
 async function loadAudioFile(file){if(!file)return;stopPlay();if(ctx.songUrl)URL.revokeObjectURL(ctx.songUrl);ctx.songUrl=URL.createObjectURL(file);$('chartAudio').src=ctx.songUrl;$('chartAudioName').textContent=file.name;updateTiming();msg('로컬 음악 연결됨: '+file.name)}
 function updateTiming(){
@@ -177,7 +258,7 @@ function tap(){if(!ctx.playing||!ctx.timings.length)return;const t=$('chartAudio
 function createUi(){const port=$('chartPort');if(!port)return;
  // This is a browser compatibility layer, not a claim that Unity PC native C# is running.
  const toolbar=port.querySelector('.chart-toolbar');
- const input=$('chartFile');input.accept='.adofai,.json,.zip,application/zip,application/json';
+ const input=$('chartFile');input.accept='.adofai,.json,.zip,.tuf,application/zip,application/json';
  input.addEventListener('change',interceptInput,true);
  $('chartSave').addEventListener('click',onSaveCapture,true);
  $('chartSaveAs').addEventListener('click',onSaveAsCapture,true);
