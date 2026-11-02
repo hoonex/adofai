@@ -42,3 +42,14 @@ The original serialized `scnEditor` object hierarchy now runs beside a **browser
 
 **Limits:** Floor positions ignore `PositionTrack` and other Unity rendering events; `angleData` and special path symbols get a conservative geometric preview. The web browser is *not* a replacement for the proprietary Unity player. This work does not reproduce the actual Unity C# runtime or distribute original textures/audio.
 
+
+## ZIP import and rhythm practice (2026-11-02)
+
+- Client-side JSZip v3.10.1 opens ZIP folders containing `.adofai`, accompanying music and images.
+- Selects the primary chart ahead of `backup.adofai`.
+- Resolves sibling `settings.songFilename` / `audio.ogg`; plays media via temporary Blob URLs without uploading it.
+- ZIP save changes only the selected .adofai member; all original archive members, including backups, audio and images, are preserved.
+- Supports experimental audio-synced tap practice. It is **not** the original ADOFAI Unity gameplay runtime and does not fully implement gameplay timing, decoration events and effects.
+- UI actions are linked to original `scnEditor` scene metadata. Original shaders, sprites, Unity components and DLLs are **not** distributed as web files.
+
+Local Chromium test with a user-supplied ZIP: 500 floors imported, accompanying 177.78s OGG loaded, main chart edited, ZIP re-exported preserving the 3,078,653-byte audio and 308,551-byte backup, zero page errors. Practice started/stopped but real-game timing parity is **not** verified.
