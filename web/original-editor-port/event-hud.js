@@ -6,7 +6,7 @@
 'use strict';
 const $=id=>document.getElementById(id),NS='http://www.w3.org/2000/svg';
 const A=()=>window.ADOFAIChartPort,R=()=>window.ADOFAIArchivePlayer;
-const H={doc:null,signature:'',current:-1,list:new Map(),last:0};
+const H={doc:null,signature:'',current:-1,list:new Map(),last:0,fx:null};
 const safe=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt=x=>Number.isInteger(x)?String(x):Number(x).toFixed(2).replace(/0+$/,'').replace(/\.$/,'');
 function jump(n,seek=false){
@@ -62,12 +62,25 @@ function renderSpeed(){
  $('adoSpeedNav').innerHTML=rows.map((x,i)=>'<button data-floor="'+x.floor+'" data-seq="'+i+'" title="타일 '+x.floor+'번">'+(i?'타일 '+x.floor:'시작')+' · '+fmt(x.bpm)+' BPM (×'+fmt(x.multiplier)+')</button>').join('');
  for(const b of $('adoSpeedNav').querySelectorAll('button'))b.onclick=()=>jump(b.dataset.floor,true);
  const counts=new Map();H.list.clear();
+ H.fx={camera:[],track:[],planet:[],radius:[],flashes:[],filters:new Map()};
  for(const e of doc.actions||[]){
   counts.set(e.eventType,(counts.get(e.eventType)||0)+1);
   if(!Number.isInteger(e.floor))continue;
+  const kind=e.eventType,fx=H.fx;
+  if(kind==='MoveCamera'&&e.zoom!=null)fx.camera.push(e);
+  if(kind==='ColorTrack'&&e.justThisTile!==true)fx.track.push(e);
+  if(kind==='ScalePlanets')fx.planet.push(e);
+  if(kind==='ScaleRadius')fx.radius.push(e);
+  if(kind==='Flash')fx.flashes.push(e);
+  if(kind==='SetFilter'&&e.filter){
+   if(!fx.filters.has(e.filter))fx.filters.set(e.filter,[]);
+   fx.filters.get(e.filter).push(e);
+  }
   const group=H.list.get(e.floor)||[];group.push(e);H.list.set(e.floor,group);
  }
- const entries=[...counts.entries()].sort((a,b)=>b[1]-a[1]);
+ for(const key of ['camera','track','planet','radius','flashes'])H.fx[key].sort((a,b)=>a.floor-b.floor);
+ for(const list of H.fx.filters.values())list.sort((a,b)=>a.floor-b.floor);
+  const entries=[...counts.entries()].sort((a,b)=>b[1]-a[1]);
  $('adoEventGroups').innerHTML=entries.map(([name,count])=>{
   const items=(doc.actions||[]).filter(e=>e.eventType===name);
   const shown=items.slice(0,160);
@@ -131,22 +144,26 @@ function renderMarkers(force=false){
  }
   const planets=svg.querySelector('#adoPlanets');if(planets)planets.before(group);else svg.append(group);
 }
+function lastEventBefore(list,floor){
+ if(!list?.length)return null;
+ let lo=0,hi=list.length;
+ while(lo<hi){const mid=(lo+hi)>>>1;if(list[mid].floor<=floor)lo=mid+1;else hi=mid;}
+ return lo>0?list[lo-1]:null;
+}
 function updateFlash(floor,time){
- const box=$('adoFlash');if(!box)return;
- if(!$('adoFlashPreview').checked){box.style.opacity=0;return;}
- const doc=A()?.state.doc,p=R()?.state;if(!doc||!p)return;
- let match=null;
- for(const e of doc.actions||[]){
-  if(e.eventType!=='Flash'||!Number.isInteger(e.floor)||e.floor>floor)continue;
-  const start=p.timings?.[e.floor];if(start==null)continue;
-  const dur=Math.max(.03,Number(e.duration||0)*60/(p.bpmAt?.[e.floor]||120));
-  const ratio=(time-start)/dur;if(ratio>=0&&ratio<=1)match={e,ratio};
- }
- if(!match){box.style.opacity=0;return;}
- const e=match.e,col=String(e.startColor||'ffffff').replace('#','');
+ const box=$('adoFlash');if(!box||!$('adoFlashPreview').checked){if(box)box.style.opacity=0;return;}
+ const p=R()?.state;
+ const e=lastEventBefore(H.fx?.flashes,floor);
+ if(!e||!p){box.style.opacity=0;return;}
+ const start=p.timings?.[e.floor];
+ if(start==null){box.style.opacity=0;return;}
+ const dur=Math.max(.03,Number(e.duration||0)*60/(p.bpmAt?.[e.floor]||120));
+ const ratio=(time-start)/dur;
+ if(ratio<0||ratio>1){box.style.opacity=0;return;}
+ const col=String(e.startColor||'ffffff').replace('#','');
  box.style.background=/^[a-f\d]{6,8}$/i.test(col)?'#'+col.slice(0,6):'#ffffff';
- const start=Number(e.startOpacity||0),end=Number(e.endOpacity||0);
- box.style.opacity=String(Math.max(0,Math.min(.55,(start+(end-start)*match.ratio)*.006)));
+ const startOpacity=Number(e.startOpacity||0),endOpacity=Number(e.endOpacity||0);
+ box.style.opacity=String(Math.max(0,Math.min(.55,(startOpacity+(endOpacity-startOpacity)*ratio)*.006)));
 }
 function tick(ts){
  if(ts-H.last>140){H.last=ts;
@@ -168,29 +185,21 @@ function tick(ts){
    if(f!==H.current){
     H.current=f;const events=H.list.get(f)||[];
     $('adoEventStatus').textContent='현재 '+f+'번 타일 · '+events.length+'개 이벤트'+(events.length?' · '+[...new Set(events.map(e=>e.eventType))].slice(0,7).join(', '):'');
-    let camera=null,track=null,planet=null,radius=null;
-    const filters=new Map();
-    for(const e of chart.actions||[]){
-      if(!Number.isInteger(e.floor)||e.floor>f)continue;
-      if(e.eventType==='MoveCamera'&&e.zoom!=null){if(!camera||e.floor>=camera.floor)camera=e;}
-      if(e.eventType==='SetFilter'&&e.filter){const prev=filters.get(e.filter);if(!prev||e.floor>=prev.floor)filters.set(e.filter,e);}
-      if(e.eventType==='ColorTrack'&&e.justThisTile!==true){if(!track||e.floor>=track.floor)track=e;}
-      if(e.eventType==='ScalePlanets'){if(!planet||e.floor>=planet.floor)planet=e;}
-      if(e.eventType==='ScaleRadius'){if(!radius||e.floor>=radius.floor)radius=e;}
-    }
+    const fx=H.fx||{};
+    const camera=lastEventBefore(fx.camera,f),track=lastEventBefore(fx.track,f),
+          planet=lastEventBefore(fx.planet,f),radius=lastEventBefore(fx.radius,f);
     const effects=[];
     if(camera)effects.push('카메라 '+fmt(camera.zoom)+'%');
-    if(track)effects.push('트랙 색 '+String(track.trackColor||'') .slice(0,6));
+    if(track)effects.push('트랙 색 '+String(track.trackColor||'').slice(0,6));
     if(planet)effects.push('공 크기 '+fmt(planet.scale)+'%');
     if(radius)effects.push('공 간격 '+fmt(radius.scale)+'%');
-    for(const e of filters.values())if(e.enabled===true||e.enabled==='Enabled')effects.push('필터 '+e.filter);
-    let sourceScale=100,sourceRadius=100;
-    for(const e of chart.actions||[]){
-      if(!Number.isInteger(e.floor)||e.floor>f)continue;
-      if(e.eventType==='ScalePlanets'&&Number.isFinite(Number(e.scale)))sourceScale=Number(e.scale);
-      if(e.eventType==='ScaleRadius'&&Number.isFinite(Number(e.scale)))sourceRadius=Number(e.scale);
+    for(const list of fx.filters?.values()||[]){
+      const e=lastEventBefore(list,f);
+      if(e&&(e.enabled===true||e.enabled==='Enabled'))effects.push('필터 '+e.filter);
     }
-    if(sourceScale<=1||sourceRadius<=1)effects.unshift(window.ADOFAIVisualSettings?.keepVisible?'원본 효과: 공 숨김 (편집 화면에 표시)':'원본 효과: 공 숨김');
+    const sourceScale=Number(planet?.scale??100),sourceRadius=Number(radius?.scale??100);
+    if(sourceScale<=1||sourceRadius<=1)
+      effects.unshift(window.ADOFAIVisualSettings?.keepVisible?'원본 효과: 공 숨김 (편집 화면에 표시)':'원본 효과: 공 숨김');
     $('adoCurrentFx').textContent=effects.length?'효과: '+effects.slice(0,3).join(' · ')+(effects.length>3?' 외 '+(effects.length-3):''):'현재 효과 —';
    }
    const clock=p.playing?$('chartAudio')?.currentTime:p.timings?.[f];if(typeof clock==='number')updateFlash(f,clock);
