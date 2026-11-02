@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0b111b">
-<title>ADOFAI PC scnEditor — 원본 씬 포트 작업대</title>
+<title>ADOFAI PC Editor Port — ZIP·음원 연결</title>
 <style>
 :root{color-scheme:dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Noto Sans KR",sans-serif;background:#0b111b;color:#e5eefa}
 *{box-sizing:border-box}body{margin:0}.top{padding:16px 20px;border-bottom:1px solid #263648;background:#101a27}
@@ -128,6 +128,8 @@ async function run(){
 $("search").addEventListener("input",renderTree);$("view").addEventListener("change",renderCanvas);
 run();
 </script>
+<script src="/jszip.min.js"></script>
 <script src="/chart-port.js"></script>
+<script src="/archive-player.js"></script>
 </body>
 </html>
