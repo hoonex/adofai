@@ -26,3 +26,19 @@ Do not run the unofficial archive's EXE, BAT or other bundled launchers. The sou
 ## Source
 
 Source is the user's existing PC ZIP `A-Dance-Of-Fire-And-Ice-AnkerGames.zip`. All matching bytes are fetched from that file read-only. If Drive access changes, this development site will stop loading and no source files will be exposed.
+
+
+## Browser chart editing layer (2026-11-02)
+
+The original serialized `scnEditor` object hierarchy now runs beside a **browser-side chart editing layer**. This is source-scene-linked reimplementation, **not Unity C# methods executing in WebAssembly**.
+
+- UI handlers are tied to GameObject IDs read from the original scene: `buttonOpen`, `buttonSave`, `buttonSaveAs`, `AddTile`, `settingsPanel`, `levelEventsPanel`.
+- User-selected `.adofai` and JSON files are handled fully in the browser, never uploaded to the API.
+- Parse `pathData` and `angleData`; preserve original char paths until the user explicitly modifies tile geometry, then normalize to explicit `angleData`. Unknown directions fail closed, not guessed.
+- Edit selected tile direction, insert/delete tile, and shift matching `actions` and `decorations` floor IDs. Removing a tile with events asks confirmation.
+- Edit JSON of each selected event, settings and raw chart; Save/Save As downloads `.adofai`. Unknown chart and event keys remain in the document unless explicitly modified.
+- Undo/redo of document mutations. Render simplified tile positions; not full original Unity geometry or gameplay.
+- Test with `node web/original-editor-port/tests/chart-port.test.cjs` and `node --check web/original-editor-port/chart-port.js`.
+
+**Limits:** Floor positions ignore `PositionTrack` and other Unity rendering events; `angleData` and special path symbols get a conservative geometric preview. The web browser is *not* a replacement for the proprietary Unity player. This work does not reproduce the actual Unity C# runtime or distribute original textures/audio.
+
