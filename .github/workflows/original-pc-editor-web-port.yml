@@ -1,0 +1,24 @@
+name: Verify original PC editor web port chart operations
+on:
+  push:
+    branches: [feat/original-pc-editor-web-port]
+    paths:
+      - 'web/original-editor-port/**'
+      - '.github/workflows/original-pc-editor-web-port.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  chart-port:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify port syntax
+        run: node --check web/original-editor-port/chart-port.js
+      - name: Test source-scene chart editing roundtrip
+        run: node web/original-editor-port/tests/chart-port.test.cjs
+      - name: Check API module syntax
+        run: python3 -m py_compile web/original-editor-port/api/scene.py
