@@ -119,6 +119,10 @@ function draw(){
  const selected=s.selected||0, actions=new Set((s.doc.actions||[]).filter(e=>Number.isInteger(e?.floor)).map(e=>e.floor));
  const decos=new Set((s.doc.decorations||[]).filter(e=>Number.isInteger(e?.floor)).map(e=>e.floor));
  S.twirlFloors=(s.doc.actions||[]).filter(e=>e?.eventType==='Twirl'&&Number.isInteger(e.floor)).map(e=>e.floor).sort((a,b)=>a-b);
+ S.radiusEvents=(s.doc.actions||[]).filter(e=>e?.eventType==='ScaleRadius'&&Number.isInteger(e.floor)&&Number.isFinite(Number(e.scale))).sort((a,b)=>a.floor-b.floor);
+ S.planetEvents=(s.doc.actions||[]).filter(e=>e?.eventType==='ScalePlanets'&&Number.isInteger(e.floor)&&Number.isFinite(Number(e.scale))).sort((a,b)=>a.floor-b.floor);
+ const colorEvents=(s.doc.actions||[]).filter(e=>e?.eventType==='ColorTrack'&&Number.isInteger(e.floor)).sort((a,b)=>a.floor-b.floor);
+ let colorIndex=0,activeColor=s.doc.settings?.trackColor||'ffffff',activeType=s.doc.settings?.trackColorType||'Single';
  const start=ps.length>6500?Math.max(0,selected-2300):0,end=ps.length>6500?Math.min(ps.length,selected+2300):ps.length;
  // Beveled outlines are computed from actual entry/exit floor angles,
  // not identical rounded squares and not a thick polyline underneath.
@@ -129,9 +133,17 @@ function draw(){
   const p=ps[i];if(!p)continue;
   const path=meshPolygon(ps[i-1],p,ps[i+1]);
   const active=i===selected,mid=i>0&&s.angles[i-1]===999;
-  const fill=mid?'#b69ed6':'url(#adoTileWhite)';
+  let oneShot=null;
+  while(colorIndex<colorEvents.length&&colorEvents[colorIndex].floor<=i){
+    const e=colorEvents[colorIndex++];
+    if(e.justThisTile){if(e.floor===i)oneShot=e;}
+    else {activeColor=e.trackColor||activeColor;activeType=e.trackColorType||activeType;}
+  }
+  const c=oneShot?.trackColor||activeColor,mode=oneShot?.trackColorType||activeType;
+  const fill=mid?'#b69ed6':mode==='Rainbow'?'hsl('+((i*16)%360)+' 67% 65%)':parseColor(c,'#d0dbea');
   html+='<g class="chart-floor'+(active?' selected-floor':'')+'" data-floor="'+i+'" tabindex="0" role="button" aria-label="타일 '+i+'" style="cursor:pointer">'+
    '<path class="pc-tile" d="'+path+'" fill="'+fill+'" stroke="'+(active?'#f9d48c':border)+'" stroke-width="'+(active?2:1.1)+'" stroke-linejoin="round"/>'+
+   (mid?'':'<path d="'+path+'" fill="url(#adoTileWhite)" opacity=".29" stroke="none" pointer-events="none"/>')+
    (actions.has(i)?'<circle cx="'+(p.x*U+9)+'" cy="'+(p.y*U-9)+'" r="3" fill="#f38db6" stroke="#fff" stroke-width=".8"/>':'')+
    (decos.has(i)?'<circle cx="'+(p.x*U-10)+'" cy="'+(p.y*U-10)+'" r="3" fill="#7cd2a6"/>':'')+
    '<circle cx="'+(p.x*U)+'" cy="'+(p.y*U)+'" r="19" fill="transparent" pointer-events="all"/></g>';
@@ -169,11 +181,19 @@ function updateBalls(){
  // Approximate orbit phase until original Unity judgement/physics is ported.
  let amount=norm(twisted?b-a:a-b);if(amount<.005)amount=PI;
  const angle=a+(twisted?amount:-amount)*phase;
- const ox=x+Math.cos(angle)*U,oy=y+Math.sin(angle)*U;
+ let radius=100;
+ for(const e of S.radiusEvents||[]){if(e.floor>idx)break;radius=Number(e.scale);}
+ const distance=U*Math.max(0,Math.min(5,radius/100));
+ const ox=x+Math.cos(angle)*distance,oy=y+Math.sin(angle)*distance;
+ let scalePlanets=100;
+ for(const e of S.planetEvents||[]){if(e.floor>idx)break;scalePlanets=Number(e.scale);}
+ const visualScale=Math.max(0,Math.min(3,scalePlanets/100));
+ parts.fire.setAttribute('data-scale',String(visualScale));
+ parts.ice.setAttribute('data-scale',String(visualScale));
  const fixedFire=idx%2===0;
  const fx=fixedFire?x:ox,fy=fixedFire?y:oy,ix=fixedFire?ox:x,iy=fixedFire?oy:y;
- parts.fire.setAttribute('transform','translate('+fx.toFixed(2)+' '+fy.toFixed(2)+')');
- parts.ice.setAttribute('transform','translate('+ix.toFixed(2)+' '+iy.toFixed(2)+')');
+ parts.fire.setAttribute('transform','translate('+fx.toFixed(2)+' '+fy.toFixed(2)+') scale('+visualScale.toFixed(3)+')');
+ parts.ice.setAttribute('transform','translate('+ix.toFixed(2)+' '+iy.toFixed(2)+') scale('+visualScale.toFixed(3)+')');
  for(const [key,value] of Object.entries({x1:fx,y1:fy,x2:ix,y2:iy}))parts.line.setAttribute(key,value.toFixed(2));
 }
 function loop(){updateBalls();requestAnimationFrame(loop);}
