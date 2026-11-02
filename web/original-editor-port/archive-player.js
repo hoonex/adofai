@@ -6,7 +6,7 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const api=()=>window.ADOFAIChartPort;
-const ctx={zip:null,entry:'',zipName:'',songUrl:'',imageUrl:'',chartName:'',timings:[],bpmAt:[],speedChanges:[],pauses:[],twirlAt:[],travelDegrees:[],rotationStart:[],entryAngleDegrees:[],baseBpm:120,playerIndex:0,judged:new Set(),playing:false,frame:0,lastActive:-1,good:0,miss:0,estimate:[],inputFile:null,lazyZip:false,archiveBytes:0};
+const ctx={zip:null,entry:'',zipName:'',songUrl:'',imageUrl:'',chartName:'',timings:[],bpmAt:[],speedChanges:[],pauses:[],twirlAt:[],travelDegrees:[],rotationStart:[],entryAngleDegrees:[],baseBpm:120,playerIndex:0,judged:new Set(),playing:false,frame:0,lastActive:-1,good:0,miss:0,gradeTimer:0,estimate:[],inputFile:null,lazyZip:false,archiveBytes:0};
 const safe = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const norm=a=>((a%360)+360)%360;
 function msg(text,isError=false){const el=$('archiveStatus');if(el){el.textContent=text;el.dataset.error=isError?'true':'false'} const chart=$('chartStatus');if(chart)chart.textContent=text;}
@@ -240,6 +240,7 @@ async function startPlay(){
  try{
   if(!api().saveObject()){msg('차트를 먼저 열어주세요.',true);return}
   if(!$('chartAudio').src){msg('음악을 선택하거나 ZIP에 포함된 음원을 사용하세요.',true);return}
+  window.ADOFAIHitsound?.unlock();
   updateTiming();if(ctx.timings.length===0)return;
   const floor=api().state.selected||0;
   const seek=Math.max(0,ctx.timings[Math.min(floor,ctx.timings.length-1)]-.5);
@@ -252,8 +253,8 @@ function stopPlay(){ctx.playing=false;cancelAnimationFrame(ctx.frame);$('chartAu
 function tap(){if(!ctx.playing||!ctx.timings.length)return;const t=$('chartAudio').currentTime;
  const next=Math.min(ctx.timings.length-1,currentIndex(t)+1),prior=Math.max(1,next-1);
  const candidates=[next,prior].filter(i=>!ctx.judged.has(i));candidates.sort((a,b)=>Math.abs(ctx.timings[a]-t)-Math.abs(ctx.timings[b]-t));
- const hit=candidates[0];if(hit===undefined)return;const err=Math.abs(ctx.timings[hit]-t);if(err<=.16){ctx.good++;ctx.judged.add(hit);$('chartTapButton').dataset.grade=err<=.055?'perfect':'good';$('chartGrade').textContent=err<=.055?'PERFECT':'GOOD';}else{$('chartGrade').textContent='MISS';ctx.miss++;$('chartTapButton').dataset.grade='miss';}
- $('chartGrade').style.opacity='1';setTimeout(()=>$('chartGrade').style.opacity='.35',250);
+ const hit=candidates[0];if(hit===undefined)return;const err=Math.abs(ctx.timings[hit]-t);if(err<=.16){ctx.good++;ctx.judged.add(hit);window.ADOFAIHitsound?.play(hit);$('chartTapButton').dataset.grade=err<=.055?'perfect':'good';$('chartGrade').textContent=err<=.055?'PERFECT':'GOOD';}else{$('chartGrade').textContent='MISS';ctx.miss++;$('chartTapButton').dataset.grade='miss';}
+ $('chartGrade').style.opacity='1';clearTimeout(ctx.gradeTimer);ctx.gradeTimer=setTimeout(()=>$('chartGrade').style.opacity='.35',180);
 }
 function createUi(){const port=$('chartPort');if(!port)return;
  // This is a browser compatibility layer, not a claim that Unity PC native C# is running.
