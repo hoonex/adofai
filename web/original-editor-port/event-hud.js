@@ -7,7 +7,7 @@
 const $=id=>document.getElementById(id),NS='http://www.w3.org/2000/svg';
 const A=()=>window.ADOFAIChartPort,R=()=>window.ADOFAIArchivePlayer;
 const H={doc:null,signature:'',current:-1,list:new Map(),last:0};
-const safe=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;':'&quot;'}[c]));
+const safe=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt=x=>Number.isInteger(x)?String(x):Number(x).toFixed(2).replace(/0+$/,'').replace(/\.$/,'');
 function jump(n,seek=false){
  if(!A()?.state.doc)return;const floor=Math.max(0,Math.min(A().state.angles.length,Number(n)||0));
