@@ -221,7 +221,7 @@
     const focus=tiles[port.selected]||{x:0,y:0};
     let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
     // Keep drawings bounded on massive charts without hiding off-screen count.
-    const visible=tiles.length<=2500?tiles:tiles.slice(Math.max(0,port.selected-1000),Math.min(tiles.length,port.selected+1001));
+    const visible=tiles.length<=2500?tiles:tiles.slice(Math.max(0,port.selected-350),Math.min(tiles.length,port.selected+351));
     visible.forEach(p=>{minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y)});
     const unit=54,margin=66;let x0=minX*unit-margin,y0=minY*unit-margin,w=Math.max((maxX-minX)*unit+margin*2,580),h=Math.max((maxY-minY)*unit+margin*2,380);
     svg.setAttribute('viewBox',[x0,y0,w,h].join(' '));
@@ -245,7 +245,7 @@
       g.addEventListener('click',()=>selectFloor(id));
       g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectFloor(id)}});
     }
-    $('chartSelection').textContent='타일 '+port.selected+' / '+(tiles.length-1)+' · 각도: '+(port.selected===0?'시작':port.angles[port.selected-1]+'°')+(tiles.length>2500?' · 주변 2,001개만 렌더링':'');
+    $('chartSelection').textContent='타일 '+port.selected+' / '+(tiles.length-1)+' · 각도: '+(port.selected===0?'시작':port.angles[port.selected-1]+'°')+(tiles.length>2500?' · 주변 타일만 렌더링':'');
     $('chartAngle').value=port.selected===0?'':String(port.angles[port.selected-1]);
     $('chartAngle').disabled=port.selected===0;
     $('chartDelete').disabled=port.selected===0;
