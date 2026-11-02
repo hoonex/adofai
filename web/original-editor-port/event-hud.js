@@ -70,9 +70,12 @@ function renderSpeed(){
  const entries=[...counts.entries()].sort((a,b)=>b[1]-a[1]);
  $('adoEventGroups').innerHTML=entries.map(([name,count])=>{
   const items=(doc.actions||[]).filter(e=>e.eventType===name);
+  const shown=items.slice(0,160);
+  const omitted=items.length-shown.length;
   const level=['SetSpeed','Twirl','Pause'].includes(name)?'타이밍 연결':name==='Hold'?'부분 지원':name==='Flash'?'간단 미리보기':'표시·편집 가능 / 원본 효과 미구현';
   return '<details class="ado-event-group"><summary>'+safe(name)+' · '+count+'개 · '+level+'</summary><div class="ado-event-rows">'+
-    items.map(e=>'<button data-floor="'+e.floor+'">'+e.floor+'번</button>').join('')+'</div></details>';
+    shown.map(e=>'<button data-floor="'+e.floor+'">'+e.floor+'번</button>').join('')+
+    (omitted?'<span class="ado-event-omit">이벤트가 많아 처음 160개만 표시 중 · 나머지는 맵에서 타일을 선택해 편집 가능</span>':'')+'</div></details>';
  }).join('');
  for(const b of $('adoEventGroups').querySelectorAll('button[data-floor]'))b.onclick=()=>jump(b.dataset.floor,true);
  $('adoEventStatus').textContent='이벤트 '+(doc.actions||[]).length+'개 · '+entries.length+'종류 · 현재 BPM / 배속 / 회전 / 정지 표시';
@@ -84,8 +87,14 @@ function renderMarkers(force=false){
  const group=document.createElementNS(NS,'g');group.id='adoMarkers';group.style.pointerEvents='all';
  const grouped=new Map(),fxCounts=new Map();
  const fxEnabled=!!$('adoShowFxMarkers')?.checked;
+ // A typical TUF megamap has 14,000+ floors and thousands of visual events.
+ // Keep the DOM bounded to the local viewport; all original data remains in doc.
+ const large=A().state.positions.length>6500;
+ const center=R()?.state.playing?R().state.playerIndex:A().state.selected;
+ const lo=large?Math.max(0,center-900):0;
+ const hi=large?Math.min(A().state.positions.length,center+901):A().state.positions.length;
  for(const e of doc.actions||[]){
-  if(!Number.isInteger(e.floor)||!A().state.positions[e.floor])continue;
+  if(!Number.isInteger(e.floor)||e.floor<lo||e.floor>=hi||!A().state.positions[e.floor])continue;
   if(!['SetSpeed','Twirl','Pause','Hold','ScaleRadius','MultiPlanet'].includes(e.eventType)){
     if(fxEnabled)fxCounts.set(e.floor,(fxCounts.get(e.floor)||0)+1);
     continue;
