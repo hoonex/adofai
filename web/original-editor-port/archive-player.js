@@ -6,7 +6,7 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const api=()=>window.ADOFAIChartPort;
-const ctx={zip:null,entry:'',zipName:'',songUrl:'',imageUrl:'',chartName:'',timings:[],playerIndex:0,judged:new Set(),playing:false,frame:0,lastActive:-1,good:0,miss:0,estimate:[],inputFile:null};
+const ctx={zip:null,entry:'',zipName:'',songUrl:'',imageUrl:'',chartName:'',timings:[],bpmAt:[],speedChanges:[],pauses:[],twirlAt:[],baseBpm:120,playerIndex:0,judged:new Set(),playing:false,frame:0,lastActive:-1,good:0,miss:0,estimate:[],inputFile:null};
 const safe = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const norm=a=>((a%360)+360)%360;
 function msg(text,isError=false){const el=$('archiveStatus');if(el){el.textContent=text;el.dataset.error=isError?'true':'false'} const chart=$('chartStatus');if(chart)chart.textContent=text;}
@@ -89,37 +89,56 @@ function onSaveCapture(e){if(!ctx.zip)return;e.preventDefault();e.stopImmediateP
 function onSaveAsCapture(e){if(!ctx.zip)return;e.preventDefault();e.stopImmediatePropagation();const doc=api().saveObject();if(!doc)return;download(new Blob([JSON.stringify(doc,null,2)+'\n'],{type:'application/json'}),ctx.chartName||'level.adofai');msg('.adofai 단독 파일 저장 완료');}
 async function loadAudioFile(file){if(!file)return;stopPlay();if(ctx.songUrl)URL.revokeObjectURL(ctx.songUrl);ctx.songUrl=URL.createObjectURL(file);$('chartAudio').src=ctx.songUrl;$('chartAudioName').textContent=file.name;updateTiming();msg('로컬 음악 연결됨: '+file.name)}
 function updateTiming(){
- const doc=api().saveObject();if(!doc){ctx.timings=[];return}
+ const doc=api().saveObject();if(!doc){ctx.timings=[];ctx.bpmAt=[];ctx.speedChanges=[];return}
  const angles=api().state.angles||[],actions=Array.isArray(doc.actions)?doc.actions:[];
- const groups=new Map();for(const e of actions){if(!Number.isInteger(e?.floor))continue;const group=groups.get(e.floor)||[];group.push(e);groups.set(e.floor,group)}
- let bpm=Math.max(1,Number(doc.settings?.bpm)||120);
- let t=(Number(doc.settings?.offset)||0)/1000;
- const timings=[t];let twirl=false;let previous=0;
+ const groups=new Map();for(const e of actions){
+   if(!Number.isInteger(e?.floor)||e.active===false)continue;
+   const g=groups.get(e.floor)||[];g.push(e);groups.set(e.floor,g);
+ }
+ const baseBpm=Math.max(1,Number(doc.settings?.bpm)||120);
+ let bpm=baseBpm,t=(Number(doc.settings?.offset)||0)/1000,previous=0,twirl=false;
+ const timings=[t],bpmAt=[],twirlAt=[],speedChanges=[],pauses=[];
  const warnings=new Set();
  for(let floor=0;floor<=angles.length;floor++){
-  const evs=groups.get(floor)||[];
-  for(const e of evs){
-   if(e.eventType==='Twirl')twirl=!twirl;
-   if(e.eventType==='SetSpeed'){
-    if(e.speedType==='Bpm'&&Number(e.beatsPerMinute)>0)bpm=Number(e.beatsPerMinute);
-    if(e.speedType==='Multiplier'&&Number(e.bpmMultiplier)>0)bpm*=Number(e.bpmMultiplier);
+   const events=groups.get(floor)||[];
+   for(const event of events){
+     if(event.eventType==='Twirl')twirl=!twirl;
+     if(event.eventType==='SetSpeed'){
+       const oldBpm=bpm;
+       if(event.speedType==='Bpm'&&Number(event.beatsPerMinute)>0)bpm=Number(event.beatsPerMinute);
+       else if(event.speedType==='Multiplier'&&Number(event.bpmMultiplier)>0)bpm*=Number(event.bpmMultiplier);
+       else warnings.add('SetSpeed 비표준 형식');
+       bpm=Math.max(1,bpm);
+       speedChanges.push({floor,bpm,multiplier:bpm/baseBpm,previousBpm:oldBpm,type:event.speedType});
+       if(Number(event.angleOffset)!==0)warnings.add('SetSpeed angleOffset');
+     }
+     if(event.eventType==='Pause'&&Number(event.duration)>0){
+       const seconds=Number(event.duration)*60/bpm;
+       t+=seconds;pauses.push({floor,duration:Number(event.duration),seconds});
+     }
+     if(event.eventType==='Hold'){
+       // ADOFAI holds also alter input/judgement; time only is approximated here.
+       if(Number(event.duration)>0)t+=Number(event.duration)*60/bpm;
+       warnings.add('Hold 판정');
+     }
+     if(event.eventType==='MultiPlanet')warnings.add('MultiPlanet 판정');
    }
-   if(e.eventType==='Pause'&&Number(e.duration)>0)t+=Number(e.duration)*60/bpm;
-   if(e.eventType==='Hold')warnings.add('Hold');
-  }
-  if(floor>=angles.length)break;
-  const next=angles[floor];let travel=180;
-  if(next===999){travel=0;}
-  else if(floor>0){travel=norm(180+previous-next);if(travel<.001)travel=360;}
-  if(next!==999)previous=next;
-  if(twirl)travel=(360-travel)%360||360;
-  t+=travel/180*60/Math.max(bpm,1);
-  timings.push(t);
+   bpmAt[floor]=bpm;twirlAt[floor]=twirl;
+   if(floor>=angles.length)break;
+   const next=angles[floor];let travel=180;
+   if(next===999){travel=0;}
+   else if(floor>0){travel=norm(180+previous-next);if(travel<.001)travel=360;}
+   if(next!==999)previous=next;
+   if(twirl)travel=(360-travel)%360||360;
+   t+=travel/180*60/bpm;
+   timings.push(t);
  }
- ctx.timings=timings;
- ctx.estimate=Array.from(warnings);
- const warn=ctx.estimate.length?' · 미구현 판정: '+ctx.estimate.join(', '):'';
- $('chartTimingInfo').textContent='연습 타이밍 추정 · '+timings.length+' 타일 · 기본 '+doc.settings?.bpm+' BPM · offset '+(doc.settings?.offset||0)+'ms'+warn;
+ ctx.timings=timings;ctx.bpmAt=bpmAt;ctx.twirlAt=twirlAt;
+ ctx.speedChanges=speedChanges;ctx.pauses=pauses;ctx.baseBpm=baseBpm;
+ ctx.estimate=[...warnings];
+ const warn=ctx.estimate.length?' · 일부 근사: '+ctx.estimate.join(', '):'';
+ $('chartTimingInfo').textContent='재생 타이밍 계산 · '+timings.length+' 타일 · 시작 '+baseBpm+' BPM · 속도 변경 '+speedChanges.length+'회 · Pause '+pauses.length+'개 · offset '+(doc.settings?.offset||0)+'ms'+warn;
+ window.dispatchEvent(new CustomEvent('adofai:timing-updated',{detail:{bpmAt,speedChanges,pauses,timings}}));
 }
 function currentIndex(time){let lo=0,hi=ctx.timings.length;while(lo<hi){const mid=(lo+hi)>>1;if(ctx.timings[mid]<=time)lo=mid+1;else hi=mid}return Math.max(0,lo-1)}
 function updateLive(){if(!ctx.playing)return;const time=$('chartAudio').currentTime;const floor=currentIndex(time);ctx.playerIndex=floor;
