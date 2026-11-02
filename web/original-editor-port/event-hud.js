@@ -17,7 +17,7 @@ function jump(n,seek=false){
 function boot(){
  if(!A()||!R()||!document.querySelector('.pc-media')){setTimeout(boot,120);return;}
  const hud=document.createElement('div');hud.id='adoEventHud';
- hud.innerHTML='<div class="ado-live"><strong id="adoActiveBpm">BPM —</strong><b id="adoCurrentMult">×—</b><span id="adoTwirl">↷ 정회전</span><label>연습 재생 <select id="adoRate"><option value=".5">0.5×</option><option value=".75">0.75×</option><option value="1" selected>1.0×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2.0×</option></select></label><button id="adoPlaySelected">▶ 선택 타일부터 재생</button><label><input id="adoFlashPreview" type="checkbox" checked>플래시 미리보기</label></div><div id="adoSpeedNav" class="ado-speed-nav">차트를 열면 배속 변경 지점이 표시됩니다.</div><div class="ado-summary"><button id="adoExpandEvents" aria-expanded="false">전체 이벤트 펼치기</button><span id="adoEventStatus">이벤트 파일을 읽고 있습니다.</span></div><div id="adoEventGroups" hidden></div>';
+ hud.innerHTML='<div class="ado-live"><strong id="adoActiveBpm">BPM —</strong><b id="adoCurrentMult">×—</b><span id="adoTwirl">↷ 정회전</span><span id="adoCurrentFx">현재 효과 —</span><label>연습 재생 <select id="adoRate"><option value=".5">0.5×</option><option value=".75">0.75×</option><option value="1" selected>1.0×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2.0×</option></select></label><button id="adoPlaySelected">▶ 선택 타일부터 재생</button><label><input id="adoFlashPreview" type="checkbox" checked>플래시 미리보기</label><label><input id="adoShowFxMarkers" type="checkbox">FX 마커</label></div><div id="adoSpeedNav" class="ado-speed-nav">차트를 열면 배속 변경 지점이 표시됩니다.</div><div class="ado-summary"><button id="adoExpandEvents" aria-expanded="false">전체 이벤트 펼치기</button><span id="adoEventStatus">이벤트 파일을 읽고 있습니다.</span></div><div id="adoEventGroups" hidden></div>';
  const stats=document.querySelector('.pc-media .pc-stats');
  if(stats)stats.insertAdjacentElement('afterend',hud);else document.querySelector('.pc-media').append(hud);
  const flash=document.createElement('div');flash.id='adoFlash';flash.setAttribute('aria-hidden','true');document.querySelector('.chart-stage').append(flash);
@@ -44,6 +44,7 @@ function boot(){
  ].join('\n');document.head.append(style);
  $('adoRate').onchange=()=>{const a=$('chartAudio');if(a)a.playbackRate=Number($('adoRate').value)||1;};
  $('adoPlaySelected').onclick=()=>R().startPlay();
+ $('adoShowFxMarkers').onchange=()=>renderMarkers(true);
  $('adoExpandEvents').onclick=()=>{
   const n=$('adoEventGroups');n.hidden=!n.hidden;
   $('adoExpandEvents').textContent=n.hidden?'전체 이벤트 펼치기':'전체 이벤트 접기';
@@ -80,10 +81,14 @@ function renderMarkers(force=false){
  if(svg.querySelector('#adoMarkers')&&!force)return;
  svg.querySelector('#adoMarkers')?.remove();
  const group=document.createElementNS(NS,'g');group.id='adoMarkers';group.style.pointerEvents='all';
- const grouped=new Map();
+ const grouped=new Map(),fxCounts=new Map();
+ const fxEnabled=!!$('adoShowFxMarkers')?.checked;
  for(const e of doc.actions||[]){
-  if(!['SetSpeed','Twirl','Pause','Hold','ScaleRadius','MultiPlanet'].includes(e.eventType))continue;
   if(!Number.isInteger(e.floor)||!A().state.positions[e.floor])continue;
+  if(!['SetSpeed','Twirl','Pause','Hold','ScaleRadius','MultiPlanet'].includes(e.eventType)){
+    if(fxEnabled)fxCounts.set(e.floor,(fxCounts.get(e.floor)||0)+1);
+    continue;
+  }
   const a=grouped.get(e.floor)||[];if(!a.some(x=>x.eventType===e.eventType))a.push(e);
   grouped.set(e.floor,a);
  }
@@ -103,7 +108,18 @@ function renderMarkers(force=false){
    group.append(b);
   }
  }
- const planets=svg.querySelector('#adoPlanets');if(planets)planets.before(group);else svg.append(group);
+ if(fxEnabled){
+  for(const [floor,count] of fxCounts){
+   const p=A().state.positions[floor],x=p.x*54+22,y=p.y*54+22,w=count>=10?37:28;
+   const e=document.createElementNS(NS,'g');e.setAttribute('class','ado-marker');e.setAttribute('role','button');e.setAttribute('tabindex','0');
+   e.setAttribute('data-floor',String(floor));e.setAttribute('aria-label','FX '+count+'개 · '+floor+'번 타일');
+   const bg=document.createElementNS(NS,'rect');for(const [k,v] of Object.entries({x:x-w/2,y:y-9,width:w,height:18,rx:3,fill:'#6797c9',stroke:'#d4efff'}))bg.setAttribute(k,String(v));
+   const tx=document.createElementNS(NS,'text');tx.setAttribute('x',String(x));tx.setAttribute('y',String(y+3.3));tx.setAttribute('style','font-size:9px');tx.textContent='FX'+count;
+   e.append(bg,tx);e.onclick=()=>jump(floor);e.onkeydown=ev=>{if(ev.key==='Enter'){ev.preventDefault();jump(floor);}};
+   group.append(e);
+  }
+ }
+  const planets=svg.querySelector('#adoPlanets');if(planets)planets.before(group);else svg.append(group);
 }
 function updateFlash(floor,time){
  const box=$('adoFlash');if(!box)return;
@@ -142,6 +158,23 @@ function tick(ts){
    if(f!==H.current){
     H.current=f;const events=H.list.get(f)||[];
     $('adoEventStatus').textContent='현재 '+f+'번 타일 · '+events.length+'개 이벤트'+(events.length?' · '+[...new Set(events.map(e=>e.eventType))].slice(0,7).join(', '):'');
+    let camera=null,track=null,planet=null,radius=null;
+    const filters=new Map();
+    for(const e of chart.actions||[]){
+      if(!Number.isInteger(e.floor)||e.floor>f)continue;
+      if(e.eventType==='MoveCamera'&&e.zoom!=null){if(!camera||e.floor>=camera.floor)camera=e;}
+      if(e.eventType==='SetFilter'&&e.filter){const prev=filters.get(e.filter);if(!prev||e.floor>=prev.floor)filters.set(e.filter,e);}
+      if(e.eventType==='ColorTrack'&&e.justThisTile!==true){if(!track||e.floor>=track.floor)track=e;}
+      if(e.eventType==='ScalePlanets'){if(!planet||e.floor>=planet.floor)planet=e;}
+      if(e.eventType==='ScaleRadius'){if(!radius||e.floor>=radius.floor)radius=e;}
+    }
+    const effects=[];
+    if(camera)effects.push('카메라 '+fmt(camera.zoom)+'%');
+    if(track)effects.push('트랙 색 '+String(track.trackColor||'') .slice(0,6));
+    if(planet)effects.push('공 크기 '+fmt(planet.scale)+'%');
+    if(radius)effects.push('공 간격 '+fmt(radius.scale)+'%');
+    for(const e of filters.values())if(e.enabled===true||e.enabled==='Enabled')effects.push('필터 '+e.filter);
+    $('adoCurrentFx').textContent=effects.length?'효과: '+effects.slice(0,3).join(' · ')+(effects.length>3?' 외 '+(effects.length-3):''):'현재 효과 —';
    }
    const clock=p.playing?$('chartAudio')?.currentTime:p.timings?.[f];if(typeof clock==='number')updateFlash(f,clock);
   }
