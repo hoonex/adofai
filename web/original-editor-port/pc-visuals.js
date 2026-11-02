@@ -16,6 +16,7 @@ function draw(){
  const api=S.api,svg=S.svg,st=api?.state;
  if(!st?.doc||!svg)return;
  const points=st.positions||[];if(!points.length)return;
+ S.twirlFloors=(st.doc.actions||[]).filter(e=>e&&e.eventType==='Twirl'&&Number.isInteger(e.floor)).map(e=>e.floor).sort((a,b)=>a-b);
  const selection=st.selected||0,actions=new Set((st.doc.actions||[]).filter(v=>v&&Number.isInteger(v.floor)).map(v=>v.floor)),decos=new Set((st.doc.decorations||[]).filter(v=>v&&Number.isInteger(v.floor)).map(v=>v.floor));
  let from=0,to=points.length;if(points.length>6500){from=Math.max(0,selection-2300);to=Math.min(points.length,selection+2300);}
  let path='';for(let i=from;i<to;i++){const p=points[i];path+=(i===from?'M':'L')+(p.x*UNIT).toFixed(2)+' '+(p.y*UNIT).toFixed(2)+' ';}
@@ -43,15 +44,41 @@ function draw(){
 function updateBalls(){
  const s=S.api?.state,p=S.planets;if(!p||!s?.doc)return;
  const player=window.ADOFAIArchivePlayer,playing=!!player?.state?.playing;
- const idx=playing?player.state.playerIndex:s.selected;
- const floor=s.positions?.[Math.max(0,Math.min(s.positions.length-1,idx))];if(!floor)return;
- const cx=floor.x*UNIT,cy=floor.y*UNIT;
+ const idx=Math.max(0,Math.min(s.positions.length-1,playing?player.state.playerIndex:s.selected));
+ const center=s.positions[idx],previous=s.positions[idx-1],next=s.positions[idx+1];
+ if(!center)return;
+ const cx=center.x*UNIT,cy=center.y*UNIT;
+ // Actual ADOFAI rule: one planet remains centered on the current floor.
+ // The other circles it at the distance between two adjacent floors,
+ // then the roles switch on landing.
+ const twoPi=Math.PI*2;
+ let angleToPrevious=previous?Math.atan2((previous.y-center.y),(previous.x-center.x)):NaN;
+ let angleToNext=next?Math.atan2((next.y-center.y),(next.x-center.x)):NaN;
+ if(!Number.isFinite(angleToPrevious)&&Number.isFinite(angleToNext))angleToPrevious=angleToNext+Math.PI;
+ if(!Number.isFinite(angleToNext)&&Number.isFinite(angleToPrevious))angleToNext=angleToPrevious+Math.PI;
+ if(!Number.isFinite(angleToPrevious))angleToPrevious=Math.PI;
+ if(!Number.isFinite(angleToNext))angleToNext=0;
  let phase=0;
- if(playing){const times=player.state.timings,seconds=el('chartAudio')?.currentTime||0,t0=times?.[idx]??seconds,t1=times?.[idx+1]??(t0+.45);phase=Math.max(0,Math.min(1,(seconds-t0)/Math.max(.015,t1-t0)));}
- const angle=(idx%2===0?Math.PI/2:-Math.PI/2)+phase*Math.PI,d=24;
- const fx=cx+Math.cos(angle)*d,fy=cy+Math.sin(angle)*d,ix=cx-Math.cos(angle)*d,iy=cy-Math.sin(angle)*d;
- p.fire.setAttribute('transform','translate('+fx.toFixed(2)+' '+fy.toFixed(2)+')');p.ice.setAttribute('transform','translate('+ix.toFixed(2)+' '+iy.toFixed(2)+')');
- for(const [key,value] of Object.entries({x1:fx,y1:fy,x2:ix,y2:iy}))p.line.setAttribute(key,value.toFixed(2));
+ if(playing){
+   const times=player.state.timings,seconds=el('chartAudio')?.currentTime||0;
+   const t0=times?.[idx]??seconds,t1=times?.[idx+1]??(t0+.45);
+   phase=Math.max(0,Math.min(1,(seconds-t0)/Math.max(.015,t1-t0)));
+ }
+ let flipped=false;
+ for(const floor of (S.twirlFloors||[])){if(floor>idx)break;flipped=!flipped;}
+ const travel=flipped?
+   ((angleToNext-angleToPrevious+twoPi*3)%twoPi):
+   ((angleToPrevious-angleToNext+twoPi*3)%twoPi);
+ const turn=travel<0.001?Math.PI:travel;
+ const rotation=angleToPrevious+(flipped?1:-1)*turn*phase;
+ const mx=cx+Math.cos(rotation)*UNIT,my=cy+Math.sin(rotation)*UNIT;
+ const fireFixed=idx%2===0;
+ const fx=fireFixed?cx:mx,fy=fireFixed?cy:my;
+ const ix=fireFixed?mx:cx,iy=fireFixed?my:cy;
+ p.fire.setAttribute('transform','translate('+fx.toFixed(2)+' '+fy.toFixed(2)+')');
+ p.ice.setAttribute('transform','translate('+ix.toFixed(2)+' '+iy.toFixed(2)+')');
+ for(const [key,value] of Object.entries({x1:fx,y1:fy,x2:ix,y2:iy}))
+   p.line.setAttribute(key,value.toFixed(2));
 }
 function loop(){updateBalls();requestAnimationFrame(loop);}
 function boot(){
