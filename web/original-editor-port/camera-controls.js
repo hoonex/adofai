@@ -181,7 +181,7 @@
       camera.pointers.set(event.pointerId, {x:event.clientX,y:event.clientY});
       camera.lastPinch = pinchSnapshot();
       camera.dragged = false;
-      try {svg.setPointerCapture(event.pointerId);} catch (_) {}
+      if (event.pointerType !== 'mouse') {try {svg.setPointerCapture(event.pointerId);} catch (_) {}}
     });
     svg.addEventListener('pointermove', event => {
       if (!camera.pointers.has(event.pointerId)) return;
@@ -210,6 +210,9 @@
         setViewBox();
       }
       if (camera.dragged) {
+        if (event.pointerType === 'mouse' && !svg.hasPointerCapture(event.pointerId)) {
+          try {svg.setPointerCapture(event.pointerId);} catch (_) {}
+        }
         event.preventDefault();
         svg.classList.add('is-panning');
       }
