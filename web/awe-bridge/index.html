@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ko"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADOFAI · 제대로 된 웹 에디터 열기</title>
+<meta name="theme-color" content="#121821">
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,"Noto Sans KR",sans-serif;color:#eef4f9;background:#0e141c}
+*{box-sizing:border-box}body{margin:0}a{color:inherit;text-decoration:none}
+header{padding:22px max(18px,calc((100vw - 960px)/2));border-bottom:1px solid #253645;background:#141f2a}
+header strong{font-size:17px}header small{display:block;color:#9bacc1;margin-top:6px;font-size:12px}
+main{max-width:960px;margin:auto;padding:28px 17px 60px}
+h1{font-size:clamp(23px,5vw,35px);margin:0 0 12px;letter-spacing:-.035em}
+.intro{color:#b8c9db;line-height:1.75;font-size:14px;margin:0 0 23px}
+.site{border:1px solid #48617d;border-radius:14px;padding:20px;background:linear-gradient(110deg,#1c3143,#131d28)}
+.site h2{font-size:20px;margin:0 0 8px}.site p{font-size:13px;color:#c2d0dc;line-height:1.7;margin:0 0 14px}
+.action{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border:1px solid #7caee0;border-radius:8px;padding:12px 20px;background:#386a9b;color:#fff;font-weight:700;font-size:14px;cursor:pointer}
+.action:hover{background:#477faf}.subtle{display:inline-block;padding:10px 14px;font-size:12px;color:#b1c7dd}
+h3{font-size:18px;margin:32px 0 12px}
+#drop{display:block;border:2px dashed #50657c;border-radius:13px;background:#172331;padding:22px;text-align:center;cursor:pointer;min-height:116px}
+#drop.drag{background:#253e59;border-color:#a7d2f8}#drop strong{display:block;margin-bottom:7px;font-size:16px}
+#drop span{color:#9bafc2;font-size:12px;line-height:1.7}
+#picker{display:none}
+#status{margin:11px 0 0;color:#a7c4da;font-size:13px;line-height:1.6;min-height:22px}
+#status.error{color:#ffb0a8}
+#output{display:none;margin-top:14px;border:1px solid #35536b;background:#142232;border-radius:10px;padding:17px}
+#output h4{margin:0 0 10px;font-size:15px}
+.files{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.download{display:block;padding:14px;border:1px solid #55748e;background:#223b53;border-radius:7px;color:#e8f5ff;font-size:13px;overflow-wrap:anywhere}
+.download:hover{background:#2d4f6d}.download small{display:block;color:#b9d1e6;margin-top:5px}
+#help{font-size:13px;line-height:1.8;color:#b9cad8;margin:13px 0 0}
+#preview{width:100%;margin-top:14px;max-width:460px}
+.compare{display:grid;gap:9px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.compare a{border:1px solid #34495e;border-radius:9px;padding:15px;background:#151f2b;line-height:1.65}
+.compare strong{display:block;font-size:14px}.compare span{color:#9eafc2;font-size:12px}
+footer{margin-top:28px;padding-top:18px;border-top:1px solid #293c4b;color:#8ea5b8;font-size:12px;line-height:1.8}
+@media(max-width:540px){header{padding:16px}main{padding:22px 13px}.site{padding:16px}.action{width:100%}.subtle{width:100%;text-align:center}}
+</style></head><body>
+<header><strong>ADOFAI / 웹 레벨 편집기</strong><small>기존 미완성 데모를 권장하지 않습니다. 실제 개발자가 운영하는 에디터로 연결합니다.</small></header>
+<main>
+<h1>제대로 된 웹 에디터에서 작업하기</h1>
+<p class="intro">이 페이지는 다른 사람의 에디터를 베낀 복제품이 아닙니다. 이미 구현된 <b>AWE</b>로 연결하고, ZIP 안의 차트·음악을 모바일에서 선택할 수 있게 준비하는 도구입니다.</p>
+<section class="site">
+<h2>AWE · ADOFAI Web Editor</h2>
+<p>실제 ADOFAI 맵을 Three.js로 렌더링하고, 이벤트 편집·카메라 이동·미리 재생을 지원하는 커뮤니티 웹 에디터입니다. PC 게임 원본 그 자체는 아닙니다. 제작: Ssimille 및 기여자들.</p>
+<a class="action" href="https://awe.haeengin.com/" target="_blank" rel="noopener noreferrer">AWE 에디터 열기 ↗</a>
+<a class="subtle" href="https://github.com/HaeengIn/Adofai-Web-Editor" target="_blank" rel="noopener noreferrer">개발자 소스 보기</a>
+</section>
+<h3>ZIP 파일로 작업하려면</h3>
+<label id="drop" for="picker"><strong>여기를 눌러 .zip 파일 선택</strong><span>ADOFAI ZIP을 선택하면 안의 .adofai 차트와 음악을 분리합니다.<br>파일은 브라우저 안에서만 처리되며 서버에 전송하지 않습니다.</span></label>
+<input id="picker" type="file" accept=".zip,application/zip,.adofai" />
+<div id="status" role="status" aria-live="polite">준비됨 · 기존 ZIP은 그대로 유지됩니다.</div>
+<section id="output" aria-label="추출된 차트와 음원">
+<h4 id="outputTitle">파일 준비 완료</h4>
+<div class="files"><a id="chartDownload" class="download">차트 파일</a><a id="songDownload" class="download">음악 파일</a></div>
+<audio id="preview" controls preload="metadata"></audio>
+<p id="help">차트와 음악을 각각 저장한 다음 <b>AWE 에디터 열기 → Level Settings → Load Level</b>에서 두 파일을 <b>동시에 선택</b>하세요. AWE는 ZIP 직접 가져오기를 지원한다고 확인되지 않았습니다.</p>
+</section>
+<h3>다른 사이트</h3>
+<div class="compare">
+<a href="https://khm041213.github.io/Adofai-Web-Editor/" target="_blank" rel="noopener noreferrer"><strong>Adofai Web Editor · 원 프로젝트</strong><span>AWE의 기반이 된 공개 웹 편집기</span></a>
+<a href="https://web-adofai.impl1113.dev/levels" target="_blank" rel="noopener noreferrer"><strong>Web ADOFAI · 레벨 탐색</strong><span>에디터가 아닌 커뮤니티 레벨 목록 및 검색</span></a>
+</div>
+<footer>이 도구는 AWE 개발자의 소스 코드나 원본 게임 파일을 복제·재배포하지 않습니다. 커뮤니티 에디터의 소스는 공개되어 있지만 별도 재사용 라이선스는 확인되지 않았습니다. ZIP 처리에는 JSZip(MIT)을 사용합니다.</footer>
+</main>
+<script src="/jszip.min.js"></script>
+<script>
+(()=>{'use strict';
+const $=id=>document.getElementById(id);
+let urls=[];
+const say=(msg,error=false)=>{const el=$('status');el.textContent=msg;el.classList.toggle('error',error)};
+function clear(){urls.forEach(URL.revokeObjectURL);urls=[];$('output').style.display='none';$('preview').pause();$('preview').removeAttribute('src');}
+function makeLink(anchor,blob,name,label){
+ const url=URL.createObjectURL(blob);urls.push(url);
+ anchor.href=url;anchor.download=name;anchor.innerHTML=label+'<small>'+name+' · '+(blob.size/1024).toFixed(1)+' KB · 눌러서 저장</small>';
+ anchor.style.display='block';
+}
+const ext=n=>n.toLowerCase().split('.').pop();
+async function load(file){
+ if(!file)return;clear();
+ try{
+ if(!window.JSZip)throw Error('ZIP 처리 라이브러리가 로드되지 않았습니다.');
+ if(file.size>250*1024*1024)throw Error('250MB를 넘는 ZIP은 아직 지원하지 않습니다.');
+ if(ext(file.name)==='adofai'){
+   const s=await file.text();const chart=JSON.parse(s.replace(/^\uFEFF/,''));
+   if(!chart.pathData&&!Array.isArray(chart.angleData))throw Error('올바른 ADOFAI 차트가 아닙니다.');
+   makeLink($('chartDownload'),file,file.name,'차트 .adofai');
+   $('songDownload').style.display='none';$('preview').style.display='none';
+   $('outputTitle').textContent='차트 확인 완료';$('output').style.display='block';
+   say('차트 파일을 확인했습니다. 음악 파일은 AWE에서 함께 선택해야 합니다.');
+   return;
+ }
+ if(ext(file.name)!=='zip')throw Error('.zip 또는 .adofai 파일만 지원합니다.');
+ say('ZIP의 차트와 음악을 읽고 있습니다…');
+ const archive=await JSZip.loadAsync(file,{checkCRC32:true});
+ const list=Object.values(archive.files).filter(f=>!f.dir);
+ const charts=list.filter(f=>/\.adofai$/i.test(f.name)&&!f.name.includes('__MACOSX/'));
+ if(!charts.length)throw Error('ZIP 안에 .adofai 차트가 없습니다.');
+ charts.sort((a,b)=>(/backup|autosave|old|백업/i.test(a.name)?100:0)-(/backup|autosave|old|백업/i.test(b.name)?100:0)||a.name.length-b.name.length);
+ const main=charts[0];
+ if(main._data?.uncompressedSize>15*1024*1024)throw Error('차트가 15MB를 초과합니다.');
+ const bytes=await main.async('uint8array');
+ const raw=new TextDecoder('utf-8').decode(bytes).replace(/^\uFEFF/,'');
+ let chart;
+ try{chart=JSON.parse(raw)}catch(e){throw Error('차트 JSON이 올바르지 않습니다: '+e.message)}
+ if(!chart.pathData&&!Array.isArray(chart.angleData))throw Error('ADOFAI pathData/angleData가 없습니다.');
+ const base=main.name.slice(0,main.name.lastIndexOf('/')+1);
+ const path=String(chart.settings?.songFilename||'').replace(/\\/g,'/');
+ const candidates=[base+path,path,base+'audio.ogg'];
+ let sound=list.find(f=>candidates.includes(f.name));
+ if(!sound&&path)sound=list.find(f=>f.name.split('/').pop().toLowerCase()===path.split('/').pop().toLowerCase());
+ if(!sound)sound=list.find(f=>/\.(ogg|mp3|wav|flac|m4a)$/i.test(f.name));
+ const chartName=main.name.split('/').pop();
+ makeLink($('chartDownload'),new Blob([bytes],{type:'application/json'}),chartName,'① 차트 다운로드');
+ if(sound){
+   if(sound._data?.uncompressedSize>100*1024*1024)throw Error('음악 파일 크기 100MB 초과');
+   const song=await sound.async('blob');
+   const songName=sound.name.split('/').pop();
+   makeLink($('songDownload'),song,songName,'② 음악 다운로드');
+   $('preview').src=urls[urls.length-1];$('preview').style.display='block';
+ }else{$('songDownload').style.display='none';$('preview').style.display='none'}
+ $('outputTitle').textContent='준비 완료 · '+chartName;
+ $('output').style.display='block';
+ say('차트 '+(Array.isArray(chart.angleData)?chart.angleData.length+1:'?')+'타일 / 이벤트 '+(chart.actions?.length||0)+'개 · 음악 '+(sound?sound.name.split('/').pop():'없음')+' · 서버 전송 없음');
+ }catch(e){clear();say('불러오기 실패: '+e.message,true)}
+}
+$('picker').addEventListener('change',e=>load(e.target.files?.[0]));
+const drop=$('drop');
+for(const name of ['dragenter','dragover'])drop.addEventListener(name,e=>{e.preventDefault();drop.classList.add('drag')});
+for(const name of ['dragleave','drop'])drop.addEventListener(name,e=>{e.preventDefault();drop.classList.remove('drag')});
+drop.addEventListener('drop',e=>load(e.dataTransfer.files?.[0]));
+})();
+</script></body></html>
