@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b111b">
+<title>ADOFAI PC scnEditor — 원본 씬 포트 작업대</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Noto Sans KR",sans-serif;background:#0b111b;color:#e5eefa}
+*{box-sizing:border-box}body{margin:0}.top{padding:16px 20px;border-bottom:1px solid #263648;background:#101a27}
+.top h1{font-size:18px;margin:0 0 7px}.top p{font-size:13px;margin:0;color:#a7b6ca;line-height:1.65}
+.info{padding:12px 20px;background:#1b2735;border-bottom:1px solid #36475a;font-size:13px;color:#c6d3e2}
+.layout{min-height:calc(100vh - 178px);display:grid;grid-template-columns:minmax(235px,290px) minmax(350px,1fr) minmax(235px,300px)}
+section{min-width:0;border-right:1px solid #2b384b}.panel-head{height:53px;display:flex;align-items:center;padding:11px 14px;gap:9px;border-bottom:1px solid #2b384b;font-weight:700;font-size:13px}
+#search{background:#0b1420;border:1px solid #3c5169;border-radius:5px;padding:9px 11px;color:#eaf1fb;min-width:0;width:100%;font-size:12px}
+#tree{overflow:auto;max-height:calc(100vh - 232px);padding:8px 4px}.node{display:block;width:100%;text-align:left;background:none;border:0;border-radius:4px;color:#bacbdc;cursor:pointer;padding:5px 6px;font-size:12px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}.node:hover{background:#23354b;color:#fff}.node.selected{background:#335b85;color:#fff}
+.nest{color:#617e98;font-size:11px}.viewport-wrap{padding:14px;background:radial-gradient(ellipse at center,#172739,#0c131d);min-height:490px}
+.controls{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;font-size:12px;color:#c5d4e4;flex-wrap:wrap}
+select,button.action{background:#142437;color:#d6e5f7;border:1px solid #3a5672;border-radius:5px;padding:7px;font-size:12px}
+#viewport{position:relative;width:100%;aspect-ratio:16/9;max-height:calc(100vh - 270px);min-height:290px;overflow:hidden;border:1px solid #40617e;border-radius:5px;background:linear-gradient(0deg,rgba(20,35,52,.8),rgba(20,35,52,.8)),repeating-linear-gradient(0deg,transparent,transparent 39px,#26384a 40px),repeating-linear-gradient(90deg,transparent,transparent 39px,#26384a 40px)}
+#viewport:before{content:"ORIGINAL PC SCENE — UI RECT DATA";font-size:10px;position:absolute;top:9px;left:9px;color:#698aa9;pointer-events:none;z-index:20}
+.rect{position:absolute;border:1px solid #7697b35b;background:#638caf13;min-width:2px;min-height:2px;overflow:hidden;cursor:pointer;box-sizing:border-box;font-size:9px;color:#91bada;white-space:nowrap;text-overflow:ellipsis;padding:2px}
+.rect:hover{background:#6b9ac840;border-color:#8fc7fa}.rect.selected{border:2px solid #fbbf5b;background:#fbbf5b26;color:#ffe9be;z-index:19}
+.hint{margin:12px 0;color:#829ab4;font-size:12px;line-height:1.6}
+#properties{padding:14px;overflow:auto;max-height:calc(100vh - 220px);font-size:12px}
+#properties h3{margin:9px 0;font-size:14px}.kv{display:grid;grid-template-columns:100px minmax(0,1fr);border-bottom:1px solid #24374b;padding:6px 0;gap:10px}
+.kv .key{color:#7fa3c7}.kv .value{overflow-wrap:anywhere}
+#methods{white-space:normal;color:#c1d0df;font-size:12px}.methods-list{max-height:220px;overflow:auto;padding:8px;border:1px solid #253c54;background:#0e1827;border-radius:4px}
+.method{padding:4px 0;font-family:ui-monospace,Consolas,monospace;border-bottom:1px solid #182d43}
+footer{padding:11px 20px;font-size:12px;color:#8ca4ba;border-top:1px solid #2b384b}
+@media(max-width:900px){.layout{display:flex;flex-direction:column}section{border-right:0;border-bottom:1px solid #2b384b}#tree{max-height:180px}#viewport{min-height:250px;max-height:none}#properties{max-height:none}}
+</style>
+</head>
+<body>
+<header class="top"><h1>ADOFAI 원본 PC 에디터 씬 — 웹 포트 작업대</h1>
+<p>여기 보이는 계층과 좌표는 업로드된 PC 게임의 <code>level5 (scnEditor)</code>에서 직접 파싱합니다. 원본 Windows Unity 에디터를 재실행하는 완성된 웹 포트가 아닙니다.</p></header>
+<div class="info" id="status">원본 씬을 검증하고 계층 구조를 읽는 중...</div>
+<main class="layout">
+<section><div class="panel-head"><input id="search" placeholder="원본 GameObject 이름 / 경로 검색" aria-label="오브젝트 검색"></div><div id="tree"></div></section>
+<section><div class="panel-head">실제 직렬화 RectTransform 기반 레이아웃</div>
+<div class="viewport-wrap">
+<div class="controls"><label>보기 <select id="view"><option value="major">최상위 UI / 패널</option><option value="selected">선택한 오브젝트 주변</option><option value="ui">주요 버튼 및 패널</option></select></label>
+<span>원본 Unity 좌표를 16:9 캔버스에 사상</span></div>
+<div id="viewport" aria-label="Original Unity scene hierarchy visualizer"></div>
+<p class="hint">색이 표시된 사각형은 원본 Unity 씬의 RectTransform입니다. 게임 텍스처·스프라이트·DLL은 웹에 업로드하지 않으며, 현재는 엔진 렌더링과 에디터 상호작용이 포함되지 않습니다.</p>
+</div></section>
+<section><div class="panel-head">원본 오브젝트 속성 · C# 메서드 인덱스</div>
+<div id="properties">GameObject를 선택하세요.</div>
+<div class="panel-head">Assembly-CSharp.dll: 원본 메서드 명칭</div>
+<div id="methods" style="padding:10px">원본 DLL 메서드 목록 확인 중...</div>
+</section>
+</main>
+<footer>출처: 사용자가 제공한 PC 게임 ZIP · Unity 6000.3.10f1 · 정적 씬 리더. 원본 바이너리와 게임 에셋은 서버나 공개 저장소에 저장하지 않습니다.</footer>
+<script>
+"use strict";
+const state={nodes:[],byId:new Map(),selected:null,methods:null,frameCache:new Map()};
+const $=id=>document.getElementById(id);
+const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const shortPath=s=>s.length>110?"…"+s.slice(-105):s;
+function selectNode(id){state.selected=state.byId.get(id);renderTree();renderProps();renderCanvas()}
+function displayFrame(node,stack=new Set()){
+ if(!node||!node.position||stack.has(node.id))return null;
+ if(state.frameCache.has(node.id))return state.frameCache.get(node.id);
+ stack.add(node.id);
+ const parent=state.byId.get(node.parentId);
+ const p=parent&&parent.position?displayFrame(parent,stack):{x:0,y:0,w:1280,h:720};
+ if(!p)return null;
+ const am=node.anchorMin||[.5,.5],ax=node.anchorMax||[.5,.5],piv=node.pivot||[.5,.5],size=node.size||[0,0],pos=node.position||[0,0];
+ const w=(ax[0]-am[0])*p.w+size[0],h=(ax[1]-am[1])*p.h+size[1];
+ const anchorX=am[0]+(ax[0]-am[0])*piv[0],anchorY=am[1]+(ax[1]-am[1])*piv[1];
+ const result={x:p.x+p.w*anchorX+pos[0]-w*piv[0],y:p.y+p.h*(1-anchorY)-pos[1]-h*(1-piv[1]),w,h};
+ state.frameCache.set(node.id,result);return result
+}
+function renderTree(){
+ const q=$("search").value.trim().toLowerCase();
+ const matches=state.nodes.filter(n=>!q||n.name.toLowerCase().includes(q)||n.path.toLowerCase().includes(q));
+ const MAX=350,selected=state.selected?.id;
+ $("tree").innerHTML=matches.slice(0,MAX).map(n=>'<button class="node'+(n.id===selected?' selected':'')+'" style="padding-left:'+Math.min(n.depth,9)*12+7+'px" data-id="'+n.id+'" title="'+escapeHtml(n.path)+'"><span class="nest">▸ </span>'+escapeHtml(n.name)+'</button>').join("")+(matches.length>MAX?'<p class="hint">검색하면 나머지 오브젝트도 볼 수 있습니다.</p>':"");
+ for(const btn of $("tree").querySelectorAll("button[data-id]"))btn.onclick=()=>selectNode(Number(btn.dataset.id));
+}
+function prop(label,val){return '<div class="kv"><span class="key">'+escapeHtml(label)+'</span><span class="value">'+escapeHtml(typeof val==="object"?JSON.stringify(val):String(val??"—"))+'</span></div>'}
+function renderProps(){
+ const n=state.selected;if(!n){$("properties").textContent="원본 GameObject를 선택하세요.";return}
+ $("properties").innerHTML='<h3>'+escapeHtml(n.name)+'</h3>'+
+ [['Unity path ID',n.id],['경로',n.path],['활성화',n.active],['레이어',n.layer],['Transform',n.type],['Unity position',n.position],['Size Delta',n.size],['Anchor Min',n.anchorMin],['Anchor Max',n.anchorMax],['Pivot',n.pivot]].map(x=>prop(...x)).join("");
+}
+function renderCanvas(){
+ const canvas=$("viewport");canvas.innerHTML="";
+ state.frameCache.clear();
+ const mode=$("view").value;
+ const selected=state.selected;
+ const bases=state.nodes.filter(n=>n.path.startsWith("levelEditorScene/")&&n.position&&n.active);
+ let pick;
+ if(mode==="major")pick=bases.filter(n=>n.depth<=2&&/panel|canvas|inspector|editor|file|settings|bottom|toolbar/i.test(n.name));
+ else if(mode==="ui")pick=bases.filter(n=>/button|inspector|panel|toolbar|events|settings/i.test(n.name)&&n.depth<=5);
+ else {const root=selected?.path||"levelEditorScene/";pick=bases.filter(n=>n.path===root||n.path.startsWith(root+"/")).slice(0,160);}
+ if(selected&&selected.position&&!pick.some(n=>n.id===selected.id))pick.push(selected);
+ pick=pick.slice(0,150).sort((a,b)=>a.depth-b.depth);
+ for(const n of pick){
+  const f=displayFrame(n);if(!f||!Number.isFinite(f.x)||!Number.isFinite(f.y))continue;
+  const rect={x:f.x/1280*100,y:f.y/720*100,w:f.w/1280*100,h:f.h/720*100};
+  if(rect.w<.5||rect.h<.5||rect.w>200||rect.h>200||rect.x>105||rect.y>105||rect.x+rect.w<0||rect.y+rect.h<0)continue;
+  const div=document.createElement("div");div.className="rect"+(n.id===selected?.id?" selected":"");
+  div.style.left=rect.x+"%";div.style.top=rect.y+"%";div.style.width=rect.w+"%";div.style.height=rect.h+"%";
+  div.title=n.path;div.textContent=n.name;div.onclick=()=>selectNode(n.id);canvas.append(div);
+ }
+}
+function renderMethods(){
+ const d=state.methods;
+ if(!d)return;
+ const groups=Object.entries(d.classMethods);
+ $("methods").innerHTML='<div class="hint">원본 Assembly SHA-256: '+escapeHtml(d.assemblySha256.slice(0,16))+'… · '+groups.map(([n,v])=>escapeHtml(n)+" "+v.length+"개").join(" / ")+'</div>'+
+ groups.map(([name,list])=>'<details '+(name==="scnEditor"?"open":"")+'><summary>'+escapeHtml(name)+' ('+list.length+')</summary><div class="methods-list">'+list.map(v=>'<div class="method">'+escapeHtml(v)+'</div>').join("")+'</div></details>').join("");
+}
+async function run(){
+ try{
+  const r=await fetch("/api/scene",{cache:"no-store"});
+  if(!r.ok)throw Error("원본 씬 API 응답 "+r.status+": "+(await r.text()).slice(0,250));
+  const s=await r.json();state.nodes=s.nodes;state.byId=new Map(s.nodes.map(n=>[n.id,n]));
+  $("status").textContent="원본 씬 해시 검증 성공 · 직렬화 "+s.serializedObjects.toLocaleString()+"개 · GameObject "+s.gameObjects.toLocaleString()+"개 · MonoBehaviour "+s.monoBehaviours.toLocaleString()+"개";
+  state.selected=s.nodes.find(n=>n.name==="levelEditorScene")||s.nodes[0];renderTree();renderProps();renderCanvas();
+ }catch(e){$("status").textContent="원본 씬 읽기 실패: "+e.message}
+ try{
+  const r=await fetch("/api/scene?view=methods",{cache:"no-store"});if(!r.ok)throw Error("HTTP "+r.status);
+  state.methods=await r.json();renderMethods();
+ }catch(e){$("methods").textContent="원본 DLL 인덱스 읽기 실패: "+e.message}
+}
+$("search").addEventListener("input",renderTree);$("view").addEventListener("change",renderCanvas);
+run();
+</script>
+</body>
+</html>
