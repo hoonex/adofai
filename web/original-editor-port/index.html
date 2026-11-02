@@ -118,7 +118,7 @@ async function run(){
   if(!r.ok)throw Error("원본 씬 API 응답 "+r.status+": "+(await r.text()).slice(0,250));
   const s=await r.json();state.nodes=s.nodes;state.byId=new Map(s.nodes.map(n=>[n.id,n]));
   $("status").textContent="원본 씬 해시 검증 성공 · 직렬화 "+s.serializedObjects.toLocaleString()+"개 · GameObject "+s.gameObjects.toLocaleString()+"개 · MonoBehaviour "+s.monoBehaviours.toLocaleString()+"개";
-  state.selected=s.nodes.find(n=>n.name==="levelEditorScene")||s.nodes[0];renderTree();renderProps();renderCanvas();
+  state.selected=s.nodes.find(n=>n.name==="levelEditorScene")||s.nodes[0];renderTree();renderProps();renderCanvas();window.dispatchEvent(new Event('adofai:scene-loaded'));
  }catch(e){$("status").textContent="원본 씬 읽기 실패: "+e.message}
  try{
   const r=await fetch("/api/scene?view=methods",{cache:"no-store"});if(!r.ok)throw Error("HTTP "+r.status);
@@ -128,5 +128,6 @@ async function run(){
 $("search").addEventListener("input",renderTree);$("view").addEventListener("change",renderCanvas);
 run();
 </script>
+<script src="/chart-port.js"></script>
 </body>
 </html>
