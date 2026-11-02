@@ -10,6 +10,7 @@
 const ns='http://www.w3.org/2000/svg',U=54,PI=Math.PI,TAU=2*PI;
 const el=id=>document.getElementById(id);
 const S={api:null,svg:null,planets:null,writing:false,twirlFloors:[]};
+const visualSettings=(window.ADOFAIVisualSettings ||= {keepVisible:true});
 const norm=a=>((a%TAU)+TAU)%TAU;
 const modDelta=(a,b)=>norm(b-a);
 const V=(x,y)=>({x,y});
@@ -194,11 +195,18 @@ function updateBalls(){
  const angle=(incomingDeg+(reverse?-travelDeg:travelDeg)*phase)*PI/180;
  let radius=100;
  for(const e of S.radiusEvents||[]){if(e.floor>idx)break;radius=Number(e.scale);}
- const distance=U*Math.max(0,Math.min(5,radius/100));
+ const originalDistance=U*Math.max(0,Math.min(5,radius/100));
+ const distance=visualSettings.keepVisible&&originalDistance<U*.1?U:originalDistance;
  const ox=x+Math.cos(angle)*distance,oy=y+Math.sin(angle)*distance;
  let scalePlanets=100;
  for(const e of S.planetEvents||[]){if(e.floor>idx)break;scalePlanets=Number(e.scale);}
- const visualScale=Math.max(0,Math.min(3,scalePlanets/100));
+ const originalScale=Math.max(0,Math.min(3,scalePlanets/100));
+ // On this real chart ScalePlanets intentionally becomes 0 at floor 123 and
+ // floor 235. Default editor accessibility mode keeps both balls visible,
+ // while "original effects" mode still respects intentional invisibility.
+ const visualScale=visualSettings.keepVisible&&originalScale<.08?1:originalScale;
+ parts.fire.setAttribute('data-original-scale',String(originalScale));
+ parts.ice.setAttribute('data-original-scale',String(originalScale));
  parts.fire.setAttribute('data-scale',String(visualScale));
  parts.ice.setAttribute('data-scale',String(visualScale));
  const fixedFire=idx%2===0;
