@@ -169,6 +169,12 @@ function draw(){
  }
  updateBalls();
 }
+function lastNumericEventAt(events,floor,defaultValue){
+ if(!events?.length)return defaultValue;
+ let lo=0,hi=events.length;
+ while(lo<hi){const mid=(lo+hi)>>>1;if(events[mid].floor<=floor)lo=mid+1;else hi=mid;}
+ return lo?Number(events[lo-1].scale):defaultValue;
+}
 function updateBalls(){
  const state=S.api?.state,parts=S.planets;if(!state?.doc||!parts)return;
  const pl=window.ADOFAIArchivePlayer;
@@ -196,13 +202,11 @@ function updateBalls(){
   if(finish>start+0.00001)phase=Math.max(0,Math.min(1,(seconds-start)/(finish-start)));
  }
  const angle=(incomingDeg+(reverse?-travelDeg:travelDeg)*phase)*PI/180;
- let radius=100;
- for(const e of S.radiusEvents||[]){if(e.floor>idx)break;radius=Number(e.scale);}
+ const radius=lastNumericEventAt(S.radiusEvents,idx,100);
  const originalDistance=U*Math.max(0,Math.min(5,radius/100));
  const distance=visualSettings.keepVisible&&originalDistance<U*.1?U:originalDistance;
  const ox=x+Math.cos(angle)*distance,oy=y+Math.sin(angle)*distance;
- let scalePlanets=100;
- for(const e of S.planetEvents||[]){if(e.floor>idx)break;scalePlanets=Number(e.scale);}
+ const scalePlanets=lastNumericEventAt(S.planetEvents,idx,100);
  const originalScale=Math.max(0,Math.min(3,scalePlanets/100));
  // On this real chart ScalePlanets intentionally becomes 0 at floor 123 and
  // floor 235. Default editor accessibility mode keeps both balls visible,
