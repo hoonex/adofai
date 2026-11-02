@@ -6,7 +6,7 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const api=()=>window.ADOFAIChartPort;
-const ctx={zip:null,entry:'',zipName:'',songUrl:'',imageUrl:'',chartName:'',timings:[],bpmAt:[],speedChanges:[],pauses:[],twirlAt:[],baseBpm:120,playerIndex:0,judged:new Set(),playing:false,frame:0,lastActive:-1,good:0,miss:0,estimate:[],inputFile:null};
+const ctx={zip:null,entry:'',zipName:'',songUrl:'',imageUrl:'',chartName:'',timings:[],bpmAt:[],speedChanges:[],pauses:[],twirlAt:[],travelDegrees:[],rotationStart:[],entryAngleDegrees:[],baseBpm:120,playerIndex:0,judged:new Set(),playing:false,frame:0,lastActive:-1,good:0,miss:0,estimate:[],inputFile:null};
 const safe = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const norm=a=>((a%360)+360)%360;
 function msg(text,isError=false){const el=$('archiveStatus');if(el){el.textContent=text;el.dataset.error=isError?'true':'false'} const chart=$('chartStatus');if(chart)chart.textContent=text;}
@@ -97,7 +97,7 @@ function updateTiming(){
  }
  const baseBpm=Math.max(1,Number(doc.settings?.bpm)||120);
  let bpm=baseBpm,t=(Number(doc.settings?.offset)||0)/1000,previous=0,twirl=false;
- const timings=[t],bpmAt=[],twirlAt=[],speedChanges=[],pauses=[];
+ const timings=[t],bpmAt=[],twirlAt=[],speedChanges=[],pauses=[],travelDegrees=[],rotationStart=[],entryAngleDegrees=[];
  const warnings=new Set();
  for(let floor=0;floor<=angles.length;floor++){
    const events=groups.get(floor)||[];
@@ -125,15 +125,24 @@ function updateTiming(){
    }
    bpmAt[floor]=bpm;twirlAt[floor]=twirl;
    if(floor>=angles.length)break;
+   // Incoming direction (screen y-down degrees) is shared with the planet renderer.
+   // Previous is the last non-midspin path angle. At floor 0, treat the path
+   // direction as an initial 180-degree approach.
+   entryAngleDegrees[floor]=180-(floor===0&&angles[0]!==999?angles[0]:previous);
+   // Pauses and Holds keep the orbiting planet stationary; they must not be
+   // stretched across the following rotation (which would look like a BPM drop).
+   rotationStart[floor]=t;
    const next=angles[floor];let travel=180;
    if(next===999){travel=0;}
    else if(floor>0){travel=norm(180+previous-next);if(travel<.001)travel=360;}
    if(next!==999)previous=next;
-   if(twirl)travel=(360-travel)%360||360;
+   if(twirl&&next!==999)travel=(360-travel)%360||360;
+   travelDegrees[floor]=travel;
    t+=travel/180*60/bpm;
    timings.push(t);
  }
  ctx.timings=timings;ctx.bpmAt=bpmAt;ctx.twirlAt=twirlAt;
+ ctx.travelDegrees=travelDegrees;ctx.rotationStart=rotationStart;ctx.entryAngleDegrees=entryAngleDegrees;
  ctx.speedChanges=speedChanges;ctx.pauses=pauses;ctx.baseBpm=baseBpm;
  ctx.estimate=[...warnings];
  const warn=ctx.estimate.length?' · 일부 근사: '+ctx.estimate.join(', '):'';
