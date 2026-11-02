@@ -42,8 +42,10 @@ function curvatureFactor(delta){
  if(d<120)return .15*Math.pow(1-(d-90)/30,.5);
  return 0;
 }
-function meshPolygon(prev,curr,next,half=U/2){
- // Reconstruct the *outer polygon* produced by PC FloorMesh.GetPositions.
+function meshPolygon(prev,curr,next,width=U*0.37,length=U/2){
+ // Reconstruct the *outer polygon* based on PC FloorMesh.GetPositions.
+ // Separate the 0.5-tile longitudinal join from the slimmer 0.37-tile width,
+ // preserving end-cap connections while reducing the visually oversized track.
  // Work in y-up Unity coordinates, reflecting the browser's y-down positions.
  const origin=V(0,0);
  function direction(p,fallback){
@@ -58,15 +60,15 @@ function meshPolygon(prev,curr,next,half=U/2){
  if(modDelta(a,b)>=PI){const t=a;a=b;b=t;}
  const short=Math.min(modDelta(a,b),modDelta(b,a));
  const zero=short<.0001,straight=Math.abs(short-PI)<.0001;
- let length=half,base=origin;
- if(zero){base=add(base,fromAngle(b,-length/12));length*=2/3;}
- const p0=add(base,fromAngle(a,length));
- const p1=add(base,fromAngle(b,length));
- const sm=add(p0,fromAngle(a+PI/2,half));
- const sl=add(p0,fromAngle(a-PI/2,half));
- const em=add(p1,fromAngle(b+PI/2,half));
- const ee=add(p1,fromAngle(b-PI/2,half));
- const near=.01*half;
+ let segment=length,base=origin;
+ if(zero){base=add(base,fromAngle(b,-segment/12));segment*=2/3;}
+ const p0=add(base,fromAngle(a,segment));
+ const p1=add(base,fromAngle(b,segment));
+ const sm=add(p0,fromAngle(a+PI/2,width));
+ const sl=add(p0,fromAngle(a-PI/2,width));
+ const em=add(p1,fromAngle(b+PI/2,width));
+ const ee=add(p1,fromAngle(b-PI/2,width));
+ const near=.01*width;
  const sm2=add(sm,fromAngle(a+PI,near));
  const sl2=add(sl,fromAngle(a-PI,near));
  const em2=add(em,fromAngle(b+PI,near));
@@ -77,7 +79,7 @@ function meshPolygon(prev,curr,next,half=U/2){
  const delta=modDelta(a,b);
  const rightCenter=lerp(cw,base,factor);
  const leftCenter=lerp(ccw,base,factor);
- const radius=half*factor;
+ const radius=width*factor;
  const pt0=delta<2*PI/3 ?
     arc(rightCenter,norm(b+PI/2),norm(a-PI/2),radius,Math.abs(radius)>1?13:2):
     [cw];
@@ -99,7 +101,7 @@ function meshPolygon(prev,curr,next,half=U/2){
  // Guard against accidental degeneracy from double/midspin floors.
  const points=outline.filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)&&Math.abs(p.x)<2*U&&Math.abs(p.y)<2*U);
  if(points.length<3){
-  const h=half;return 'M '+(curr.x*U-h)+' '+(curr.y*U-h)+' h '+(2*h)+' v '+(2*h)+' h '+(-2*h)+' Z';
+  const h=width;return 'M '+(curr.x*U-h)+' '+(curr.y*U-h)+' h '+(2*h)+' v '+(2*h)+' h '+(-2*h)+' Z';
  }
  return 'M '+points.map(p=>(curr.x*U+p.x).toFixed(2)+' '+(curr.y*U-p.y).toFixed(2)).join(' L ')+' Z';
 }
@@ -165,22 +167,31 @@ function draw(){
 }
 function updateBalls(){
  const state=S.api?.state,parts=S.planets;if(!state?.doc||!parts)return;
- const pl=window.ADOFAIArchivePlayer,playing=!!pl?.state?.playing,idx=Math.max(0,Math.min(state.positions.length-1,playing?pl.state.playerIndex:state.selected));
- const p=state.positions[idx],prev=state.positions[idx-1],next=state.positions[idx+1];if(!p)return;
- const x=p.x*U,y=p.y*U;
- let a=prev?Math.atan2(prev.y-p.y,prev.x-p.x):NaN,b=next?Math.atan2(next.y-p.y,next.x-p.x):NaN;
- if(!Number.isFinite(a))a=Number.isFinite(b)?b+PI:PI;
- if(!Number.isFinite(b))b=a+PI;
+ const pl=window.ADOFAIArchivePlayer;
+ const playing=!!pl?.state?.playing;
+ const idx=Math.max(0,Math.min(state.positions.length-1,playing?pl.state.playerIndex:state.selected));
+ const pos=state.positions[idx];if(!pos)return;
+ const x=pos.x*U,y=pos.y*U;
+ const timing=pl?.state;
+ // Use the SAME travel and Twirl direction as the timeline. Previously, on
+ // a 90-degree turn the SVG could rotate 270 degrees during a 90-degree beat,
+ // falsely making an unchanged BPM appear 3x faster.
+ let incomingDeg=timing?.entryAngleDegrees?.[idx];
+ if(!Number.isFinite(incomingDeg)){
+  const previous=state.angles?.[idx-1]??state.angles?.[0]??0;
+  incomingDeg=180-previous;
+ }
+ const travelDeg=timing?.travelDegrees?.[idx]??180;
+ const reverse=!!timing?.twirlAt?.[idx];
  let phase=0;
  if(playing){
-  const t=pl.state.timings,seconds=el('chartAudio')?.currentTime||0,
-   t0=t?.[idx]??seconds,t1=t?.[idx+1]??(t0+.4);
-  phase=Math.max(0,Math.min(1,(seconds-t0)/Math.max(.01,t1-t0)));
+  const seconds=el('chartAudio')?.currentTime||0;
+  const start=timing?.rotationStart?.[idx]??timing?.timings?.[idx]??seconds;
+  const finish=timing?.timings?.[idx+1]??start;
+  // Pause and Hold events: stationary until the actual rotation begins.
+  if(finish>start+0.00001)phase=Math.max(0,Math.min(1,(seconds-start)/(finish-start)));
  }
- let twisted=false;for(const floor of S.twirlFloors){if(floor>idx)break;twisted=!twisted;}
- // Approximate orbit phase until original Unity judgement/physics is ported.
- let amount=norm(twisted?b-a:a-b);if(amount<.005)amount=PI;
- const angle=a+(twisted?amount:-amount)*phase;
+ const angle=(incomingDeg+(reverse?-travelDeg:travelDeg)*phase)*PI/180;
  let radius=100;
  for(const e of S.radiusEvents||[]){if(e.floor>idx)break;radius=Number(e.scale);}
  const distance=U*Math.max(0,Math.min(5,radius/100));
