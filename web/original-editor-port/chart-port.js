@@ -71,7 +71,7 @@
   }
   function getAngles() {
     if (!port.doc) return [];
-    return Array.isArray(port.doc.angleData) ? anglesFromData(port.doc.angleData) : anglesFromPath(port.doc.pathData);
+    return typeof port.doc.pathData === 'string' ? anglesFromPath(port.doc.pathData) : anglesFromData(port.doc.angleData);
   }
   function rebuildPositions() {
     port.angles = getAngles();
@@ -89,7 +89,8 @@
     el.textContent = msg; el.dataset.kind = kind;
   }
   function originalId(name) {
-    const found = Array.from(port.sceneNodes.values()).find(n => n.name === name && n.path.startsWith('levelEditorScene/'));
+    const list=Array.from(port.sceneNodes.values()).filter(n=>n.name===name && n.path.startsWith('levelEditorScene/'));
+    const found=list.find(n=>n.path.includes('/fileActionsPanel/buttons/'))||list[0];
     return found?.id ?? null;
   }
   function linkButton(id,originalName,label) {
@@ -146,7 +147,7 @@
     for (const listName of ['actions','decorations']) {
       const list=port.doc[listName];
       if (!Array.isArray(list)) continue;
-      port.doc[listName] = list.filter(ev=> !deleteEqual || Number(ev.floor)!==index).map(ev=>{
+      port.doc[listName] = list.filter(ev=> !deleteEqual || Number(ev?.floor)!==index).map(ev=>{
         if (!ev || typeof ev!=='object' || typeof ev.floor!=='number') return ev;
         if (ev.floor >= index + (deleteEqual ? 1 : 0)) return {...ev,floor:ev.floor+delta};
         return ev;
@@ -183,7 +184,7 @@
     try {
       const data = parseChart(await file.text());
       // Verify before replacing loaded document.
-      const angles=Array.isArray(data.angleData)?anglesFromData(data.angleData):anglesFromPath(data.pathData);
+      const angles=typeof data.pathData==='string'?anglesFromPath(data.pathData):anglesFromData(data.angleData);
       if(angles.length>50000)throw Error('50,000개 초과 타일은 현재 브라우저 UI에서 열 수 없습니다.');
       port.doc=data;port.filename=file.name;port.selected=0;port.dirty=false;port.undo=[];port.redo=[];
       rebuildPositions();render();status(file.name+' · '+(angles.length+1)+'개 타일 불러오기 완료');
@@ -304,7 +305,7 @@
     if(!port.doc)return;
     let data;
     try{data=parseChart($('chartRawJson').value);
-      if(Array.isArray(data.angleData))anglesFromData(data.angleData);else anglesFromPath(data.pathData);
+      if(typeof data.pathData==='string')anglesFromPath(data.pathData);else anglesFromData(data.angleData);
     }catch(e){status('전체 JSON 오류: '+e.message,'error');return;}
     applyMutation(()=>{port.doc=data;port.selected=clamp(port.selected,0,(data.angleData?.length??data.pathData.length))},'전체 JSON 수정');
   }
