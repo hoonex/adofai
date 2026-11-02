@@ -9,7 +9,7 @@
 'use strict';
 const ns='http://www.w3.org/2000/svg',U=54,PI=Math.PI,TAU=2*PI;
 const el=id=>document.getElementById(id);
-const S={api:null,svg:null,planets:null,writing:false,twirlFloors:[]};
+const S={api:null,svg:null,planets:null,writing:false,twirlFloors:[],rangeStart:0,rangeEnd:0};
 const visualSettings=(window.ADOFAIVisualSettings ||= {keepVisible:true});
 const norm=a=>((a%TAU)+TAU)%TAU;
 const modDelta=(a,b)=>norm(b-a);
@@ -126,7 +126,10 @@ function draw(){
  S.planetEvents=(s.doc.actions||[]).filter(e=>e?.eventType==='ScalePlanets'&&Number.isInteger(e.floor)&&Number.isFinite(Number(e.scale))).sort((a,b)=>a.floor-b.floor);
  const colorEvents=(s.doc.actions||[]).filter(e=>e?.eventType==='ColorTrack'&&Number.isInteger(e.floor)).sort((a,b)=>a.floor-b.floor);
  let colorIndex=0,activeColor=s.doc.settings?.trackColor||'ffffff',activeType=s.doc.settings?.trackColorType||'Single';
- const start=ps.length>6500?Math.max(0,selected-2300):0,end=ps.length>6500?Math.min(ps.length,selected+2300):ps.length;
+ const focus=(window.ADOFAIArchivePlayer?.state?.playing?window.ADOFAIArchivePlayer.state.playerIndex:selected);
+ const start=ps.length>6500?Math.max(0,focus-900):0;
+ const end=ps.length>6500?Math.min(ps.length,focus+901):ps.length;
+ S.rangeStart=start;S.rangeEnd=end;
  // Beveled outlines are computed from actual entry/exit floor angles,
  // not identical rounded squares and not a thick polyline underneath.
  let html=defs+'<g id="adoFloorMeshes">';
@@ -215,7 +218,16 @@ function updateBalls(){
  parts.ice.setAttribute('transform','translate('+ix.toFixed(2)+' '+iy.toFixed(2)+') scale('+visualScale.toFixed(3)+')');
  for(const [key,value] of Object.entries({x1:fx,y1:fy,x2:ix,y2:iy}))parts.line.setAttribute(key,value.toFixed(2));
 }
-function loop(){updateBalls();requestAnimationFrame(loop);}
+function loop(){
+ const pl=window.ADOFAIArchivePlayer?.state;
+ if(pl?.playing&&S.api?.state.positions.length>6500&&
+    (pl.playerIndex<S.rangeStart+150||pl.playerIndex>S.rangeEnd-151)){
+   // Draw a new nearby window occasionally as a long level plays, rather
+   // than allocating all 14k SVG floors and decorations at once.
+   draw();
+ }
+ updateBalls();requestAnimationFrame(loop);
+}
 function boot(){
  S.api=window.ADOFAIChartPort;S.svg=el('chartSvg');if(!S.api||!S.svg)return;
  const css=document.createElement('style');
