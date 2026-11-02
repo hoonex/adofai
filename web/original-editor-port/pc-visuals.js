@@ -221,7 +221,7 @@ function updateBalls(){
 function loop(){
  const pl=window.ADOFAIArchivePlayer?.state;
  if(pl?.playing&&S.api?.state.positions.length>6500&&
-    (pl.playerIndex<S.rangeStart+150||pl.playerIndex>S.rangeEnd-151)){
+    ((S.rangeStart>0&&pl.playerIndex<S.rangeStart+100)||(S.rangeEnd<S.api.state.positions.length&&pl.playerIndex>=S.rangeEnd-100))){
    // Draw a new nearby window occasionally as a long level plays, rather
    // than allocating all 14k SVG floors and decorations at once.
    draw();
