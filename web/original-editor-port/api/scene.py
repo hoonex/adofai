@@ -178,7 +178,9 @@ def method_index():
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
-            if self.path.split("?")[0].endswith("/methods"):
+            from urllib.parse import urlsplit, parse_qs
+            query = parse_qs(urlsplit(self.path).query)
+            if query.get("view", [""])[0] == "methods":
                 data = method_index()
             else:
                 data = scene_layout()
