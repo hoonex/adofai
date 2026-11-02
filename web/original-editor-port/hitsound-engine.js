@@ -150,7 +150,10 @@ function sync(doc){
   ENGINE.eventType.push(name);
   ENGINE.eventVolume.push(volume);
  }
- if($('hitsoundType'))$('hitsoundType').textContent=ENGINE.preset;
+ // Precompute PCM on chart load rather than blocking the first rhythm tap.
+ // AudioContext may remain suspended until the first trusted input gesture.
+ initContext();
+  if($('hitsoundType'))$('hitsoundType').textContent=ENGINE.preset;
  if($('hitsoundVol'))$('hitsoundVol').textContent=fmt(ENGINE.volume)+'%';
  updateCurrent();
  const song=$('chartAudio');
