@@ -123,7 +123,7 @@ function updateTiming(){
 }
 function currentIndex(time){let lo=0,hi=ctx.timings.length;while(lo<hi){const mid=(lo+hi)>>1;if(ctx.timings[mid]<=time)lo=mid+1;else hi=mid}return Math.max(0,lo-1)}
 function updateLive(){if(!ctx.playing)return;const time=$('chartAudio').currentTime;const floor=currentIndex(time);ctx.playerIndex=floor;
- if(floor!==ctx.lastActive){const old=$('chartSvg').querySelector('.chart-floor.live');if(old)old.classList.remove('live');const cur=$('chartSvg').querySelector('[data-floor="'+floor+'"]');if(cur)cur.classList.add('live');ctx.lastActive=floor;}
+ if(floor!==ctx.lastActive){const old=$('chartSvg').querySelector('.chart-floor.live');if(old)old.classList.remove('live');const cur=$('chartSvg').querySelector('[data-floor="'+floor+'"]');if(cur)cur.classList.add('live');ctx.lastActive=floor;window.ADOFAIChartPort?.camera?.followFloor(floor);}
  $('chartPlayProgress').textContent='진행 '+floor+'/'+Math.max(0,ctx.timings.length-1)+' · '+time.toFixed(2)+'s · 성공 '+ctx.good+' / 놓침 '+ctx.miss;
  if($('chartAudio').ended){stopPlay();return}ctx.frame=requestAnimationFrame(updateLive)
 }
@@ -167,7 +167,7 @@ function createUi(){const port=$('chartPort');if(!port)return;
  .chart-buttons button,.chart-tabs button,.chart-angle-bar button,.pc-transport button,.pc-load-song{border-radius:3px!important;background:#333e48!important;border:1px solid #56636d!important;color:#f2f3f6!important;font-weight:600;cursor:pointer}
  .chart-port button:hover:not(:disabled),.pc-transport button:hover{background:#4d5e6e!important}
  #chartWorkspace{padding:8px 0!important}.chart-stage,.chart-side{background:#1c252d!important;border-color:#49545f!important}.chart-stage-head{background:#273440!important}
- #chartSvg{background:radial-gradient(circle at 55% 46%,#1d2832,#0b1019)!important;position:relative;z-index:1;touch-action:pan-x pan-y}
+ #chartSvg{background:radial-gradient(circle at 55% 46%,#1d2832,#0b1019)!important;position:relative;z-index:1;touch-action:none!important}
  .chart-stage{position:relative}.pc-media{background:#1a212a;margin:0 -15px;border-bottom:1px solid #55606a}
  .pc-menu{display:flex;gap:22px;padding:9px 16px;border-bottom:1px solid #3d4853;font-size:11px;font-weight:700;color:#dee4ea;flex-wrap:wrap;align-items:center}.pc-menu small{margin-left:auto;color:#85949e;font-weight:400}
  .pc-transport{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;padding:10px 14px;gap:10px}.pc-transport-left,.pc-transport-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
