@@ -17,7 +17,7 @@ function jump(n,seek=false){
 function boot(){
  if(!A()||!R()||!document.querySelector('.pc-media')){setTimeout(boot,120);return;}
  const hud=document.createElement('div');hud.id='adoEventHud';
- hud.innerHTML='<div class="ado-live"><strong id="adoActiveBpm">BPM —</strong><b id="adoCurrentMult">×—</b><span id="adoTwirl">↷ 정회전</span><span id="adoCurrentFx">현재 효과 —</span><label>연습 재생 <select id="adoRate"><option value=".5">0.5×</option><option value=".75">0.75×</option><option value="1" selected>1.0×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2.0×</option></select></label><button id="adoPlaySelected">▶ 선택 타일부터 재생</button><label><input id="adoFlashPreview" type="checkbox" checked>플래시 미리보기</label><label><input id="adoShowFxMarkers" type="checkbox">FX 마커</label></div><div id="adoSpeedNav" class="ado-speed-nav">차트를 열면 배속 변경 지점이 표시됩니다.</div><div class="ado-summary"><button id="adoExpandEvents" aria-expanded="false">전체 이벤트 펼치기</button><span id="adoEventStatus">이벤트 파일을 읽고 있습니다.</span></div><div id="adoEventGroups" hidden></div>';
+ hud.innerHTML='<div class="ado-live"><strong id="adoActiveBpm">BPM —</strong><b id="adoCurrentMult">×—</b><span id="adoTwirl">↷ 정회전</span><span id="adoCurrentFx">현재 효과 —</span><label>연습 재생 <select id="adoRate"><option value=".5">0.5×</option><option value=".75">0.75×</option><option value="1" selected>1.0×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2.0×</option></select></label><button id="adoPlaySelected">▶ 선택 타일부터 재생</button><label><input id="adoFlashPreview" type="checkbox" checked>플래시 미리보기</label><label title="공을 0%로 숨기는 원본 이벤트가 있더라도 편집할 때는 볼 수 있게 유지"><input id="adoKeepBalls" type="checkbox" checked>편집 중 공 항상 표시</label><label><input id="adoShowFxMarkers" type="checkbox">FX 마커</label></div><div id="adoSpeedNav" class="ado-speed-nav">차트를 열면 배속 변경 지점이 표시됩니다.</div><div class="ado-summary"><button id="adoExpandEvents" aria-expanded="false">전체 이벤트 펼치기</button><span id="adoEventStatus">이벤트 파일을 읽고 있습니다.</span></div><div id="adoEventGroups" hidden></div>';
  const stats=document.querySelector('.pc-media .pc-stats');
  if(stats)stats.insertAdjacentElement('afterend',hud);else document.querySelector('.pc-media').append(hud);
  const flash=document.createElement('div');flash.id='adoFlash';flash.setAttribute('aria-hidden','true');document.querySelector('.chart-stage').append(flash);
@@ -43,6 +43,7 @@ function boot(){
  '@media(max-width:700px){#adoEventHud{padding:7px}.ado-live{gap:5px}.ado-live>strong{font-size:15px}}'
  ].join('\n');document.head.append(style);
  $('adoRate').onchange=()=>{const a=$('chartAudio');if(a)a.playbackRate=Number($('adoRate').value)||1;};
+ $('adoKeepBalls').onchange=e=>{window.ADOFAIVisualSettings.keepVisible=e.target.checked;};
  $('adoPlaySelected').onclick=()=>R().startPlay();
  $('adoShowFxMarkers').onchange=()=>renderMarkers(true);
  $('adoExpandEvents').onclick=()=>{
@@ -174,6 +175,13 @@ function tick(ts){
     if(planet)effects.push('공 크기 '+fmt(planet.scale)+'%');
     if(radius)effects.push('공 간격 '+fmt(radius.scale)+'%');
     for(const e of filters.values())if(e.enabled===true||e.enabled==='Enabled')effects.push('필터 '+e.filter);
+    let sourceScale=100,sourceRadius=100;
+    for(const e of chart.actions||[]){
+      if(!Number.isInteger(e.floor)||e.floor>f)continue;
+      if(e.eventType==='ScalePlanets'&&Number.isFinite(Number(e.scale)))sourceScale=Number(e.scale);
+      if(e.eventType==='ScaleRadius'&&Number.isFinite(Number(e.scale)))sourceRadius=Number(e.scale);
+    }
+    if(sourceScale<=1||sourceRadius<=1)effects.unshift(window.ADOFAIVisualSettings?.keepVisible?'원본 효과: 공 숨김 (편집 화면에 표시)':'원본 효과: 공 숨김');
     $('adoCurrentFx').textContent=effects.length?'효과: '+effects.slice(0,3).join(' · ')+(effects.length>3?' 외 '+(effects.length-3):''):'현재 효과 —';
    }
    const clock=p.playing?$('chartAudio')?.currentTime:p.timings?.[f];if(typeof clock==='number')updateFlash(f,clock);
