@@ -311,9 +311,9 @@ function monitorRenderer(){
 }
 async function nativePlay(){
  if(!gameRoute())return say('먼저 커스텀 레벨 ZIP을 불러오세요.',true);
- if(st.dirty){say('차트 변경 사항을 저장하고 게임 화면을 다시 열겠습니다. 다시 ▶ 직접 플레이를 누르면 판정 모드로 들어갑니다.');await saveToNative(true);return;}
  monitorRenderer();const fault=rendererIssue();
- if(fault)return say(fault+' 자동 플레이가 아니라 직접 입력하는 모드도 이 상태에서는 시작할 수 없습니다.',true);
+ if(fault)return say(fault+' 자동 판정이 아닌 직접 플레이도 이 상태에서는 시작되지 않습니다.',true);
+ if(st.dirty){sessionStorage.setItem('adofaiStudio:manualPlayRequested','1');await saveToNative(true);return;}
  chooseMode(false);
  const buttons=Array.from(document.querySelectorAll('button'));
  const b=buttons.find(x=>x.getAttribute('aria-label')==='Play'||x.title==='Play'||x.innerText.trim()==='Play');
@@ -396,6 +396,16 @@ function build(){
  for(const [key,tab] of Object.entries(menuMap))$(key).addEventListener('click',()=>setTab(tab));
  const flash=sessionStorage.getItem('adofaiStudio:flash');if(flash){sessionStorage.removeItem('adofaiStudio:flash');const e=$('flash');e.textContent=flash;e.hidden=false;setTimeout(()=>e.hidden=true,7000)}
  setInterval(monitorRenderer,1200);
+ if(sessionStorage.getItem('adofaiStudio:manualPlayRequested')==='1'){
+  sessionStorage.removeItem('adofaiStudio:manualPlayRequested');
+  let retries=0;
+  const watch=setInterval(()=>{
+   retries++;if(retries>20){clearInterval(watch);say('원본 게임의 판정 모드를 열 수 없습니다. WebGPU 또는 차트 로딩 상태를 확인하세요.',true);return}
+   if(rendererIssue()){clearInterval(watch);monitorRenderer();say(rendererIssue(),true);return}
+   const button=Array.from(document.querySelectorAll('button')).find(x=>x.getAttribute('aria-label')==='Play'||x.title==='Play');
+   if(button){clearInterval(watch);button.click();say('직접 플레이 모드 진입 · 직접 스페이스/터치로 판정하세요. 자동 입력은 사용하지 않습니다.')}
+  },500);
+ }
  if(gameRoute()){
   if(sessionStorage.getItem('adofaiStudio:autoEditor')==='1'){
    sessionStorage.removeItem('adofaiStudio:autoEditor');chooseMode(true);
