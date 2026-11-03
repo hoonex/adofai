@@ -308,7 +308,7 @@ async function probeGpuAdapter(){
  monitorRenderer();
 }
 function rendererIssue(){
- if(!gameRoute())return '';
+ if(!gameRoute()&&!/^\/levels\/\d+(?:\/|$)/.test(location.pathname))return '';
  if(st.gpuIssue)return st.gpuIssue;
  if(!navigator.gpu)return '현재 브라우저에서 WebGPU를 사용할 수 없어 원본 게임 렌더러가 실행되지 않습니다.';
  const txt=(document.body?.innerText||'').slice(-5500);
