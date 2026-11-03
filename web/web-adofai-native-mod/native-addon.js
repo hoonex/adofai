@@ -7,7 +7,7 @@
 const DB='adofai-web-editor-level-packages';
 const ORIGIN_TAG='WEB ADOFAI · Native Custom';
 const MAX_ZIP=250*1024*1024,MAX_UNPACKED=450*1024*1024;
-const st={id:null,record:null,doc:null,original:null,dirty:false,history:[],redo:[],floor:1,busy:false,tab:'tile',assets:[],open:false};
+const st={id:null,record:null,doc:null,original:null,dirty:false,history:[],redo:[],floor:1,busy:false,tab:'tile',assets:[],open:false,gpuIssue:''};
 let ui,shadow;
 const $=id=>shadow?.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]||'&#39;'));
@@ -297,8 +297,16 @@ function downloadChart(){
  const filename=(st.record?.targetLevelPath||'level.adofai').split('/').pop();
  download(new Blob([JSON.stringify(st.doc,null,'\t')+'\n'],{type:'application/json'}),filename);
 }
+async function probeGpuAdapter(){
+ if(!navigator.gpu)return;
+ try{const adapter=await navigator.gpu.requestAdapter({powerPreference:'high-performance'});
+  if(!adapter)st.gpuIssue='이 기기에서 호환되는 WebGPU GPU 어댑터가 발견되지 않았습니다.';
+ }catch(e){st.gpuIssue='WebGPU 어댑터 요청 실패: '+String(e.message||e)}
+ monitorRenderer();
+}
 function rendererIssue(){
  if(!gameRoute())return '';
+ if(st.gpuIssue)return st.gpuIssue;
  if(!navigator.gpu)return '현재 브라우저에서 WebGPU를 사용할 수 없어 원본 게임 렌더러가 실행되지 않습니다.';
  const txt=(document.body?.innerText||'').slice(-5500);
  if(/WebGPU 장치 연결이 끊겨|device was lost|context is not configured|No compatible WebGPU adapter|WebGPU.*지원하지/i.test(txt))
@@ -396,6 +404,7 @@ function build(){
  for(const [key,tab] of Object.entries(menuMap))$(key).addEventListener('click',()=>setTab(tab));
  const flash=sessionStorage.getItem('adofaiStudio:flash');if(flash){sessionStorage.removeItem('adofaiStudio:flash');const e=$('flash');e.textContent=flash;e.hidden=false;setTimeout(()=>e.hidden=true,7000)}
  setInterval(monitorRenderer,1200);
+ void probeGpuAdapter();
  if(sessionStorage.getItem('adofaiStudio:manualPlayRequested')==='1'){
   sessionStorage.removeItem('adofaiStudio:manualPlayRequested');
   let retries=0;
