@@ -179,6 +179,7 @@ async function storePackage({files,primary,displayName}){
   })}finally{db.close()}
   localStorage.setItem('adofaiStudio:lastPackage',id);
   sessionStorage.setItem('adofaiStudio:flash','불러오기 완료 · '+(angles(tolerantParse(text)).length+1)+'개 타일 · 파일 '+entries.length+'개');
+  sessionStorage.setItem('adofaiStudio:autoEditor','1');
   location.assign('/levels/cache/'+encodeURIComponent(id));
  }finally{st.busy=false}
 }
@@ -281,13 +282,34 @@ function downloadChart(){
  const filename=(st.record?.targetLevelPath||'level.adofai').split('/').pop();
  download(new Blob([JSON.stringify(st.doc,null,'\t')+'\n'],{type:'application/json'}),filename);
 }
+function rendererIssue(){
+ if(!gameRoute())return '';
+ if(!navigator.gpu)return '현재 브라우저에서 WebGPU를 사용할 수 없어 원본 게임 렌더러가 실행되지 않습니다.';
+ const txt=(document.body?.innerText||'').slice(-5500);
+ if(/WebGPU 장치 연결이 끊겨|device was lost|context is not configured|No compatible WebGPU adapter|WebGPU.*지원하지/i.test(txt))
+  return '원본 Web ADOFAI의 WebGPU 렌더러가 중단됐습니다. PC·모바일 모두 이 문제가 발생하면 실제 플레이가 되지 않습니다.';
+ return '';
+}
+function monitorRenderer(){
+ const msg=rendererIssue(),badge=$('rendererIssue');
+ if(badge){badge.hidden=!msg;badge.textContent=msg}
+}
 async function nativePlay(){
- if(!gameRoute())return say('커스텀 ZIP을 먼저 열어주세요.',true);
- if(st.dirty){await saveToNative(true);return;}
+ if(!gameRoute())return say('먼저 커스텀 레벨 ZIP을 불러오세요.',true);
+ if(st.dirty){say('차트 변경 사항을 저장하고 게임 화면을 다시 열겠습니다. 다시 ▶ 직접 플레이를 누르면 판정 모드로 들어갑니다.');await saveToNative(true);return;}
+ monitorRenderer();const fault=rendererIssue();
+ if(fault)return say(fault+' 자동 플레이가 아니라 직접 입력하는 모드도 이 상태에서는 시작할 수 없습니다.',true);
  chooseMode(false);
- const b=Array.from(document.querySelectorAll('button')).find(x=>x.getAttribute('aria-label')==='Play'||x.title==='Play'||x.innerText.trim()==='Play');
- if(b){b.click();say('원본 게임 Play 버튼 실행');}
- else say('원본 게임 준비 중입니다. 화면에 Play가 나타나면 눌러주세요.',true);
+ const buttons=Array.from(document.querySelectorAll('button'));
+ const b=buttons.find(x=>x.getAttribute('aria-label')==='Play'||x.title==='Play'||x.innerText.trim()==='Play');
+ if(!b)return say('원본 게임이 준비되지 않았습니다. Play 버튼이 나타나야 직접 플레이할 수 있습니다.',true);
+ b.click();say('직접 플레이 진입 요청 · 판정 입력은 키보드 스페이스 또는 화면 터치로 하세요.');
+ setTimeout(()=>{
+  const issue=rendererIssue();
+  if(issue){monitorRenderer();say('플레이 시작 실패: '+issue,true);return}
+  const control=Array.from(document.querySelectorAll('button')).find(x=>x.getAttribute('aria-label')==='Play'||x.title==='Play');
+  if(control)say('원본 게임이 편집 모드로 되돌아왔습니다. 현재 판정 플레이가 시작되지 않았습니다.',true);
+ },4800);
 }
 function render(){
  if(!st.doc)return;
@@ -325,19 +347,19 @@ function build(){
  '.bar{pointer-events:auto;position:fixed;bottom:12px;right:12px;z-index:2147483600;display:flex;gap:6px;padding:7px;border:1px solid #52758d;border-radius:11px;background:#111b29ec;box-shadow:0 6px 20px #0009;font:12px system-ui,sans-serif;color:#ecf7ff}'+
  '.bar button,.drawer button{background:#283c50;border:1px solid #55718a;color:#eaf5ff;border-radius:6px;padding:7px 9px;min-height:33px}.bar button:hover,.drawer button:hover{background:#396081}.bar button[aria-pressed=true]{background:#386d90}'+
  '.drawer{position:fixed;pointer-events:auto;z-index:2147483601;right:12px;bottom:71px;width:min(420px,calc(100vw - 24px));max-height:calc(100dvh - 98px);overflow:auto;padding:15px;border:1px solid #607e99;border-radius:12px;background:#111b29f8;color:#ecf4fc;box-shadow:0 7px 30px #000b;font:13px system-ui,sans-serif}.drawer[hidden]{display:none}.drawer header{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:11px}.drawer header strong{font-size:15px}.muted{color:#9fb7cc;font-size:11px}.head-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.drawer h3{margin:11px 0 7px;font-size:13px}'+
- '.drawer input,.drawer select,.drawer textarea{background:#0a1523;color:#fff;border:1px solid #52718a;border-radius:5px;padding:8px;width:100%;min-width:0}.drawer textarea{min-height:135px;resize:vertical;font:12px/1.45 ui-monospace,monospace}.drawer label{display:block;font-size:11px;color:#b5cbe0;margin:9px 0 3px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:9px}.actions{display:flex;gap:6px;flex-wrap:wrap;margin:9px 0}.actions button{flex:1}.nav{display:flex;gap:5px;overflow-x:auto;padding:6px 0;border-top:1px solid #324b61;border-bottom:1px solid #324b61}.nav button{font-size:11px;min-height:32px;white-space:nowrap;padding:6px 8px}.nav button[data-active=true]{background:#3378a4}.tab{padding-top:10px}.tab[hidden]{display:none}.assets{max-height:180px;overflow:auto}.assets div{font-size:11px;padding:5px 2px;border-bottom:1px solid #344354;word-break:break-all}.assets span{color:#9eafbf;float:right}.footer{margin-top:12px;display:flex;gap:6px;flex-wrap:wrap}'+
+ '.drawer input,.drawer select,.drawer textarea{background:#0a1523;color:#fff;border:1px solid #52718a;border-radius:5px;padding:8px;width:100%;min-width:0}.drawer textarea{min-height:135px;resize:vertical;font:12px/1.45 ui-monospace,monospace}.drawer label{display:block;font-size:11px;color:#b5cbe0;margin:9px 0 3px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:9px}.actions{display:flex;gap:6px;flex-wrap:wrap;margin:9px 0}.actions button{flex:1}.nav{display:flex;gap:5px;overflow-x:auto;padding:6px 0;border-top:1px solid #324b61;border-bottom:1px solid #324b61}.nav button{font-size:11px;min-height:32px;white-space:nowrap;padding:6px 8px}.nav button[data-active=true]{background:#3378a4}.tab{padding-top:10px}.tab[hidden]{display:none}.assets{max-height:180px;overflow:auto}.assets div{font-size:11px;padding:5px 2px;border-bottom:1px solid #344354;word-break:break-all}.assets span{color:#9eafbf;float:right}.pc-menu{display:flex;gap:2px;flex-wrap:wrap;margin:0 0 12px;padding:4px;background:#0d1925;border-bottom:1px solid #456079}.pc-menu button{font-size:11px;padding:5px 7px;min-height:28px;background:transparent;border-color:transparent}.pc-menu button:hover{background:#2e506b}.compat{position:fixed;top:12px;left:50%;transform:translateX(-50%);max-width:min(640px,calc(100vw - 30px));z-index:2147483598;padding:9px 13px;background:#571d24ee;color:#fff;font:12px system-ui;border:1px solid #db6b73;border-radius:7px;text-align:center;pointer-events:none}.compat[hidden]{display:none}.footer{margin-top:12px;display:flex;gap:6px;flex-wrap:wrap}'+
  '#status{margin-top:11px;color:#a9d9bf;line-height:1.5;font-size:11px;min-height:20px}#status[data-error=true]{color:#ff9f9f}.flash{pointer-events:none;position:fixed;z-index:2147483600;left:10px;bottom:71px;max-width:min(400px,calc(100vw - 20px));padding:10px 13px;border-radius:8px;background:#112839ec;color:#e8f5ff;font:12px system-ui,sans-serif;box-shadow:0 5px 16px #0008}'+
  '@media(max-width:570px){.bar{top:7px;bottom:auto;left:auto;right:7px;max-width:210px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;padding:4px}.bar button{font-size:10px;padding:6px 4px;min-width:0;min-height:30px}.drawer{left:7px;right:7px;top:81px;bottom:7px;width:auto;max-height:calc(100dvh - 88px)}.flash{bottom:8px}}'+
  '</style>'+
- '<div class="bar"><button id="open" type="button">📂 ZIP 열기</button><button id="editorButton" type="button" aria-pressed="false">✎ 편집</button><button id="play" type="button">▶ 플레이</button><button id="saveZip" type="button">💾 ZIP 저장</button></div>'+
+ '<div class="bar"><button id="open" type="button">📂 ZIP 열기</button><button id="editorButton" type="button" aria-pressed="false">✎ 편집</button><button id="play" type="button">▶ 직접 플레이</button><button id="saveZip" type="button">💾 ZIP 저장</button></div><div class="compat" id="rendererIssue" hidden></div>'+
  '<input id="fileInput" type="file" accept=".zip,.adofai,.json,.ogg,.mp3,.wav,.png,.jpg,.jpeg" multiple hidden>'+
  '<input id="folderInput" type="file" webkitdirectory directory multiple hidden>'+
- '<div class="drawer" id="drawer" hidden><header><div><strong id="name">커스텀 레벨 편집</strong><div class="muted"><span id="tileCount">—</span> · <span id="dirty">—</span></div></div><button id="close">닫기 ✕</button></header>'+
+ '<div class="drawer" id="drawer" hidden><div class="pc-menu" role="menubar"><button id="menuFile" type="button">FILE</button><button id="menuEdit" type="button">EDIT</button><button id="menuLevel" type="button">LEVEL</button><button id="menuEvents" type="button">EVENTS</button><button id="menuDecorations" type="button">DECORATIONS</button><button id="menuSettings" type="button">SETTINGS</button></div><header><div><strong id="name">커스텀 레벨 편집</strong><div class="muted"><span id="tileCount">—</span> · <span id="dirty">—</span></div></div><button id="close">닫기 ✕</button></header>'+
  '<div class="actions"><button id="folder">📁 폴더</button><button id="undo">↶ 취소</button><button id="redo">↷ 다시</button><button id="exportChart">.adofai</button></div>'+
- '<div class="nav"><button id="nav-tile" data-active="true">타일</button><button id="nav-events">이벤트</button><button id="nav-settings">설정</button><button id="nav-files">파일</button><button id="nav-json">고급</button></div>'+
+ '<div class="nav"><button id="nav-tile" data-active="true">타일</button><button id="nav-events">이벤트</button><button id="nav-decorations">장식</button><button id="nav-settings">설정</button><button id="nav-files">파일</button><button id="nav-json">고급</button></div>'+
  '<div class="tab" id="tab-tile"><label>선택 타일 (0은 시작 타일)</label><input id="floor" type="number" min="0" value="1"><label>타일 각도 (0–359, 미드스핀 999)</label><input id="angle" type="number" min="0" max="999"><div class="actions"><button id="setAngle">각도 적용</button><button id="addTile">+ 타일</button><button id="removeTile">타일 삭제</button></div></div>'+
  '<div class="tab" id="tab-events" hidden><label>이벤트 목록</label><select id="events"></select><label>선택한 이벤트의 JSON</label><textarea id="eventJson" spellcheck="false"></textarea><div class="actions"><button id="setEvent">수정</button><button id="addEvent">+ 이벤트</button><button id="deleteEvent">삭제</button></div></div>'+
- '<div class="tab" id="tab-settings" hidden><div class="fields"><div><label>BPM</label><input id="bpm" type="number"></div><div><label>오프셋(ms)</label><input id="offset" type="number"></div></div><label>곡 제목</label><input id="song"><label>아티스트</label><input id="artist"><label>음원 파일명</label><input id="songfile"><div class="actions"><button id="setSettings">설정 적용</button></div></div>'+
+ '<div class="tab" id="tab-decorations" hidden><label>장식 목록</label><select id="decorations"></select><label>선택한 장식의 JSON</label><textarea id="decorationJson" spellcheck="false"></textarea><div class="actions"><button id="setDecoration">장식 수정</button><button id="addDecoration">+ 장식</button><button id="deleteDecoration">삭제</button></div></div><div class="tab" id="tab-settings" hidden><div class="fields"><div><label>BPM</label><input id="bpm" type="number"></div><div><label>오프셋(ms)</label><input id="offset" type="number"></div></div><label>곡 제목</label><input id="song"><label>아티스트</label><input id="artist"><label>음원 파일명</label><input id="songfile"><div class="actions"><button id="setSettings">설정 적용</button></div></div>'+
  '<div class="tab" id="tab-files" hidden><p class="muted">원본 음악·이미지·백업 파일은 ZIP 저장 시 그대로 보존됩니다.</p><div class="assets" id="assetList"></div><div class="actions"><button id="openAgain">다른 ZIP 열기</button><button id="folderAgain">폴더 가져오기</button></div></div>'+
  '<div class="tab" id="tab-json" hidden><p class="muted">원본에서 지원하지 않는 이벤트도 보존하려면 전체 JSON에서 수정할 수 있습니다.</p><textarea id="fullJson" spellcheck="false" style="min-height:240px"></textarea><div class="actions"><button id="applyJson">전체 JSON 적용</button></div></div>'+
  '<div class="footer"><button id="applyNative" type="button">⟳ 원본 게임에 적용</button><button id="nativePlay" type="button">▶ 실제 플레이</button></div><div id="status" role="status"></div></div>'+
@@ -349,9 +371,16 @@ function build(){
  $('folderInput').addEventListener('change',e=>{void openFiles(e.target.files,true);e.target.value=''});
  $('floor').addEventListener('change',e=>{st.floor=clamp(Number(e.target.value)||0,0,length()-1);render()});
  $('events').addEventListener('change',()=>{const idx=Number($('events').value);$('eventJson').value=JSON.stringify(st.doc.actions[idx],null,2)});
- for(const name of ['tile','events','settings','files','json'])$('nav-'+name).addEventListener('click',()=>setTab(name));
+ for(const name of ['tile','events','decorations','settings','files','json'])$('nav-'+name).addEventListener('click',()=>setTab(name));
+ const menuMap={menuFile:'files',menuEdit:'tile',menuLevel:'tile',menuEvents:'events',menuDecorations:'decorations',menuSettings:'settings'};
+ for(const [key,tab] of Object.entries(menuMap))$(key).addEventListener('click',()=>setTab(tab));
  const flash=sessionStorage.getItem('adofaiStudio:flash');if(flash){sessionStorage.removeItem('adofaiStudio:flash');const e=$('flash');e.textContent=flash;e.hidden=false;setTimeout(()=>e.hidden=true,7000)}
- if(gameRoute())void loadCurrent();
+ setInterval(monitorRenderer,1200);
+ if(gameRoute()){
+  if(sessionStorage.getItem('adofaiStudio:autoEditor')==='1'){
+   sessionStorage.removeItem('adofaiStudio:autoEditor');chooseMode(true);
+  } else void loadCurrent();
+ }
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',build);else build();
 window.ADOFAINativeAddon={get state(){return st},openFiles,loadCurrent,exportZip,saveToNative,angles,chooseMode};
