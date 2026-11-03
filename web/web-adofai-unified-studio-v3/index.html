@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#111924"/>
+<title>Web ADOFAI · Unified Studio</title>
+<style>
+:root{font-family:system-ui,-apple-system,'Noto Sans KR',sans-serif;color-scheme:dark;color:#e7eef8;background:#0c131d}
+*{box-sizing:border-box}body{margin:0;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer;border:1px solid #485a70;background:#23364b;border-radius:5px;padding:9px 11px;font-size:12px;font-weight:650;min-height:36px}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #8ecaff;outline-offset:1px}button:hover:not(:disabled){background:#365573}button:disabled{opacity:.36;cursor:not-allowed}
+header{height:58px;min-height:58px;display:flex;align-items:center;gap:12px;background:#192532;border-bottom:1px solid #3d5065;padding:8px 14px}
+.logo{font-size:15px;font-weight:800;white-space:nowrap;letter-spacing:.035em;color:#f5f9ff}.logo span{font-size:10px;display:block;letter-spacing:0;color:#90aabe;font-weight:500}
+.tabs{display:flex;gap:6px;margin-left:12px}.tabs button{border-radius:5px;font-size:13px}.tabs button[aria-pressed=true]{background:#3675a7;border-color:#67a4dc;color:white}
+.external{font-size:12px;text-decoration:none;color:#a5d3f2;margin-left:auto;white-space:nowrap}.external:hover{text-decoration:underline}
+.app{min-height:0;flex:1;display:flex}.tools{background:#192532;border-right:1px solid #41566b;min-width:310px;width:340px;max-width:44vw;display:flex;flex-direction:column;overflow:auto;scrollbar-color:#526a82 transparent}
+.tools[hidden]{display:none}.tools .sect{padding:12px 14px;border-bottom:1px solid #34465b}.tools h2{font-size:14px;margin:0 0 9px;color:#d7e6f4}.tools p{font-size:11px;color:#a7bed1;margin:6px 0;line-height:1.55}
+.btnrow{display:flex;gap:6px;flex-wrap:wrap}.btnrow button{flex:1;min-width:65px}.primary{background:#2e71a4;border-color:#619ecc}.success{background:#2b674f;border-color:#5f9d7f}.danger{background:#6a2934;border-color:#925462}
+input:not([type=file]),select,textarea{display:block;width:100%;background:#0d1825;border:1px solid #4a6077;border-radius:4px;padding:9px;font-size:12px;min-height:35px}
+input[type=number]{font-variant-numeric:tabular-nums}label{font-size:11px;color:#b2c9db;display:block;margin-bottom:6px}label input,label select{margin-top:5px}
+.smallgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.smallgrid .btnrow{grid-column:span 2}
+textarea{min-height:135px;resize:vertical;line-height:1.4;font-family:ui-monospace,Consolas,monospace}.pane-tabs{display:flex;gap:5px}.pane-tabs button{flex:1;font-size:11px;padding:8px 4px}.pane-tabs button[aria-pressed=true]{background:#3a6b90}.editpane[hidden]{display:none}
+#info{font-size:11px;color:#b2d4ee;line-height:1.6;min-height:26px}.status{font-size:11px;line-height:1.6;color:#95bad9;padding:10px 14px;background:#111c2b;border-top:1px solid #334b63;position:sticky;bottom:0}.status.error{color:#ffaeab}.status.ok{color:#a5e8c3}
+.stage{flex:1;min-width:0;position:relative;background:#050b14}.stage iframe{border:0;width:100%;height:100%;display:block}.overlay{position:absolute;left:12px;top:12px;z-index:2;display:flex;gap:7px;pointer-events:none}.overlay button{pointer-events:auto;background:#12223deb;box-shadow:0 2px 9px #000a}.overlay .primary{background:#2c6c9be8}
+#siteNotice{position:absolute;z-index:3;bottom:15px;left:14px;right:14px;pointer-events:none;background:#091829ca;border:1px solid #41617e;border-radius:6px;padding:8px;font-size:11px;color:#b7cada;line-height:1.5;max-width:660px}
+#drop{border:1px dashed #6a829d;padding:14px;border-radius:7px;text-align:center;font-size:12px;color:#b5cbe1;margin-top:7px;cursor:pointer;background:#142639}#drop:hover{background:#203954}
+
+.drawer-toggle{display:none}.secttitle{display:flex;align-items:center;justify-content:space-between}.secttitle span{font-size:10px;color:#829cb5}.asset-box{border:1px solid #344a60;border-radius:8px;background:#111d2a;margin-top:8px;overflow:hidden}.asset-head{display:flex;justify-content:space-between;font-size:11px;padding:8px 10px;background:#233546;color:#c7dbed}.asset-list{max-height:165px;overflow:auto}.asset-line{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:5px;padding:6px 9px;border-top:1px solid #203145;font-size:11px}.asset-line .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.asset-line .meta{color:#8fa9c1;font-size:10px}.asset-line button{min-height:28px;padding:4px 7px;font-size:10px}.asset-line button[disabled]{opacity:.35}.asset-empty{padding:12px;font-size:11px;color:#94aec7}#songPreview{width:100%;height:40px;padding:4px}#imagePreview{display:block;max-width:100%;max-height:145px;object-fit:contain;margin:6px auto}#imagePreview[hidden],#songPreview[hidden]{display:none}.archive-choice{margin-top:9px;padding:10px;background:#203349;border:1px solid #557c9d;border-radius:6px}.archive-choice[hidden]{display:none}.archive-choice button{width:100%}.load-progress{font-size:11px;color:#8ac9f4;margin-top:5px;min-height:14px}.auto-sync{display:flex;gap:6px;align-items:center;min-height:35px;padding:0 8px;border:1px solid #395771;border-radius:5px;margin:0;font-size:11px}.auto-sync input{width:14px;height:14px;min-height:0;accent-color:#5099d8}.angle-presets,.event-presets{display:flex;gap:3px;flex-wrap:wrap;margin:7px 0}.angle-presets button,.event-presets button{flex:1;min-width:29px;font-size:12px;padding:5px 3px;min-height:30px}.event-presets button{font-size:10px;min-width:52px}#drop{transition:.15s}#drop.dragover{background:#2c5272;border-color:#a5d6fb}.asset-line--song{background:#17334a}.asset-line--chart{color:#f8dcaa}.warn{color:#f5b28b}
+@media(min-width:761px){.tools{min-width:340px;width:min(380px,34vw);max-width:48vw}.tabs button{font-size:12px}}
+@media(max-width:760px){.drawer-toggle{display:block;min-height:32px;padding:4px 6px;font-size:10px}.external{display:none}.tools{max-height:52dvh}.tools.collapsed{display:none}.tabs button{font-size:10px;padding:6px 5px;white-space:nowrap}.logo{font-size:10px;letter-spacing:0}.logo span{font-size:8px}#drop{padding:10px}.overlay{flex-wrap:wrap;max-width:80vw}.stage{min-height:260px}.tools .sect{padding:9px 11px}}
+
+@media(max-width:760px){header{height:56px;min-height:56px;padding:8px 8px;gap:5px}.logo{font-size:12px}.logo span{font-size:9px}.tabs{margin-left:4px;gap:3px}.tabs button{padding:7px;font-size:11px}.external{font-size:10px}.app{flex-direction:column}.tools{max-width:100%;width:100%;min-width:0;max-height:41dvh;min-height:120px;display:block;border-right:0;border-bottom:1px solid #45647b}.tools[hidden]{display:none}.tools .sect{padding:7px 10px}.stage{min-height:0;flex:1}.overlay{top:7px;left:7px}.overlay button{font-size:10px;padding:6px 8px}.status{position:static}.tools textarea{min-height:90px}#siteNotice{font-size:10px;bottom:8px;left:7px;right:7px}}
+
+/* Unified editor shell: one fixed game canvas, in-place level search. */
+header{height:60px;min-height:60px;gap:9px;z-index:7;background:#121d29}
+.logo{min-width:151px}.top-actions{display:flex;align-items:center;gap:7px;flex:1}.header-button{padding:9px 11px;white-space:nowrap;background:#25394c;border-color:#486784}.header-button.primary{background:#316f9f;border-color:#77b2db}
+.drawer-toggle{display:block;white-space:nowrap}.external{margin-left:0}.app{background:#08121e}
+.tools,.tools[hidden]{display:flex!important;width:min(358px,35vw);min-width:290px;max-width:440px;background:#192634;overflow:auto}.tools.collapsed{display:none!important}
+.stage{display:flex;flex-direction:column;isolation:isolate}.stage iframe#engine{display:block;flex:1 1 auto;min-height:0;width:100%;height:100%;border:0;background:#0b1521}
+.map-topbar{flex:0 0 auto;min-height:45px;padding:6px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;background:#1c2937;border-bottom:1px solid #384f62;z-index:2}
+.map-meta{display:flex;align-items:center;gap:8px;min-width:0;font-size:12px}.map-meta b{white-space:nowrap}.map-meta span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#92adc1;font-size:11px}
+.engine-dot{display:block;flex-shrink:0;width:7px;height:7px;border-radius:50%;background:#5bbd99}.map-controls{display:flex;gap:4px;align-items:center}
+.map-controls button{min-height:31px;padding:5px 8px;font-size:11px;white-space:nowrap}#floorReadout{font-variant-numeric:tabular-nums;min-width:50px;text-align:center;color:#eac88f;font-size:11px}
+.overlay{top:58px;left:10px;max-width:calc(100% - 20px);flex-wrap:wrap}.overlay button{min-height:35px;border-color:#5b7893}#playEngine{background:#32634b;border-color:#74ad8a}
+#siteNotice{left:12px;right:12px;bottom:12px;max-width:650px;padding:9px 38px 9px 12px;display:flex;gap:8px;align-items:start;pointer-events:auto;background:#0e1b2ce8}
+#siteNotice strong{color:#dcebf9;white-space:nowrap}#siteNotice span{color:#a5b9cf}#closeNotice{position:absolute;right:3px;top:3px;min-height:25px;width:26px;background:transparent;border:0;font-size:17px}
+.browser-panel{position:absolute;top:56px;right:10px;bottom:10px;z-index:10;width:min(700px,calc(100% - 20px));display:flex;flex-direction:column;overflow:hidden;border:1px solid #64839e;border-radius:9px;background:#101a26;box-shadow:0 10px 36px #000b}
+.browser-panel[hidden]{display:none!important}.browser-panel.expanded{left:10px;width:auto}
+.browser-head{display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:52px;padding:9px 12px;background:#233549;border-bottom:1px solid #4c6782}
+.browser-head strong{font-size:13px}.browser-head small{display:block;color:#94b0c5;font-size:10px;margin-top:3px}.browser-actions{display:flex;align-items:center;gap:6px}.browser-actions a{font-size:19px;padding:4px;color:#d7efff;text-decoration:none}.browser-actions button{min-height:33px;font-size:11px}
+#library{display:block;flex:1;min-height:0;width:100%;height:100%;border:0}
+@media(max-width:760px){header{height:52px;min-height:52px;padding:5px 8px;gap:5px}.logo{font-size:11px;min-width:0}.logo span{font-size:8px}
+.top-actions{gap:4px;justify-content:flex-end}.header-button{font-size:10px;padding:7px 6px;min-height:34px}.drawer-toggle{font-size:10px;padding:7px 6px;min-height:34px}
+.app{flex-direction:column}.tools,.tools[hidden]{display:block!important;flex:none;width:100%;max-width:100%;min-width:0;max-height:min(42dvh,390px);border-right:0;border-bottom:1px solid #45647b}
+.tools.collapsed{display:none!important}.stage{flex:1;min-height:170px}
+.map-topbar{min-height:39px;padding:5px 7px}.map-meta b{font-size:10px}.map-meta span:last-child{display:none}.map-controls{gap:2px}.map-controls button{font-size:10px;min-height:29px;padding:4px 5px}
+.overlay{top:48px;left:7px;gap:5px}.overlay button{min-height:31px;font-size:10px;padding:6px}
+.browser-panel{left:5px;right:5px;top:46px;bottom:5px;width:auto}.browser-head{min-height:49px}#siteNotice{left:6px;right:6px;bottom:5px;display:block;font-size:10px;padding:7px 29px 7px 7px}#siteNotice strong{display:block}
+}
+@media(max-width:410px){.logo span{display:none}.logo{font-size:10px}.header-button{padding:5px}.drawer-toggle{padding:5px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">WEB ADOFAI <span>UNIFIED STUDIO · 한 화면에서 만들고 보기</span></div>
+  <nav class="top-actions" aria-label="작업 명령"><button id="showBrowser" class="header-button" type="button" aria-pressed="false">⌕ 레벨 검색·플레이</button><button id="quickOpen" class="header-button primary" type="button">📂 ZIP 열기</button><button id="quickSave" class="header-button" type="button">💾 저장</button></nav>
+  <button id="toggleDrawer" type="button" aria-expanded="true" class="drawer-toggle">☰ 편집</button>
+  <div class="legacy-tabs" hidden><button id="searchTab" aria-pressed="false">검색</button><button id="editTab" aria-pressed="true">편집</button></div>
+ <a class="external" href="https://web-adofai.impl1113.dev/levels" rel="noopener noreferrer" target="_blank">원본 사이트 ↗</a>
+</header>
+<div class="app">
+<aside class="tools" id="tools">
+ <div class="sect"><h2>내 차트 파일</h2>
+ <div class="btnrow"><button id="openFile" class="primary">📂 ZIP / .adofai 열기</button><button id="openFolder">폴더 가져오기</button><button id="newLevel">+ 새 차트</button></div>
+ <input id="picker" type="file" accept=".zip,.adofai,application/zip,application/json" hidden><input id="folderPicker" type="file" webkitdirectory directory multiple hidden>
+ <div id="drop" tabindex="0" role="button" aria-label="ZIP·ADOFAI·폴더 드래그 또는 선택">ZIP · .adofai · 폴더 드래그 또는 탭해서 선택</div><div id="loadProgress" class="load-progress" aria-live="polite"></div><div class="archive-choice" id="archiveChoice" hidden><label>차트 선택<select id="archiveCharts"></select></label><button id="archiveSelect" class="primary">선택한 차트 열기</button></div>
+ <p id="info">차트를 선택하거나 새 차트를 만드세요.</p>
+ <div class="btnrow"><button id="addAudio">🎵 음원 추가/변경</button><button id="addAssets">이미지·파일 추가</button><button id="saveZip" class="primary">💾 ZIP 저장</button><button id="saveChart">차트만 저장</button></div><input id="assetPicker" type="file" multiple accept="image/*,audio/*,.png,.jpg,.jpeg,.webp,.gif,.ogg,.mp3,.wav,.mp4,.txt" hidden><div class="asset-box"><div class="asset-head"><strong>레벨 파일</strong><span id="assetCount">0개</span></div><div id="assetList" class="asset-list"></div><audio id="songPreview" controls preload="metadata" hidden></audio><img id="imagePreview" alt="배경 이미지 미리보기" hidden></div>
+ <input id="audioPicker" type="file" accept="audio/*,.ogg,.mp3,.wav" hidden>
+ </div>
+ <div class="sect"><div class="secttitle"><h2>빠른 레벨 설정</h2><span>PC 에디터 기본 항목</span></div><div class="smallgrid"><label>BPM<input id="quickBpm" type="number" min="1" max="100000" step="any"></label><label>음악 오프셋 (ms)<input id="quickOffset" type="number" step="any"></label><label>곡 제목<input id="quickSong" type="text"></label><label>제작자<input id="quickAuthor" type="text"></label></div><div class="btnrow"><button id="applyQuick" class="primary">설정 적용</button><label class="auto-sync"><input id="autoSync" type="checkbox" checked> 편집할 때 자동 반영</label></div></div>
+ <div class="sect"><h2>타일 편집</h2><div class="smallgrid">
+ <label>타일 번호<input id="floor" type="number" min="0" step="1" value="1"></label>
+ <label>방향 각도<input id="angle" type="number" step="any" value="0"></label>
+ <div class="btnrow"><button id="prevFloor">◀ 이전</button><button id="nextFloor">다음 ▶</button></div><div class="angle-presets"><button type="button" data-angle="0">→</button><button type="button" data-angle="45">↗</button><button type="button" data-angle="90">↑</button><button type="button" data-angle="135">↖</button><button type="button" data-angle="180">←</button><button type="button" data-angle="225">↙</button><button type="button" data-angle="270">↓</button><button type="button" data-angle="315">↘</button><button type="button" data-angle="999">⟳</button></div>
+ <div class="btnrow"><button id="setAngle" class="primary">각도 적용</button><button id="addFloor">타일 추가</button><button id="deleteFloor" class="danger">타일 삭제</button></div>
+ <div class="btnrow"><button id="undo">↶ 되돌리기</button><button id="redo">↷ 다시</button></div>
+ </div><p>원본 차트 뷰어에서 변경 사항을 즉시 볼 수 있습니다. 승인된 동일 출처 게임 엔진에서는 적용 시 맵을 갱신합니다.</p></div>
+ <div class="sect"><h2>이벤트·레벨 설정</h2><div class="pane-tabs"><button data-pane="events" aria-pressed="true">이벤트</button><button data-pane="settings" aria-pressed="false">설정</button><button data-pane="raw" aria-pressed="false">전체 차트</button></div>
+ <div class="editpane" id="eventsPane"><div class="event-presets"><button type="button" data-event="Twirl">Twirl</button><button type="button" data-event="SetSpeed">속도 변경</button><button type="button" data-event="Pause">Pause</button><button type="button" data-event="Hold">Hold</button><button type="button" data-event="MoveTrack">Move Track</button></div><label>선택 타일의 이벤트<select id="eventSelect"></select></label><textarea id="eventText" spellcheck="false" placeholder='{"floor":1,"eventType":"Twirl"}'></textarea><div class="btnrow"><button id="addEvent">+ 이벤트</button><button id="updateEvent" class="primary">수정 적용</button><button id="deleteEvent" class="danger">이벤트 삭제</button></div></div>
+ <div class="editpane" id="settingsPane" hidden><textarea id="settingsText" spellcheck="false"></textarea><button id="applySettings">설정 반영</button></div>
+ <div class="editpane" id="rawPane" hidden><textarea id="rawText" spellcheck="false"></textarea><button id="applyRaw">전체 JSON 반영</button></div>
+ </div>
+ <div id="status" class="status" aria-live="polite">원본 엔진 준비 중…</div>
+</aside>
+<main class="stage">
+  <div class="map-topbar" id="mapTopbar"><div class="map-meta"><span class="engine-dot"></span><b>Web ADOFAI 원본 맵</b><span id="mapSubheading">파일을 열면 여기에서 바로 편집합니다</span></div>
+    <div class="map-controls"><button id="stepBack" type="button">◀</button><output id="floorReadout">— / —</output><button id="stepForward" type="button">▶</button><button id="centerFloor" type="button">◎ 선택 타일</button></div>
+  </div>
+  <iframe id="engine" src="about:blank" allow="autoplay; fullscreen; gamepad" title="Web ADOFAI 원본 엔진 뷰포트"></iframe>
+  <div class="overlay"><button id="applyEngine" class="primary">⟳ 맵 반영</button><button id="playEngine" class="success">▶ 커스텀 플레이</button><button id="backSearch" hidden>검색 목록</button></div>
+  <div id="siteNotice"><strong>원본 Web ADOFAI 엔진 연동</strong><span>공개 버전은 원본 차트 렌더러를 사용합니다. 원본 판정 엔진의 즉시 커스텀 플레이는 아직 지원되지 않습니다.</span><button id="closeNotice" type="button" aria-label="안내 닫기">×</button></div>
+  <section id="browserPanel" class="browser-panel" hidden aria-label="원본 Web ADOFAI 검색·플레이">
+    <div class="browser-head"><div><strong>레벨 검색 · 원본 게임</strong><small>이 화면 안에서 실제 Web ADOFAI를 사용</small></div>
+      <div class="browser-actions"><button id="browserExpand" type="button" aria-pressed="false">▣ 크게</button><a href="https://web-adofai.impl1113.dev/levels" target="_blank" rel="noopener noreferrer" title="원본 사이트 새 창 열기">↗</a><button id="closeBrowser" type="button" aria-label="검색 닫기">✕</button></div>
+    </div>
+    <iframe id="library" loading="lazy" allow="autoplay; fullscreen; gamepad" title="원본 Web ADOFAI 레벨 검색과 플레이"></iframe>
+  </section>
+</main>
+</div>
+<script src="./jszip.min.js"></script>
+<script src="./studio.js"></script>
+<script src="./studio-extras.js"></script>
+<script src="./unified-ui.js"></script>
+</body>
+</html>
