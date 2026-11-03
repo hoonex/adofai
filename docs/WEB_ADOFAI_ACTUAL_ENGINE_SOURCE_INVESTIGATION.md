@@ -47,7 +47,7 @@
 
 ### B. `/replay/embed` — 별도의 승인된 호스트 전용
 
-실코드 `lx`에서 `protocolVersion=3`, UUID 세션, `parentOrigin`을 검사하며, 부모 origin이 `VITE_TUF_PARENT_ORIGINS`의 명시적 allowlist(기본 `https://tuforums.com`)에 포함되어야 `player.load`를 처리한다.
+실코드 `lx`에서 `protocolVersion=3`, UUID 세션, `parentOrigin`을 검사한다. 실제 프로덕션 번들의 환경 변수 객체가 `rx={}`로 컴파일되어 있어서 허용된 부모 origin은 **`https://tuforums.com` 하나**다. 다른 origin에서는 `player.load` 요청을 처리하지 않는다.
 
 **제3자 도메인에서 임의로 전송하는 `player.load`는 지원된 공개 명령이 아니다.** 이 보안 검사를 우회하지 않았다.
 
