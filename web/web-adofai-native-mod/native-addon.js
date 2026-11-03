@@ -10,7 +10,7 @@ const MAX_ZIP=250*1024*1024,MAX_UNPACKED=450*1024*1024;
 const st={id:null,record:null,doc:null,original:null,dirty:false,history:[],redo:[],floor:1,busy:false,tab:'tile',assets:[],open:false};
 let ui,shadow;
 const $=id=>shadow?.getElementById(id);
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;':'&quot;','"':'&quot;'}[c]||({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]||'&#39;'));
 const clone=x=>JSON.parse(JSON.stringify(x));
 const clamp=(n,a,b)=>Math.max(a,Math.min(n,b));
 const key=id=>id+':'+Date.now()+':'+Math.random().toString(36).slice(2);
