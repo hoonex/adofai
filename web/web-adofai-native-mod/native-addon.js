@@ -113,6 +113,21 @@ function deleteEvent(){
  const idx=Number($('events').value);if(!Number.isInteger(idx)||idx<0||idx>=(st.doc.actions?.length||0))return;
  mutate(()=>{st.doc.actions.splice(idx,1)},'이벤트 삭제');
 }
+function editDecoration(){
+ const idx=Number($('decorations').value),arr=st.doc.decorations||[];
+ if(!Number.isInteger(idx)||idx<0||idx>=arr.length)return say('장식을 선택하세요.',true);
+ let entry;try{entry=JSON.parse($('decorationJson').value)}catch(e){return say('장식 JSON 오류: '+e.message,true)}
+ if(!entry||typeof entry!=='object'||Array.isArray(entry)||!Number.isInteger(entry.floor)||entry.floor<0||entry.floor>=length())return say('올바른 장식 floor 값이 필요합니다.',true);
+ mutate(()=>{st.doc.decorations[idx]=entry},'장식 수정');
+}
+function addDecoration(){
+ mutate(()=>{st.doc.decorations??=[];st.doc.decorations.push({floor:st.floor,eventType:'AddDecoration',decorationImage:'',position:[0,0],scale:[100,100],rotation:0})},'장식 추가');
+}
+function deleteDecoration(){
+ const idx=Number($('decorations').value);
+ if(!Number.isInteger(idx)||idx<0||idx>=(st.doc.decorations||[]).length)return;
+ mutate(()=>{st.doc.decorations.splice(idx,1)},'장식 삭제');
+}
 function applyJson(){
  let d;try{d=tolerantParse($('fullJson').value);angles(d)}catch(e){return say('차트 JSON 오류: '+e.message,true)}
  mutate(()=>{st.doc=d;st.floor=clamp(st.floor,0,angles(d).length)},'차트 JSON 수정');
@@ -329,6 +344,10 @@ function render(){
   select.value=remembered&&Number(remembered)<act.length?remembered:'0';
   $('eventJson').value=JSON.stringify(act[Number(select.value)],null,2);
  }else $('eventJson').value='';
+ const deco=st.doc.decorations||[],dSelect=$('decorations'),lastDecoration=dSelect.value;
+ dSelect.innerHTML=deco.map((e,i)=>'<option value="'+i+'">'+i+': '+esc(e.eventType||'Decoration')+' · floor '+esc(e.floor)+'</option>').join('');
+ if(deco.length){dSelect.value=lastDecoration&&Number(lastDecoration)<deco.length?lastDecoration:'0';$('decorationJson').value=JSON.stringify(deco[Number(dSelect.value)],null,2)}
+ else $('decorationJson').value='';
  $('fullJson').value=JSON.stringify(st.doc,null,2);
  $('assetList').innerHTML=st.assets.map(x=>'<div>'+esc(x.meta.relativePath)+' <span>'+Math.round(x.meta.size/1024)+'KB</span></div>').join('');
  $('dirty').textContent=st.dirty?'● 수정됨':'✓ 저장됨';
@@ -337,7 +356,7 @@ function render(){
 }
 function setTab(tab){
  st.tab=tab;
- for(const t of ['tile','events','settings','files','json']){$('tab-'+t).hidden=t!==tab;$('nav-'+t).dataset.active=String(t===tab)}
+ for(const t of ['tile','events','decorations','settings','files','json']){$('tab-'+t).hidden=t!==tab;$('nav-'+t).dataset.active=String(t===tab)}
 }
 function build(){
  const host=document.createElement('div');host.id='adofai-native-studio-host';
@@ -364,13 +383,14 @@ function build(){
  '<div class="tab" id="tab-json" hidden><p class="muted">원본에서 지원하지 않는 이벤트도 보존하려면 전체 JSON에서 수정할 수 있습니다.</p><textarea id="fullJson" spellcheck="false" style="min-height:240px"></textarea><div class="actions"><button id="applyJson">전체 JSON 적용</button></div></div>'+
  '<div class="footer"><button id="applyNative" type="button">⟳ 원본 게임에 적용</button><button id="nativePlay" type="button">▶ 실제 플레이</button></div><div id="status" role="status"></div></div>'+
  '<div id="flash" class="flash" hidden></div>';
- for(const [name,fn] of Object.entries({open:()=> $('fileInput').click(),editorButton:()=>chooseMode(!st.open),play:nativePlay,saveZip:exportZip,close:()=>chooseMode(false),folder:()=> $('folderInput').click(),openAgain:()=> $('fileInput').click(),folderAgain:()=> $('folderInput').click(),addTile,removeTile,setAngle,setSettings,setEvent,addEvent,deleteEvent,applyJson,undo:()=>undoRedo(false),redo:()=>undoRedo(true),exportChart:downloadChart,applyNative:()=>saveToNative(true),nativePlay})){
+ for(const [name,fn] of Object.entries({open:()=> $('fileInput').click(),editorButton:()=>chooseMode(!st.open),play:nativePlay,saveZip:exportZip,close:()=>chooseMode(false),folder:()=> $('folderInput').click(),openAgain:()=> $('fileInput').click(),folderAgain:()=> $('folderInput').click(),addTile,removeTile,setAngle,setSettings,setEvent,addEvent,deleteEvent,setDecoration:editDecoration,addDecoration,deleteDecoration,applyJson,undo:()=>undoRedo(false),redo:()=>undoRedo(true),exportChart:downloadChart,applyNative:()=>saveToNative(true),nativePlay})){
    const el=$(name);if(el)el.addEventListener('click',fn);
  }
  $('fileInput').addEventListener('change',e=>{void openFiles(e.target.files);e.target.value=''});
  $('folderInput').addEventListener('change',e=>{void openFiles(e.target.files,true);e.target.value=''});
  $('floor').addEventListener('change',e=>{st.floor=clamp(Number(e.target.value)||0,0,length()-1);render()});
  $('events').addEventListener('change',()=>{const idx=Number($('events').value);$('eventJson').value=JSON.stringify(st.doc.actions[idx],null,2)});
+ $('decorations').addEventListener('change',()=>{const idx=Number($('decorations').value);$('decorationJson').value=JSON.stringify(st.doc.decorations[idx],null,2)});
  for(const name of ['tile','events','decorations','settings','files','json'])$('nav-'+name).addEventListener('click',()=>setTab(name));
  const menuMap={menuFile:'files',menuEdit:'tile',menuLevel:'tile',menuEvents:'events',menuDecorations:'decorations',menuSettings:'settings'};
  for(const [key,tab] of Object.entries(menuMap))$(key).addEventListener('click',()=>setTab(tab));
