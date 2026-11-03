@@ -83,3 +83,11 @@ The Worker correctly returns the upstream renderer with two high-performance pre
 The upstream original game's renderer is a custom WebGPU-specific renderer, not a conventional Three.js WebGL renderer with an easy backend fallback. Its code explicitly states `WebGL fallback is disabled.` A usable WebGL renderer would require a significant new compatibility backend and cannot be achieved by renaming one option. No unsupported claim of a working fallback is made.
 
 **Current status: editor ZIP/asset/settings round-trip and real native game screen wiring work. Verified complete manual rhythm-judgement gameplay is still pending.** The full original Unity `scnEditor` scene from the PC game has also not been rebuilt for the web; the new Song Settings panel is a UI adaptation, not the original Unity UI.
+
+### Original engine GPU profile matrix (cloud, 2026-11-03)
+
+Compared the unmodified original `https://web-adofai.impl1113.dev/levels/17647` in real Chromium under five GPU startup profiles: SwiftShader WebGPU only, ANGLE SwiftShader, ANGLE SwiftShader+Vulkan, ANGLE Vulkan, and ANGLE GL. **All five produced the same original WebGPU device-loss warning and prevented a verified complete play session.** This rules out a simple browser GPU flag as a verified fix in our cloud software renderer. The device-loss issue exists on upstream itself in the tested environment, not exclusively our one-origin wrapper.
+
+The deployed compatibility button changes the original renderer's adapter preference, but cloud testing with low-power preference also failed. On a different real GPU it may change adapter selection, but there is currently **no evidence it repairs the user's specific Android device**. Native Play correctness must be validated on hardware with a stable WebGPU adapter and tested rhythm inputs. The game's WebGPU-only custom renderer has no implemented WebGL backend.
+
+Most importantly, the addon does **not** synthesize `button.click()`, `KeyboardEvent`, or hit input. It highlights the native Play control so **a real human gesture** triggers gameplay activation and browser audio policy. No autoplay is provided.
