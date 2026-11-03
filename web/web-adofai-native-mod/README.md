@@ -62,3 +62,24 @@ The earlier Play claim was too strong. Tested the actual upstream Web ADOFAI gam
 - Real-browser desktop and mobile smoke tests: 500-tile ZIP imported, four files kept, six editor menu items available, tile and decoration mutations visible, renderer failure warning correctly shown, zero JS page errors.
 
 **Unsolved:** native manual-gameplay correctness and full PC Unity editor UI remain unverified/unported. A genuine renderer compatibility implementation (or a working supported WebGPU adapter) is necessary, not merely another button.
+
+## 2026-11-03: v6 UI and manual-input follow-up
+
+### Exact tested improvement
+
+- Screenshot-informed PC-style **Song Settings** pane on the *left* side of the original Web ADOFAI game. Fields include Filename, BPM, Volume, Offset, Pitch, Hitsound, Sound volume, Countdown ticks, Song title and Artist; matching settings fields are written to actual `.adofai` JSON.
+- An audio preview player uses the existing `songFilename` and corresponding ZIP audio Blob. The original audio bytes are not altered by settings edits.
+- Additional UI includes `FILE / EDIT / LEVEL / EVENTS / DECORATIONS / SETTINGS` and native file/floor/event/decoration data editing.
+- The addon **no longer invokes the original Play button via JavaScript `.click()`**. Synthetic clicks are unreliable for browser audio user-activation and are not a substitute for a real human input gesture. The helper now highlights the game's **actual native Play button** and asks the human to tap/click it; keyboard Space or touch then belongs to the original engine.
+- Dirty chart saves persist first and on reload present the native Play button for a **separate direct human gesture**. The addon does not synthesize rhythm hits.
+- WebGPU failure banner has an **experimental low-power adapter retry**, which sets `adofai_gpu=low` browser cookie. The same-origin Worker then changes the actual renderer module's two `powerPreference:"high-performance"` options to `powerPreference:"low-power"`. The original renderer and gameplay engine remain otherwise intact.
+
+### Verification
+
+Real desktop (1250×850) and emulated mobile (390×840) Chromium: same-origin original engine remains iframe-free; a 500-tile ZIP imported; settings (pitch 100→115%, hitsoundVolume 70→64%) edited; four original settings including BPM and Song filename read correctly; ZIP exported with changes; music and backup chart preserved byte-for-byte; zero JavaScript exceptions in editor test.
+
+The Worker correctly returns the upstream renderer with two high-performance preferences by default and two low-power preferences with the compatibility cookie, without changing the rest of the bundle. Browser-level low-power test passes route initialization, but **the cloud software GPU still loses its WebGPU device** and native gameplay returns to Editor/Play state. This is *not a verified fix for actual gameplay on user Android hardware*.
+
+The upstream original game's renderer is a custom WebGPU-specific renderer, not a conventional Three.js WebGL renderer with an easy backend fallback. Its code explicitly states `WebGL fallback is disabled.` A usable WebGL renderer would require a significant new compatibility backend and cannot be achieved by renaming one option. No unsupported claim of a working fallback is made.
+
+**Current status: editor ZIP/asset/settings round-trip and real native game screen wiring work. Verified complete manual rhythm-judgement gameplay is still pending.** The full original Unity `scnEditor` scene from the PC game has also not been rebuilt for the web; the new Song Settings panel is a UI adaptation, not the original Unity UI.
