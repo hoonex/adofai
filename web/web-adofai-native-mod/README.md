@@ -41,3 +41,24 @@ Native level search also loaded actual current TUF results after same-origin API
 Imported user ZIPs are parsed locally in the browser and placed into browser IndexedDB; our addon does not intentionally upload them to its backend. The original game may make its own external requests under its own policies. Media file names are validated to prevent directory traversal. An imported ZIP's main chart and all its other files remain distinct in the storage and in exports.
 
 The Worker proxy and addon use the user's stated authorization for the original engine. Public TUF API and engine availability are external dependencies and may change. Source assets remain attributed to their original producers.
+
+## 2026-11-03: Manual play + renderer compatibility diagnosis
+
+The earlier Play claim was too strong. Tested the actual upstream Web ADOFAI game and this same-origin integration with desktop Chromium software WebGPU in parallel:
+
+- Both engines displayed `WebGPU 장치 연결이 끊겨 렌더러를 복구하고 있습니다`.
+- Pressing the upstream `Play` button changed it to `Preparing`, but renderer errors caused a return to `Play`. Sending Space and touch during this state did **not** establish successful timing judgement.
+- A WebGPU `GPUDevice.lost` event returned `reason=unknown` and `message=A valid external Instance reference no longer exists.` on the tested software GPU.
+- Source in the actual production `button.component-BR8Evgkc.js` explicitly rejects a non-WebGPU backend with `WebGL fallback is disabled.` There is **no supported WebGL fallback** currently in that engine.
+- This test environment does not prove the same failure cause on every Android device; the browser's GPU adapter, device and driver differ.
+
+### Behavior changed
+
+- The button is now `▶ 직접 플레이`, not "autoplay": no simulated beats or automatic hits. It requests native game mode and leaves timing input to human touch/keyboard.
+- If the original game reports a WebGPU failure, the addon exposes that blocker visibly rather than pretending it can play. Pressing Play in that state does not discard pending chart edits.
+- If an edited map is saved before entering game mode on a compatible renderer, the request to enter manual mode survives the reload without injecting hit inputs.
+- Imported ZIPs open with the editor panel visible and PC-like `FILE / EDIT / LEVEL / EVENTS / DECORATIONS / SETTINGS` navigation. This **is not the original Unity PC scnEditor UI**. The true PC editor resides in the separately extracted Unity scene `level5`.
+- Decoration JSON can now be selected, edited, added or deleted with undo and ZIP export.
+- Real-browser desktop and mobile smoke tests: 500-tile ZIP imported, four files kept, six editor menu items available, tile and decoration mutations visible, renderer failure warning correctly shown, zero JS page errors.
+
+**Unsolved:** native manual-gameplay correctness and full PC Unity editor UI remain unverified/unported. A genuine renderer compatibility implementation (or a working supported WebGPU adapter) is necessary, not merely another button.
