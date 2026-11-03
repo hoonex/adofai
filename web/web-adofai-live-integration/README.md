@@ -19,3 +19,7 @@ Tested against user's supplied `Extra Stage（part2 - Doduy）.zip`: 499 angleDa
 ## Browser support
 
 Web ADOFAI's `/embed/chart` renderer currently requires WebGPU. Tested successfully in Chromium with SwiftShader software WebGPU; ordinary headless Chromium without a compatible WebGPU adapter displayed `No compatible WebGPU adapter was found.` Full original `/levels` search loaded in the test browser. Not every Android device has WebGPU support.
+
+## Custom level play handoff (confirmed)
+
+The original `/levels` website exposes **Local Levels** → **Choose folder**, a browser-local directory importer. The user can export the edited ZIP, extract its folder on their device, then choose that folder in the official site's Local Levels panel to play it in the upstream engine. This is a manual handoff, not automatic upload and not a native Play button inside our custom edit sidebar; cross-origin restrictions prevent the editor wrapper from silently writing into the upstream origin's local cache. This upstream control was observed in a real browser on 2026-11-03.
