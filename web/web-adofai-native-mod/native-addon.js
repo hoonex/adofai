@@ -94,7 +94,10 @@ function setAngle(){
 function setSettings(){
  const bpm=Number($('bpm').value),offset=Number($('offset').value);
  if(!Number.isFinite(bpm)||bpm<=0||!Number.isFinite(offset))return say('올바른 BPM 및 오프셋을 입력하세요.',true);
- mutate(()=>{st.doc.settings??={};Object.assign(st.doc.settings,{bpm,offset,song:$('song').value,artist:$('artist').value,songFilename:$('songfile').value})},'레벨 설정 변경');
+ const volume=Number($('volume').value),pitch=Number($('pitch').value),hitsoundVolume=Number($('hitsoundVolume').value),countdown=Number($('countdown').value);
+ if(![volume,pitch,hitsoundVolume,countdown].every(Number.isFinite)||volume<0||volume>100||pitch<=0||pitch>1000||hitsoundVolume<0||hitsoundVolume>100||countdown<0||countdown>16)return say('볼륨은 0~100%, 피치는 1~1000%, 카운트다운은 0~16입니다.',true);
+ mutate(()=>{st.doc.settings??={};Object.assign(st.doc.settings,{bpm,offset,song:$('song').value,artist:$('artist').value,songFilename:$('songfile').value,songVolume:volume,pitch,hitsound:$('hitsound').value,hitsoundVolume,countdownTicks:countdown})},'레벨 설정 변경');
+ refreshSongPreview();
 }
 function setEvent(){
  const idx=Number($('events').value),arr=st.doc.actions??[];
@@ -248,7 +251,7 @@ async function loadCurrent(){
   if(!info?.blob)throw Error('원본 게임에서 차트 파일을 찾지 못했습니다.');
   const doc=tolerantParse(await info.blob.text());
   st.id=id;st.record=pkg.record;st.doc=doc;st.original=clone(doc);st.assets=pkg.entries;st.floor=1;st.history=[];st.redo=[];st.dirty=false;
-  render();say('원본 게임 차트 로딩 완료 · '+length()+'타일 · 파일 '+pkg.entries.length+'개');
+  render();refreshSongPreview();say('원본 게임 차트 로딩 완료 · '+length()+'타일 · 파일 '+pkg.entries.length+'개');
  }catch(e){say('차트 읽기 실패: '+e.message,true)}
 }
 async function saveToNative(reload){
@@ -319,20 +322,25 @@ function monitorRenderer(){
 }
 async function nativePlay(){
  if(!gameRoute())return say('먼저 커스텀 레벨 ZIP을 불러오세요.',true);
- monitorRenderer();const fault=rendererIssue();
- if(fault)return say(fault+' 자동 판정이 아닌 직접 플레이도 이 상태에서는 시작되지 않습니다.',true);
- if(st.dirty){sessionStorage.setItem('adofaiStudio:manualPlayRequested','1');await saveToNative(true);return;}
- chooseMode(false);
- const buttons=Array.from(document.querySelectorAll('button'));
- const b=buttons.find(x=>x.getAttribute('aria-label')==='Play'||x.title==='Play'||x.innerText.trim()==='Play');
- if(!b)return say('원본 게임이 준비되지 않았습니다. Play 버튼이 나타나야 직접 플레이할 수 있습니다.',true);
- b.click();say('직접 플레이 진입 요청 · 판정 입력은 키보드 스페이스 또는 화면 터치로 하세요.');
- setTimeout(()=>{
-  const issue=rendererIssue();
-  if(issue){monitorRenderer();say('플레이 시작 실패: '+issue,true);return}
-  const control=Array.from(document.querySelectorAll('button')).find(x=>x.getAttribute('aria-label')==='Play'||x.title==='Play');
-  if(control)say('원본 게임이 편집 모드로 되돌아왔습니다. 현재 판정 플레이가 시작되지 않았습니다.',true);
- },4800);
+ const fault=rendererIssue();
+ if(fault){monitorRenderer();return say(fault+' · GPU 연결이 복구되기 전에는 실제 판정 플레이를 시작할 수 없습니다.',true)}
+ if(st.dirty){sessionStorage.setItem('adofaiStudio:showNativePlay','1');await saveToNative(true);return}
+ chooseMode(false);revealNativePlay(true);
+}
+function revealNativePlay(doFocus){
+ const btn=Array.from(document.querySelectorAll('button')).find(x=>x.getAttribute('aria-label')==='Play'||x.title==='Play'||x.innerText.trim()==='Play');
+ if(!btn){say('원본 게임의 Play 버튼이 준비되지 않았습니다. 차트·GPU 상태를 확인하세요.',true);return false}
+ if(doFocus){btn.scrollIntoView({block:'nearest'});btn.classList.add('adofai-play-target');btn.focus({preventScroll:true});setTimeout(()=>btn.classList.remove('adofai-play-target'),6500)}
+ say('왼쪽 아래 원본 Play 버튼을 직접 누르세요. 시작 후 스페이스·터치로 타이밍을 입력합니다. 자동 입력 없음.');return true;
+}
+let soundPreviewUrl=null;
+function refreshSongPreview(){
+ const player=$('songPreview');if(!player||!st.doc)return;
+ if(soundPreviewUrl){URL.revokeObjectURL(soundPreviewUrl);soundPreviewUrl=null}
+ const target=String(st.doc.settings?.songFilename||'').replace(/\\/g,'/').split('/').pop().toLowerCase();
+ const file=st.assets.find(f=>f?.blob&&(/\.(ogg|mp3|wav|flac|m4a)$/i.test(f.meta.relativePath))&&(!target||f.meta.name.toLowerCase()===target))||st.assets.find(f=>f.blob&&/\.(ogg|mp3|wav|flac|m4a)$/i.test(f.meta.relativePath));
+ if(file){soundPreviewUrl=URL.createObjectURL(file.blob);player.src=soundPreviewUrl;player.hidden=false}
+ else {player.removeAttribute('src');player.hidden=true}
 }
 function render(){
  if(!st.doc)return;
@@ -343,7 +351,7 @@ function render(){
  $('floor').max=String(n-1);$('floor').value=String(st.floor);
  $('angle').disabled=st.floor===0;$('angle').value=st.floor===0?'':String(angles()[st.floor-1]);
  const settings=st.doc.settings||{};
- for(const [id,value] of Object.entries({bpm:settings.bpm??120,offset:settings.offset??0,song:settings.song??'',artist:settings.artist??'',songfile:settings.songFilename??''}))$(id).value=String(value);
+ for(const [id,value] of Object.entries({bpm:settings.bpm??120,offset:settings.offset??0,song:settings.song??'',artist:settings.artist??'',songfile:settings.songFilename??'',volume:settings.songVolume??100,pitch:settings.pitch??100,hitsound:settings.hitsound??'Kick',hitsoundVolume:settings.hitsoundVolume??100,countdown:settings.countdownTicks??4}))$(id).value=String(value);
  const act=st.doc.actions||[];
  const select=$('events');
  const remembered=select.value;
@@ -373,12 +381,12 @@ function build(){
  ':host{all:initial}*{box-sizing:border-box}button,input,textarea,select{font:inherit}button{cursor:pointer}'+
  '.bar{pointer-events:auto;position:fixed;bottom:12px;right:12px;z-index:2147483600;display:flex;gap:6px;padding:7px;border:1px solid #52758d;border-radius:11px;background:#111b29ec;box-shadow:0 6px 20px #0009;font:12px system-ui,sans-serif;color:#ecf7ff}'+
  '.bar button,.drawer button{background:#283c50;border:1px solid #55718a;color:#eaf5ff;border-radius:6px;padding:7px 9px;min-height:33px}.bar button:hover,.drawer button:hover{background:#396081}.bar button[aria-pressed=true]{background:#386d90}'+
- '.drawer{position:fixed;pointer-events:auto;z-index:2147483601;right:12px;bottom:71px;width:min(420px,calc(100vw - 24px));max-height:calc(100dvh - 98px);overflow:auto;padding:15px;border:1px solid #607e99;border-radius:12px;background:#111b29f8;color:#ecf4fc;box-shadow:0 7px 30px #000b;font:13px system-ui,sans-serif}.drawer[hidden]{display:none}.drawer header{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:11px}.drawer header strong{font-size:15px}.muted{color:#9fb7cc;font-size:11px}.head-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.drawer h3{margin:11px 0 7px;font-size:13px}'+
- '.drawer input,.drawer select,.drawer textarea{background:#0a1523;color:#fff;border:1px solid #52718a;border-radius:5px;padding:8px;width:100%;min-width:0}.drawer textarea{min-height:135px;resize:vertical;font:12px/1.45 ui-monospace,monospace}.drawer label{display:block;font-size:11px;color:#b5cbe0;margin:9px 0 3px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:9px}.actions{display:flex;gap:6px;flex-wrap:wrap;margin:9px 0}.actions button{flex:1}.nav{display:flex;gap:5px;overflow-x:auto;padding:6px 0;border-top:1px solid #324b61;border-bottom:1px solid #324b61}.nav button{font-size:11px;min-height:32px;white-space:nowrap;padding:6px 8px}.nav button[data-active=true]{background:#3378a4}.tab{padding-top:10px}.tab[hidden]{display:none}.assets{max-height:180px;overflow:auto}.assets div{font-size:11px;padding:5px 2px;border-bottom:1px solid #344354;word-break:break-all}.assets span{color:#9eafbf;float:right}.pc-menu{display:flex;gap:2px;flex-wrap:wrap;margin:0 0 12px;padding:4px;background:#0d1925;border-bottom:1px solid #456079}.pc-menu button{font-size:11px;padding:5px 7px;min-height:28px;background:transparent;border-color:transparent}.pc-menu button:hover{background:#2e506b}.compat{position:fixed;top:12px;left:50%;transform:translateX(-50%);max-width:min(640px,calc(100vw - 30px));z-index:2147483598;padding:9px 13px;background:#571d24ee;color:#fff;font:12px system-ui;border:1px solid #db6b73;border-radius:7px;text-align:center;pointer-events:none}.compat[hidden]{display:none}.footer{margin-top:12px;display:flex;gap:6px;flex-wrap:wrap}'+
+ '.drawer{position:fixed;pointer-events:auto;z-index:2147483601;left:12px;right:auto;top:58px;bottom:112px;width:min(340px,calc(100vw - 24px));max-height:calc(100dvh - 170px);overflow:auto;padding:13px;border:1px solid #607e99;border-radius:12px;background:#080b13e9;color:#ecf4fc;box-shadow:0 7px 30px #000b;font:13px system-ui,sans-serif}.drawer[hidden]{display:none}.drawer header{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:11px}.drawer header strong{font-size:15px}.muted{color:#9fb7cc;font-size:11px}.head-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.drawer h3{margin:11px 0 7px;font-size:13px}'+
+ '.drawer input,.drawer select,.drawer textarea{background:#0a1523;color:#fff;border:1px solid #52718a;border-radius:5px;padding:8px;width:100%;min-width:0}.drawer textarea{min-height:135px;resize:vertical;font:12px/1.45 ui-monospace,monospace}.drawer label{display:block;font-size:11px;color:#b5cbe0;margin:9px 0 3px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:9px}.actions{display:flex;gap:6px;flex-wrap:wrap;margin:9px 0}.actions button{flex:1}.nav{display:flex;gap:5px;overflow-x:auto;padding:6px 0;border-top:1px solid #324b61;border-bottom:1px solid #324b61}.nav button{font-size:11px;min-height:32px;white-space:nowrap;padding:6px 8px}.nav button[data-active=true]{background:#3378a4}.tab{padding-top:10px}.tab[hidden]{display:none}.assets{max-height:180px;overflow:auto}.assets div{font-size:11px;padding:5px 2px;border-bottom:1px solid #344354;word-break:break-all}.assets span{color:#9eafbf;float:right}.pc-menu{display:flex;gap:2px;flex-wrap:wrap;margin:0 0 12px;padding:4px;background:#0d1925;border-bottom:1px solid #456079}.pc-menu button{font-size:11px;padding:5px 7px;min-height:28px;background:transparent;border-color:transparent}.pc-menu button:hover{background:#2e506b}.compat{position:fixed;top:12px;left:50%;transform:translateX(-50%);max-width:min(640px,calc(100vw - 30px));z-index:2147483598;padding:9px 13px;background:#571d24ee;color:#fff;font:12px system-ui;border:1px solid #db6b73;border-radius:7px;text-align:center;pointer-events:none}.compat[hidden]{display:none}.song-setting-title{font-size:20px;letter-spacing:.06em;text-align:center;margin:5px 0 14px;font-weight:700;color:#f7f9ff}.drawer audio{width:100%;height:36px;margin:8px 0;display:block}.drawer audio[hidden]{display:none}.footer{margin-top:12px;display:flex;gap:6px;flex-wrap:wrap}'+
  '#status{margin-top:11px;color:#a9d9bf;line-height:1.5;font-size:11px;min-height:20px}#status[data-error=true]{color:#ff9f9f}.flash{pointer-events:none;position:fixed;z-index:2147483600;left:10px;bottom:71px;max-width:min(400px,calc(100vw - 20px));padding:10px 13px;border-radius:8px;background:#112839ec;color:#e8f5ff;font:12px system-ui,sans-serif;box-shadow:0 5px 16px #0008}'+
- '@media(max-width:570px){.bar{top:7px;bottom:auto;left:auto;right:7px;max-width:210px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;padding:4px}.bar button{font-size:10px;padding:6px 4px;min-width:0;min-height:30px}.drawer{left:7px;right:7px;top:81px;bottom:7px;width:auto;max-height:calc(100dvh - 88px)}.flash{bottom:8px}}'+
+ '@media(max-width:570px){.bar{top:7px;bottom:auto;left:auto;right:7px;max-width:210px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;padding:4px}.bar button{font-size:10px;padding:6px 4px;min-width:0;min-height:30px}.drawer{left:5px;right:auto;top:102px;bottom:109px;width:min(310px,calc(100vw - 18px));max-height:calc(100dvh - 211px)}.flash{bottom:8px}}'+
  '</style>'+
- '<div class="bar"><button id="open" type="button">📂 ZIP 열기</button><button id="editorButton" type="button" aria-pressed="false">✎ 편집</button><button id="play" type="button">▶ 직접 플레이</button><button id="saveZip" type="button">💾 ZIP 저장</button></div><div class="compat" id="rendererIssue" hidden></div>'+
+ '<div class="bar"><button id="open" type="button">📂 ZIP 열기</button><button id="editorButton" type="button" aria-pressed="false">✎ 편집</button><button id="play" type="button">▶ 원본 Play</button><button id="saveZip" type="button">💾 ZIP 저장</button></div><div class="compat" id="rendererIssue" hidden></div>'+
  '<input id="fileInput" type="file" accept=".zip,.adofai,.json,.ogg,.mp3,.wav,.png,.jpg,.jpeg" multiple hidden>'+
  '<input id="folderInput" type="file" webkitdirectory directory multiple hidden>'+
  '<div class="drawer" id="drawer" hidden><div class="pc-menu" role="menubar"><button id="menuFile" type="button">FILE</button><button id="menuEdit" type="button">EDIT</button><button id="menuLevel" type="button">LEVEL</button><button id="menuEvents" type="button">EVENTS</button><button id="menuDecorations" type="button">DECORATIONS</button><button id="menuSettings" type="button">SETTINGS</button></div><header><div><strong id="name">커스텀 레벨 편집</strong><div class="muted"><span id="tileCount">—</span> · <span id="dirty">—</span></div></div><button id="close">닫기 ✕</button></header>'+
@@ -386,7 +394,7 @@ function build(){
  '<div class="nav"><button id="nav-tile" data-active="true">타일</button><button id="nav-events">이벤트</button><button id="nav-decorations">장식</button><button id="nav-settings">설정</button><button id="nav-files">파일</button><button id="nav-json">고급</button></div>'+
  '<div class="tab" id="tab-tile"><label>선택 타일 (0은 시작 타일)</label><input id="floor" type="number" min="0" value="1"><label>타일 각도 (0–359, 미드스핀 999)</label><input id="angle" type="number" min="0" max="999"><div class="actions"><button id="setAngle">각도 적용</button><button id="addTile">+ 타일</button><button id="removeTile">타일 삭제</button></div></div>'+
  '<div class="tab" id="tab-events" hidden><label>이벤트 목록</label><select id="events"></select><label>선택한 이벤트의 JSON</label><textarea id="eventJson" spellcheck="false"></textarea><div class="actions"><button id="setEvent">수정</button><button id="addEvent">+ 이벤트</button><button id="deleteEvent">삭제</button></div></div>'+
- '<div class="tab" id="tab-decorations" hidden><label>장식 목록</label><select id="decorations"></select><label>선택한 장식의 JSON</label><textarea id="decorationJson" spellcheck="false"></textarea><div class="actions"><button id="setDecoration">장식 수정</button><button id="addDecoration">+ 장식</button><button id="deleteDecoration">삭제</button></div></div><div class="tab" id="tab-settings" hidden><div class="fields"><div><label>BPM</label><input id="bpm" type="number"></div><div><label>오프셋(ms)</label><input id="offset" type="number"></div></div><label>곡 제목</label><input id="song"><label>아티스트</label><input id="artist"><label>음원 파일명</label><input id="songfile"><div class="actions"><button id="setSettings">설정 적용</button></div></div>'+
+ '<div class="tab" id="tab-decorations" hidden><label>장식 목록</label><select id="decorations"></select><label>선택한 장식의 JSON</label><textarea id="decorationJson" spellcheck="false"></textarea><div class="actions"><button id="setDecoration">장식 수정</button><button id="addDecoration">+ 장식</button><button id="deleteDecoration">삭제</button></div></div><div class="tab" id="tab-settings" hidden><div class="song-setting-title">♪ Song Settings</div><label>Filename</label><input id="songfile" placeholder="audio.ogg"><audio id="songPreview" controls preload="metadata" hidden></audio><div class="fields"><div><label>Beats per minute</label><input id="bpm" type="number" min="1" step="0.001"></div><div><label>Volume (%)</label><input id="volume" type="number" min="0" max="100"></div></div><div class="fields"><div><label>Offset (ms)</label><input id="offset" type="number" step="1"></div><div><label>Pitch (%)</label><input id="pitch" type="number" min="1" max="1000"></div></div><label>Hitsound</label><select id="hitsound"><option>Kick</option><option>Shaker</option><option>Sizzle</option><option>Chuck</option><option>ShakerLoud</option><option>Hammer</option><option>KickChroma</option><option>Snare</option><option>Hat</option></select><div class="fields"><div><label>Sound volume (%)</label><input id="hitsoundVolume" type="number" min="0" max="100"></div><div><label>Countdown ticks</label><input id="countdown" type="number" min="0" max="16"></div></div><label>Song title</label><input id="song"><label>Artist</label><input id="artist"><div class="actions"><button id="setSettings">설정 적용</button></div></div>'+
  '<div class="tab" id="tab-files" hidden><p class="muted">원본 음악·이미지·백업 파일은 ZIP 저장 시 그대로 보존됩니다.</p><div class="assets" id="assetList"></div><div class="actions"><button id="openAgain">다른 ZIP 열기</button><button id="folderAgain">폴더 가져오기</button></div></div>'+
  '<div class="tab" id="tab-json" hidden><p class="muted">원본에서 지원하지 않는 이벤트도 보존하려면 전체 JSON에서 수정할 수 있습니다.</p><textarea id="fullJson" spellcheck="false" style="min-height:240px"></textarea><div class="actions"><button id="applyJson">전체 JSON 적용</button></div></div>'+
  '<div class="footer"><button id="applyNative" type="button">⟳ 원본 게임에 적용</button><button id="nativePlay" type="button">▶ 실제 플레이</button></div><div id="status" role="status"></div></div>'+
@@ -405,15 +413,13 @@ function build(){
  const flash=sessionStorage.getItem('adofaiStudio:flash');if(flash){sessionStorage.removeItem('adofaiStudio:flash');const e=$('flash');e.textContent=flash;e.hidden=false;setTimeout(()=>e.hidden=true,7000)}
  setInterval(monitorRenderer,1200);
  void probeGpuAdapter();
- if(sessionStorage.getItem('adofaiStudio:manualPlayRequested')==='1'){
-  sessionStorage.removeItem('adofaiStudio:manualPlayRequested');
-  let retries=0;
-  const watch=setInterval(()=>{
-   retries++;if(retries>20){clearInterval(watch);say('원본 게임의 판정 모드를 열 수 없습니다. WebGPU 또는 차트 로딩 상태를 확인하세요.',true);return}
-   if(rendererIssue()){clearInterval(watch);monitorRenderer();say(rendererIssue(),true);return}
-   const button=Array.from(document.querySelectorAll('button')).find(x=>x.getAttribute('aria-label')==='Play'||x.title==='Play');
-   if(button){clearInterval(watch);button.click();say('직접 플레이 모드 진입 · 직접 스페이스/터치로 판정하세요. 자동 입력은 사용하지 않습니다.')}
-  },500);
+ if(sessionStorage.getItem('adofaiStudio:showNativePlay')==='1'){
+  sessionStorage.removeItem('adofaiStudio:showNativePlay');
+  let tries=0;const ready=setInterval(()=>{
+   if(++tries>20){clearInterval(ready);say('차트 저장 후 원본 Play 버튼이 표시되지 않았습니다.',true);return}
+   if(rendererIssue()){clearInterval(ready);monitorRenderer();return}
+   if(revealNativePlay(false)){clearInterval(ready);chooseMode(false);revealNativePlay(true)}
+  },450);
  }
  if(gameRoute()){
   if(sessionStorage.getItem('adofaiStudio:autoEditor')==='1'){
@@ -421,6 +427,7 @@ function build(){
   } else void loadCurrent();
  }
 }
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',build);else build();
+function installHighlightStyle(){const style=document.createElement('style');style.textContent='button.adofai-play-target{outline:4px solid #ffc457!important;box-shadow:0 0 15px 8px #ffbb3366!important;animation:adofai-pulse .8s ease-in-out infinite alternate}@keyframes adofai-pulse{to{outline-color:#fff!important;box-shadow:0 0 16px 10px #ffe09a99!important}}';document.head.append(style)}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{installHighlightStyle();build()});else{installHighlightStyle();build()}
 window.ADOFAINativeAddon={get state(){return st},openFiles,loadCurrent,exportZip,saveToNative,angles,chooseMode};
 })();
