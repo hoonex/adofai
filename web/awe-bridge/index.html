@@ -35,17 +35,22 @@ h3{font-size:18px;margin:32px 0 12px}
 footer{margin-top:28px;padding-top:18px;border-top:1px solid #293c4b;color:#8ea5b8;font-size:12px;line-height:1.8}
 @media(max-width:540px){header{padding:16px}main{padding:22px 13px}.site{padding:16px}.action{width:100%}.subtle{width:100%;text-align:center}}
 </style></head><body>
-<header><strong>ADOFAI / 웹 레벨 편집기</strong><small>기존 미완성 데모를 권장하지 않습니다. 실제 개발자가 운영하는 에디터로 연결합니다.</small></header>
+<header><strong>ADOFAI / 웹 레벨 플레이·편집</strong><small>기존의 미완성 자체 구현 대신 실제 작동하는 커뮤니티 도구를 우선합니다.</small></header>
 <main>
-<h1>제대로 된 웹 에디터에서 작업하기</h1>
-<p class="intro">이 페이지는 다른 사람의 에디터를 베낀 복제품이 아닙니다. 이미 구현된 <b>AWE</b>로 연결하고, ZIP 안의 차트·음악을 모바일에서 선택할 수 있게 준비하는 도구입니다.</p>
+<h1>레벨 검색해서 바로 플레이하기</h1>
+<p class="intro">첫 번째로 알려준 <b>Web ADOFAI</b>는 레벨 검색만 하는 목록이 아닙니다. 검색한 레벨을 브라우저에서 실행할 수 있는 웹 플레이어를 포함합니다. 기존 안내가 잘못되었습니다.</p>
 <section class="site">
-<h2>AWE · ADOFAI Web Editor</h2>
-<p>실제 ADOFAI 맵을 Three.js로 렌더링하고, 이벤트 편집·카메라 이동·미리 재생을 지원하는 커뮤니티 웹 에디터입니다. PC 게임 원본 그 자체는 아닙니다. 제작: Ssimille 및 기여자들.</p>
-<a class="action" href="https://awe.haeengin.com/" target="_blank" rel="noopener noreferrer">AWE 에디터 열기 ↗</a>
+<h2>Web ADOFAI · 레벨 검색 + 브라우저 플레이</h2>
+<p>커뮤니티 레벨을 검색해 선택하고 브라우저에서 플레이할 수 있습니다. 편집기보다는 플레이어 기능에 초점을 맞춘 사이트이며, 원본 PC 게임의 Unity 실행 파일을 그대로 돌리는 것은 아닙니다.</p>
+<a class="action" href="https://web-adofai.impl1113.dev/levels" target="_blank" rel="noopener noreferrer">Web ADOFAI에서 레벨 검색·플레이 ↗</a>
+</section>
+<section class="site" style="margin-top:13px">
+<h2>AWE · 레벨 제작 및 편집</h2>
+<p>차트를 새로 만들거나 .adofai를 수정할 때 쓰는 별도 커뮤니티 웹 에디터입니다. Three.js 기반 맵 렌더링과 이벤트 편집·미리보기를 제공합니다. 제작: Ssimille 및 기여자들.</p>
+<a class="action" href="https://awe.haeengin.com/" target="_blank" rel="noopener noreferrer">AWE에서 레벨 편집 ↗</a>
 <a class="subtle" href="https://github.com/HaeengIn/Adofai-Web-Editor" target="_blank" rel="noopener noreferrer">개발자 소스 보기</a>
 </section>
-<h3>ZIP 파일로 작업하려면</h3>
+<h3>AWE에서 ZIP 차트를 편집하려면</h3>
 <label id="drop" for="picker"><strong>여기를 눌러 .zip 파일 선택</strong><span>ADOFAI ZIP을 선택하면 안의 .adofai 차트와 음악을 분리합니다.<br>파일은 브라우저 안에서만 처리되며 서버에 전송하지 않습니다.</span></label>
 <input id="picker" type="file" accept=".zip,application/zip,.adofai" />
 <div id="status" role="status" aria-live="polite">준비됨 · 기존 ZIP은 그대로 유지됩니다.</div>
@@ -55,10 +60,10 @@ footer{margin-top:28px;padding-top:18px;border-top:1px solid #293c4b;color:#8ea5
 <audio id="preview" controls preload="metadata"></audio>
 <p id="help">차트와 음악을 각각 저장한 다음 <b>AWE 에디터 열기 → Level Settings → Load Level</b>에서 두 파일을 <b>동시에 선택</b>하세요. AWE는 ZIP 직접 가져오기를 지원한다고 확인되지 않았습니다.</p>
 </section>
-<h3>다른 사이트</h3>
+<h3>참고 사이트</h3>
 <div class="compare">
 <a href="https://khm041213.github.io/Adofai-Web-Editor/" target="_blank" rel="noopener noreferrer"><strong>Adofai Web Editor · 원 프로젝트</strong><span>AWE의 기반이 된 공개 웹 편집기</span></a>
-<a href="https://web-adofai.impl1113.dev/levels" target="_blank" rel="noopener noreferrer"><strong>Web ADOFAI · 레벨 탐색</strong><span>에디터가 아닌 커뮤니티 레벨 목록 및 검색</span></a>
+
 </div>
 <footer>이 도구는 AWE 개발자의 소스 코드나 원본 게임 파일을 복제·재배포하지 않습니다. 커뮤니티 에디터의 소스는 공개되어 있지만 별도 재사용 라이선스는 확인되지 않았습니다. ZIP 처리에는 JSZip(MIT)을 사용합니다.</footer>
 </main>
