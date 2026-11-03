@@ -342,7 +342,7 @@ function build(){
  '<div class="tab" id="tab-json" hidden><p class="muted">원본에서 지원하지 않는 이벤트도 보존하려면 전체 JSON에서 수정할 수 있습니다.</p><textarea id="fullJson" spellcheck="false" style="min-height:240px"></textarea><div class="actions"><button id="applyJson">전체 JSON 적용</button></div></div>'+
  '<div class="footer"><button id="applyNative" type="button">⟳ 원본 게임에 적용</button><button id="nativePlay" type="button">▶ 실제 플레이</button></div><div id="status" role="status"></div></div>'+
  '<div id="flash" class="flash" hidden></div>';
- for(const [name,fn] of Object.entries({open:()=> $('fileInput').click(),editorButton:()=>chooseMode(!st.open),play:nativePlay,saveZip:exportZip,close:()=>chooseMode(false),folder:()=> $('folderInput').click(),openAgain:()=> $('fileInput').click(),folderAgain:()=> $('folderInput').click(),addTile,removeTile,setAngle,setSettings,setEvent,addEvent,deleteEvent,applyJson,undo:()=>undoRedo(false),redo:()=>undoRedo(true),exportChart,applyNative:()=>saveToNative(true),nativePlay})){
+ for(const [name,fn] of Object.entries({open:()=> $('fileInput').click(),editorButton:()=>chooseMode(!st.open),play:nativePlay,saveZip:exportZip,close:()=>chooseMode(false),folder:()=> $('folderInput').click(),openAgain:()=> $('fileInput').click(),folderAgain:()=> $('folderInput').click(),addTile,removeTile,setAngle,setSettings,setEvent,addEvent,deleteEvent,applyJson,undo:()=>undoRedo(false),redo:()=>undoRedo(true),exportChart:downloadChart,applyNative:()=>saveToNative(true),nativePlay})){
    const el=$(name);if(el)el.addEventListener('click',fn);
  }
  $('fileInput').addEventListener('change',e=>{void openFiles(e.target.files);e.target.value=''});
