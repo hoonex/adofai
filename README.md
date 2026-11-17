@@ -4,8 +4,15 @@ Personal Android 14+ ARM64 installer for the officially purchased ADOFAI 3.3.1 (
 
 ## Download
 
-- [Current installer](dist/ADOFAI-Loader-Installer-v1.0.1.apk)
+- [Current installer](dist/ADOFAI-Loader-Installer-v1.0.2.apk)
 - [Update metadata](dist/update.json)
+
+## 1.0.2
+
+- Real byte progress for downloads, APK copies, export and install staging; indeterminate progress plus elapsed time for DEX/signing steps.
+- Detect mismatched game signing certificates before install; no automatic uninstall. Added app settings and original APK restore actions. Game saves are not backed up by APK export.
+- Keep Android confirmation pending until installation callback reports result. Fix literal newline and status bar contrast.
+- Device execution remains unverified.
 
 ## 1.0.1
 

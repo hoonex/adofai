@@ -16,7 +16,7 @@ final class SelfUpdate {
  SelfUpdate(long c,String n,String f,String h,long s){code=c;name=n;filename=f;hash=h;size=s;}
  static long installed(Context c)throws Exception{return c.getPackageManager().getPackageInfo(c.getPackageName(),0).getLongVersionCode();}
  static SelfUpdate latest()throws Exception{
-  HttpURLConnection h=Release.connect(BASE+"update.json");h.setUseCaches(false);
+  Progress.stage("GitHub 설치 앱 버전 확인");HttpURLConnection h=Release.connect(BASE+"update.json");h.setUseCaches(false);
   try(InputStream in=h.getInputStream()){
    JSONObject j=new JSONObject(new String(Release.read(in,65536),StandardCharsets.UTF_8));
    long code=j.getLong("versionCode"),size=j.getLong("size");String n=j.getString("versionName"),f=j.getString("file"),sha=j.getString("sha256");
@@ -31,9 +31,9 @@ final class SelfUpdate {
   if(f.isFile()&&f.length()==u.size&&Release.hash(f).equalsIgnoreCase(u.hash)){verify(c,u,f);return f;}
   File temp=new File(dir,"download.tmp.apk");HttpURLConnection h=Release.connect(BASE+u.filename);h.setUseCaches(false);
   try{try(InputStream in=h.getInputStream();OutputStream out=new FileOutputStream(temp)){
-   byte[] b=new byte[65536];long n=0;int k;while((k=in.read(b))!=-1){n+=k;if(n>u.size||n>MAX)throw new IOException("다운로드 크기 오류");out.write(b,0,k);}
+   byte[] b=new byte[65536];long n=0,last=0;int k;Progress.report("설치 앱 다운로드",0,u.size);while((k=in.read(b))!=-1){n+=k;if(n>u.size||n>MAX)throw new IOException("다운로드 크기 오류");out.write(b,0,k);long now=android.os.SystemClock.elapsedRealtime();if(now-last>=200){Progress.report("설치 앱 다운로드",n,u.size);last=now;}}Progress.report("설치 앱 다운로드",n,u.size);
   }finally{h.disconnect();}
-  if(temp.length()!=u.size||!Release.hash(temp).equalsIgnoreCase(u.hash))throw new IOException("업데이트 SHA-256 불일치");
+  Progress.stage("설치 앱 SHA-256 및 서명 검증");if(temp.length()!=u.size||!Release.hash(temp).equalsIgnoreCase(u.hash))throw new IOException("업데이트 SHA-256 불일치");
   verify(c,u,temp);if(f.exists()&&!f.delete())throw new IOException("이전 파일 삭제 실패");if(!temp.renameTo(f))throw new IOException("저장 실패");
   for(File other:dir.listFiles()==null?new File[0]:dir.listFiles())if(!other.equals(f)&&other.getName().endsWith(".apk"))other.delete();
   return f;
@@ -50,7 +50,7 @@ final class SelfUpdate {
   PackageInstaller pi=c.getPackageManager().getPackageInstaller();PackageInstaller.SessionParams p=new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
   p.setAppPackageName(c.getPackageName());p.setSize(f.length());p.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED);
   int id=pi.createSession(p);try(PackageInstaller.Session s=pi.openSession(id)){
-   try(InputStream i=new FileInputStream(f);OutputStream o=s.openWrite("base.apk",0,f.length())){i.transferTo(o);s.fsync(o);}
+   try(InputStream i=new FileInputStream(f);OutputStream o=s.openWrite("base.apk",0,f.length())){Progress.transfer(i,o,"설치 앱 전송",f.length());s.fsync(o);}
    Intent callback=new Intent(c,InstallReceiver.class).putExtra("selfUpdate",true);
    PendingIntent piResult=PendingIntent.getBroadcast(c,id,callback,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_MUTABLE);
    s.commit(piResult.getIntentSender());

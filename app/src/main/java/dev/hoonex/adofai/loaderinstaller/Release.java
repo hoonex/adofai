@@ -7,7 +7,7 @@ final class Release {
  final String tag,url,digest;
  Release(String t,String u,String d){tag=t;url=u;digest=d;}
  static Release latest() throws Exception {
-  HttpURLConnection c=connect(API); try(InputStream in=c.getInputStream()){
+  Progress.stage("GitHub 로더 릴리스 확인");HttpURLConnection c=connect(API); try(InputStream in=c.getInputStream()){
    JSONObject j=new JSONObject(new String(read(in,2*1024*1024),java.nio.charset.StandardCharsets.UTF_8));
    String tag=j.getString("tag_name"); if(!tag.matches("v[0-9]+(\\.[0-9]+){1,4}")||j.optBoolean("draft")||j.optBoolean("prerelease"))throw new IOException("지원하지 않는 릴리스");
    JSONArray a=j.getJSONArray("assets"); for(int i=0;i<a.length();i++){JSONObject x=a.getJSONObject(i);if(!"libadofailoader.so".equals(x.getString("name")))continue;
@@ -21,10 +21,10 @@ final class Release {
  static byte[] read(InputStream in,int max)throws IOException{ByteArrayOutputStream b=new ByteArrayOutputStream();byte[] a=new byte[32768];int n;while((n=in.read(a))!=-1){if(b.size()+n>max)throw new IOException("파일 크기 제한");b.write(a,0,n);}return b.toByteArray();}
  static synchronized File fetch(Context ctx,Release r)throws Exception{
   if(!r.digest.matches("[0-9a-fA-F]{64}"))throw new IOException("GitHub SHA-256이 없어 자동 다운로드 중단");
-  File dir=new File(ctx.getFilesDir(),"loader");dir.mkdirs();File out=new File(dir,r.tag+".so"),tmp=new File(dir,r.tag+".tmp");
+  Progress.stage("기존 로더 파일 확인");File dir=new File(ctx.getFilesDir(),"loader");dir.mkdirs();File out=new File(dir,r.tag+".so"),tmp=new File(dir,r.tag+".tmp");
   if(out.isFile()&&hash(out).equalsIgnoreCase(r.digest)){validate(out);return out;}
-  HttpURLConnection c=connect(r.url);try(InputStream in=c.getInputStream();OutputStream o=new FileOutputStream(tmp)){byte[] b=new byte[65536];long total=0;int n;while((n=in.read(b))!=-1){total+=n;if(total>64L*1024*1024)throw new IOException("라이브러리가 너무 큼");o.write(b,0,n);}}finally{c.disconnect();}
-  if(!hash(tmp).equalsIgnoreCase(r.digest)){tmp.delete();throw new IOException("SHA-256 불일치");}validate(tmp);
+  HttpURLConnection c=connect(r.url);try(InputStream in=c.getInputStream();OutputStream o=new FileOutputStream(tmp)){byte[] b=new byte[65536];long total=0,expected=c.getContentLengthLong(),last=0;int n;Progress.report("로더 다운로드",0,expected);while((n=in.read(b))!=-1){total+=n;if(total>64L*1024*1024)throw new IOException("라이브러리가 너무 큼");o.write(b,0,n);long now=android.os.SystemClock.elapsedRealtime();if(now-last>=200){Progress.report("로더 다운로드",total,expected);last=now;}}Progress.report("로더 다운로드",total,expected);}finally{c.disconnect();}
+  Progress.stage("로더 SHA-256 및 ARM64 검증");if(!hash(tmp).equalsIgnoreCase(r.digest)){tmp.delete();throw new IOException("SHA-256 불일치");}validate(tmp);
   if(out.exists()&&!out.delete())throw new IOException("이전 파일 삭제 실패");if(!tmp.renameTo(out))throw new IOException("파일 저장 실패");return out;
  }
  static void validate(File f)throws Exception{try(InputStream i=new FileInputStream(f)){byte[] h=new byte[20];new DataInputStream(i).readFully(h);if(h[0]!=127||h[1]!=69||h[2]!=76||h[3]!=70||h[4]!=2||h[5]!=1||(h[18]&255)!=183||h[19]!=0)throw new IOException("ARM64 ELF 파일이 아님");}}
