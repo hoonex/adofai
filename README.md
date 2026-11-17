@@ -4,8 +4,14 @@ Personal Android 14+ ARM64 installer for the officially purchased ADOFAI 3.3.1 (
 
 ## Download
 
-- [Current installer](dist/ADOFAI-Loader-Installer-v1.0.3.apk)
+- [Current installer](dist/ADOFAI-Loader-Installer-v1.0.4.apk)
 - [Update metadata](dist/update.json)
+
+## 1.0.4
+
+- Korean UI defaults to Korean (76 translated keys, Hangul glyph ranges) with English and Chinese available in loader settings. Existing legacy zh settings migrate to Korean.
+- Korean native build is pinned to upstream v1.1.10.1; the installer verifies its SHA-256 and offers the official upstream separately. Future upstream releases require a new Korean build and translation coverage check.
+- Build and remote hash validation passed; device UI remains unverified.
 
 ## 1.0.3
 

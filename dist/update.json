@@ -1,8 +1,8 @@
 {
     "package":  "dev.hoonex.adofai.loaderinstaller",
-    "versionName":  "1.0.3",
-    "versionCode":  4,
-    "file":  "ADOFAI-Loader-Installer-v1.0.3.apk",
-    "size":  4020087,
-    "sha256":  "48b67c9cee9d94714ea1787c0ac98c1c994ea10ffbfaaa79d3fab3de88149a22"
+    "versionName":  "1.0.4",
+    "versionCode":  5,
+    "file":  "ADOFAI-Loader-Installer-v1.0.4.apk",
+    "size":  4023023,
+    "sha256":  "3ef3b137fd817e8536c18158c090440ce2631e9e37eef7cb23424ba82e204fb4"
 }

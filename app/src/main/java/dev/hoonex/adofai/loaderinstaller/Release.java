@@ -6,7 +6,7 @@ final class Release {
  static final String PIN="9b8ed5c9b2c9fdb61ad6973ea5cd51422024cae3a2c0688c166cf04c0cb15aa6";
  final String tag,url,digest;
  Release(String t,String u,String d){tag=t;url=u;digest=d;}
- static Release latest() throws Exception {
+ static Release officialLatest() throws Exception {
   Progress.stage("GitHub 로더 릴리스 확인");HttpURLConnection c=connect(API); try(InputStream in=c.getInputStream()){
    JSONObject j=new JSONObject(new String(read(in,2*1024*1024),java.nio.charset.StandardCharsets.UTF_8));
    String tag=j.getString("tag_name"); if(!tag.matches("v[0-9]+(\\.[0-9]+){1,4}")||j.optBoolean("draft")||j.optBoolean("prerelease"))throw new IOException("지원하지 않는 릴리스");
@@ -16,6 +16,21 @@ final class Release {
    return new Release(tag,u,d);}
    throw new IOException("릴리스 라이브러리가 없음");
   }finally{c.disconnect();}
+ }
+ static Release latest(Context ctx)throws Exception {
+  android.content.SharedPreferences prefs=ctx.getSharedPreferences("state",0);
+  if(!prefs.getBoolean("koLoader",true))return officialLatest();
+  Progress.stage("한국어 로더 릴리스 확인");
+  HttpURLConnection c=connect(SelfUpdate.BASE+"ko-loader.json");c.setUseCaches(false);
+  try(InputStream in=c.getInputStream()){
+   JSONObject j=new JSONObject(new String(read(in,65536),java.nio.charset.StandardCharsets.UTF_8));
+   String upstream=j.getString("upstream"),revision=j.getString("revision"),file=j.getString("file"),sha=j.getString("sha256");
+   if(!upstream.matches("v[0-9]+(\\.[0-9]+){1,4}")||!revision.matches("ko\\.[0-9]+")||!file.equals("libadofailoader-ko-"+upstream+".so")||!sha.matches("[0-9a-fA-F]{64}")||j.getLong("size")<=0||j.getLong("size")>64L*1024*1024)throw new IOException("한국어 로더 정보가 올바르지 않습니다.");
+   return new Release(upstream+"-"+revision,SelfUpdate.BASE+file,sha);
+  }finally{c.disconnect();}
+ }
+ static void recordUpstream(Context c)throws Exception {
+  Release upstream=officialLatest();c.getSharedPreferences("state",0).edit().putString("upstreamAvailable",upstream.tag).apply();
  }
  static HttpURLConnection connect(String url)throws Exception{HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setConnectTimeout(15000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","ADOFAI-Local-Installer");return c;}
  static byte[] read(InputStream in,int max)throws IOException{ByteArrayOutputStream b=new ByteArrayOutputStream();byte[] a=new byte[32768];int n;while((n=in.read(a))!=-1){if(b.size()+n>max)throw new IOException("파일 크기 제한");b.write(a,0,n);}return b.toByteArray();}
