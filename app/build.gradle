@@ -2,7 +2,7 @@ plugins { id 'com.android.application' }
 android {
  namespace 'dev.hoonex.adofai.loaderinstaller'
  compileSdk 35
- defaultConfig { applicationId 'dev.hoonex.adofai.loaderinstaller'; minSdk 34; targetSdk 35; versionCode 3; versionName '1.0.2' }
+ defaultConfig { applicationId 'dev.hoonex.adofai.loaderinstaller'; minSdk 34; targetSdk 35; versionCode 4; versionName '1.0.3' }
  compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
  packaging { resources { excludes += ['META-INF/DEPENDENCIES','META-INF/LICENSE','META-INF/LICENSE.txt','META-INF/NOTICE','META-INF/NOTICE.txt','META-INF/*.kotlin_module'] } }
 }
