@@ -21,6 +21,11 @@ jobs:
           python3 localization/localize.py "$RUNNER_TEMP/upstream"
           python3 localization/picker/apply.py "$RUNNER_TEMP/upstream"
           python3 localization/dlc_check.py "$RUNNER_TEMP/upstream"
+          python3 localization/input_filter.py "$RUNNER_TEMP/upstream"
+      - name: Run native input regression test
+        run: |
+          g++ -std=c++17 -O2 -pthread -I"$RUNNER_TEMP/upstream/loader/src" localization/tests/input_filter_test.cpp -o "$RUNNER_TEMP/input_filter_test"
+          "$RUNNER_TEMP/input_filter_test"
       - name: Build ARM64 library
         run: |
           NDK_ROOT="$ANDROID_HOME/ndk/27.3.13750724"
@@ -33,22 +38,22 @@ jobs:
           bash "$RUNNER_TEMP/upstream/loader/build_ci.sh"
       - name: Validate and publish library
         run: |
-          cp "$RUNNER_TEMP/upstream/loader/out/libadofailoader.so" dist/libadofailoader-ko-v1.1.10.1-ko.3.so
+          cp "$RUNNER_TEMP/upstream/loader/out/libadofailoader.so" dist/libadofailoader-ko-v1.1.10.1-ko.4.so
           cp "$RUNNER_TEMP/upstream/LICENSE" localization/UPSTREAM-LICENSE.txt
-          readelf -h dist/libadofailoader-ko-v1.1.10.1-ko.3.so | grep AArch64
-          readelf -Ws dist/libadofailoader-ko-v1.1.10.1-ko.3.so | grep JNI_OnLoad
+          readelf -h dist/libadofailoader-ko-v1.1.10.1-ko.4.so | grep AArch64
+          readelf -Ws dist/libadofailoader-ko-v1.1.10.1-ko.4.so | grep JNI_OnLoad
           python3 - <<'PY'
           import hashlib,json,pathlib
-          p=pathlib.Path('dist/libadofailoader-ko-v1.1.10.1-ko.3.so')
+          p=pathlib.Path('dist/libadofailoader-ko-v1.1.10.1-ko.4.so')
           data=p.read_bytes()
           for s in ('한국어','맵 불러오기','파일 선택','내 파일에서 ZIP 열기','DLC 파일 확인'):
               assert s.encode() in data,s
-          meta=dict(upstream='v1.1.10.1',revision='ko.3',file=p.name,sha256=hashlib.sha256(data).hexdigest(),size=len(data))
+          meta=dict(upstream='v1.1.10.1',revision='ko.4',file=p.name,sha256=hashlib.sha256(data).hexdigest(),size=len(data))
           pathlib.Path('dist/ko-loader-saf.json').write_text(json.dumps(meta,indent=2)+'\n')
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add dist/libadofailoader-ko-v1.1.10.1-ko.3.so dist/ko-loader-saf.json localization/UPSTREAM-LICENSE.txt
-          git commit -m "Publish verified Korean loader v1.1.10.1-ko.3" || exit 0
+          git add dist/libadofailoader-ko-v1.1.10.1-ko.4.so dist/ko-loader-saf.json localization/UPSTREAM-LICENSE.txt
+          git commit -m "Publish verified Korean loader v1.1.10.1-ko.4" || exit 0
           git pull --rebase origin loader-installer
           git push origin HEAD:loader-installer
