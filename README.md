@@ -4,8 +4,14 @@ Personal Android 14+ ARM64 installer for the officially purchased ADOFAI 3.3.1 (
 
 ## Download
 
-- [Current installer](dist/ADOFAI-Loader-Installer-v1.0.4.apk)
+- [Current installer](dist/ADOFAI-Loader-Installer-v1.0.5.apk)
 - [Update metadata](dist/update.json)
+
+## 1.0.5
+
+- Korean native loader ko.2: system ZIP picker via Android ACTION_OPEN_DOCUMENT, local or cloud document providers, scoped storage copy with byte progress, then upstream automatic ZIP extraction and level selection.
+- Rebuild from the original backup once to embed the Java bridge DEX. Existing patch results require repatching. No storage-wide access permission needed.
+- Native CI and installer builds, DEX inspection and signing checks passed; real Android file-picker and map playback still need device validation.
 
 ## 1.0.4
 

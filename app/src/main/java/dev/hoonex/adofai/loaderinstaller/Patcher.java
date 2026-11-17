@@ -19,7 +19,7 @@ final class Patcher{
  }
  static void patch(Context c,File lib)throws Exception{
   backup(c);Release.validate(lib);
-  File dst=output(c);dst.mkdirs();new File(dst,"complete").delete();new File(dst,"recipe-3").delete();for(File f:apks(dst))if(!f.delete())throw new IOException("이전 패치 삭제 실패");
+  File dst=output(c);dst.mkdirs();new File(dst,"complete").delete();new File(dst,"recipe-3").delete();new File(dst,"recipe-4").delete();for(File f:apks(dst))if(!f.delete())throw new IOException("이전 패치 삭제 실패");
   File tmp=new File(c.getCacheDir(),"work.apk"),dex=new File(c.getCacheDir(),"input.dex"),changed=new File(c.getCacheDir(),"output.dex");int found=0;boolean arm=false;
   SigningIdentity key=SigningIdentity.loadOrCreate();
   try{
@@ -34,18 +34,22 @@ final class Patcher{
      int bits=patchDex(dex,changed);
      if(bits!=0){if((found&bits)!=0)throw new IOException("대상 DEX 클래스 중복");found|=bits;try(ZipArchive z=new ZipArchive(tmp.toPath())){z.delete(n);FullFileSource source=new FullFileSource(changed.toPath(),n,0);source.align(4);z.add(source);}changed.delete();}
     }
+    if(src.getName().equals("000.apk")){
+     Progress.stage(step+"Android 파일 선택기 추가");int max=1;for(String n:dexNames){if(n.equals("classes.dex"))continue;max=Math.max(max,Integer.parseInt(n.substring(7,n.length()-4)));}String dexName="classes"+(max+1)+".dex";
+     File bridge=new File(c.getCacheDir(),"zip-picker.dex");try{try(InputStream in=c.getAssets().open("zip-picker.dex");OutputStream out=new FileOutputStream(bridge)){in.transferTo(out);}try(ZipArchive z=new ZipArchive(tmp.toPath())){FullFileSource source=new FullFileSource(bridge.toPath(),dexName,0);source.align(4);z.add(source);}}finally{bridge.delete();}
+    }
     Progress.stage(step+"APK 라이브러리 삽입 및 정렬");
     if(entry(src,"lib/arm64-v8a/libil2cpp.so")){if(arm)throw new IOException("ARM64 라이브러리 중복");arm=true;try(ZipArchive z=new ZipArchive(tmp.toPath())){FullFileSource source=new FullFileSource(lib.toPath(),LIB,0);source.align(16384);z.add(source);}}
     Progress.stage(step+"APK 서명 및 검증: "+src.getName());SplitSigner.signAndVerify(tmp,new File(dst,src.getName()),key);
    }
    if(found!=RECIPE||!arm)throw new IOException("원작자 패치 대상 누락: Unity="+((found&UNITY)!=0)+", Client="+((found&CLIENT)!=0)+", Provider="+((found&PROVIDER)!=0)+", ARM64="+arm);
-   Progress.stage("패치 완료 표시 기록");try(FileOutputStream o=new FileOutputStream(new File(dst,"recipe-3"))){o.write(1);}try(FileOutputStream o=new FileOutputStream(new File(dst,"complete"))){o.write(1);}
+   Progress.stage("패치 완료 표시 기록");try(FileOutputStream o=new FileOutputStream(new File(dst,"recipe-4"))){o.write(1);}try(FileOutputStream o=new FileOutputStream(new File(dst,"complete"))){o.write(1);}
   }finally{tmp.delete();dex.delete();changed.delete();}
  }
 
  static final int UNITY=1,CLIENT=2,PROVIDER=4,RECIPE=7;
  static final String CLIENT_CLASS="Lcom/pairip/licensecheck/LicenseClient;",PROVIDER_CLASS="Lcom/pairip/licensecheck/LicenseContentProvider;";
- static boolean ready(Context c){File d=output(c);return new File(d,"complete").isFile()&&new File(d,"recipe-3").isFile()&&apks(d).length>0;}
+ static boolean ready(Context c){File d=output(c);return new File(d,"complete").isFile()&&new File(d,"recipe-4").isFile()&&apks(d).length>0;}
  static int patchDex(File input,File output)throws Exception {
   DexFile d=DexFileFactory.loadDexFile(input,Opcodes.forApi(35));List<ClassDef> classes=new ArrayList<>();int found=0;
   for(ClassDef cl:d.getClasses()){
@@ -63,7 +67,7 @@ final class Patcher{
     injected=true;org.jf.dexlib2.iface.MethodImplementation impl;
     if(kind==UNITY){
       MutableMethodImplementation body=new MutableMethodImplementation(m.getImplementation());
-      body.addInstruction(0,new BuilderInstruction35c(Opcode.INVOKE_STATIC,0,0,0,0,0,0,new ImmutableMethodReference(ACT,BOOT,Collections.emptyList(),"V")));impl=body;
+      body.addInstruction(0,new BuilderInstruction35c(Opcode.INVOKE_STATIC,0,0,0,0,0,0,new ImmutableMethodReference(ACT,BOOT,Collections.emptyList(),"V")));int self=m.getImplementation().getRegisterCount()-2;if(self<0)throw new IOException("Unity Activity p0 missing");body.addInstruction(1,new BuilderInstruction3rc(Opcode.INVOKE_STATIC_RANGE,self,1,new ImmutableMethodReference("Ldev/hoonex/adofai/bridge/ZipPicker;","bind",Collections.singletonList("Landroid/app/Activity;"),"V")));impl=body;
     }else if(kind==CLIENT){
       impl=new ImmutableMethodImplementation(1,Collections.singletonList(new ImmutableInstruction10x(Opcode.RETURN_VOID)),Collections.emptyList(),Collections.emptyList());
     }else{

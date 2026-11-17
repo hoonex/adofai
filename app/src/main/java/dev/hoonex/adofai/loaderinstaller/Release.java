@@ -21,11 +21,11 @@ final class Release {
   android.content.SharedPreferences prefs=ctx.getSharedPreferences("state",0);
   if(!prefs.getBoolean("koLoader",true))return officialLatest();
   Progress.stage("한국어 로더 릴리스 확인");
-  HttpURLConnection c=connect(SelfUpdate.BASE+"ko-loader.json");c.setUseCaches(false);
+  HttpURLConnection c=connect(SelfUpdate.BASE+"ko-loader-saf.json");c.setUseCaches(false);
   try(InputStream in=c.getInputStream()){
    JSONObject j=new JSONObject(new String(read(in,65536),java.nio.charset.StandardCharsets.UTF_8));
    String upstream=j.getString("upstream"),revision=j.getString("revision"),file=j.getString("file"),sha=j.getString("sha256");
-   if(!upstream.matches("v[0-9]+(\\.[0-9]+){1,4}")||!revision.matches("ko\\.[0-9]+")||!file.equals("libadofailoader-ko-"+upstream+".so")||!sha.matches("[0-9a-fA-F]{64}")||j.getLong("size")<=0||j.getLong("size")>64L*1024*1024)throw new IOException("한국어 로더 정보가 올바르지 않습니다.");
+   if(!upstream.matches("v[0-9]+(\\.[0-9]+){1,4}")||!revision.matches("ko\\.[0-9]+")||!file.equals("libadofailoader-ko-"+upstream+"-"+revision+".so")||!sha.matches("[0-9a-fA-F]{64}")||j.getLong("size")<=0||j.getLong("size")>64L*1024*1024)throw new IOException("한국어 로더 정보가 올바르지 않습니다.");
    return new Release(upstream+"-"+revision,SelfUpdate.BASE+file,sha);
   }finally{c.disconnect();}
  }

@@ -53,7 +53,7 @@ public final class ZipPicker {
    File base=c.getExternalFilesDir(null);if(base==null)throw new IOException("게임 데이터 폴더에 접근할 수 없습니다.");
    File dir=new File(base,"imports");if(!dir.isDirectory()&&!dir.mkdirs())throw new IOException("가져오기 폴더 생성 실패");
    if(size>0&&size>dir.getUsableSpace())throw new IOException("저장 공간이 부족합니다.");
-   String id=UUID.randomUUID().toString();tmp=new File(dir,id+".part");File dest=new File(dir,id.substring(0,8)+"-"+name);
+   String id=UUID.randomUUID().toString();tmp=new File(dir,id+".part");File dest=new File(dir,id.substring(0,8)+"-"+name.replaceAll("[^a-zA-Z0-9._() -]","_"));
    long count=0,previous=0;update(2,"",name,0,size);
    try(InputStream input=c.getContentResolver().openInputStream(uri);OutputStream out=new FileOutputStream(tmp)){
     if(input==null)throw new IOException("선택한 파일을 읽을 수 없습니다.");
