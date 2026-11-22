@@ -1,7 +1,7 @@
 {
     "upstream":  "v1.1.10.1",
-    "revision":  "ko.5",
-    "file":  "libadofailoader-ko-v1.1.10.1-ko.5.so",
-    "sha256":  "a1cde651c4da0c572a5f7ec0a0e6483a180f994b191f558b67927a83a9925b9b",
-    "size":  7241768
+    "revision":  "ko.6",
+    "file":  "libadofailoader-ko-v1.1.10.1-ko.6.so",
+    "sha256":  "f059a508ff649357e06f69365780cc9b2a68e1e3526ac039dc0b1d52bc269e0d",
+    "size":  7257200
 }

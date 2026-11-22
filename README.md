@@ -50,3 +50,10 @@ Verification: Gradle build and apksigner verification passed and installer 1.0.0
 - Game-facing custom home now has red/cyan orbit graphics, access to the original game's PauseMenu SettingsMenu (mobile resolution / effects), and an opt-in custom-map minimal-visual-effects switch. Engine hit timing and chart data are not modified.
 - Stage media pruning remains opt-in/experimental: exact-version inventory validation and preserved original backup. Android device regression is still pending.
 
+
+## 1.0.12
+
+- Custom home: centered compact ADOFAI-style red/cyan orbit layout, two landscape panels, recent maps independently touch-scroll in bounded-height list, UTF-8-safe filename shortening with full-path tooltip, and accessible Settings/Storage controls even with many recently played maps. Portrait remains one-column.
+- Added a mutually exclusive opt-in experimental 'Tiles + Music' visual mode distinct from the original minimum-effects switch. It suppresses a conservative subset of known visual-only custom stage events and background GameObjects, captures original enabled/active state for restoration and preserves input/rhythm/music/tile/planet logic. Not guaranteed to remove every decoration in arbitrary maps; no runtime smoke test on a connected Android device yet.
+- Original graphics/resolution SettingsMenu access remains intact. Correct original calibration API overload selection based on Unity 6000.3.10f1 metadata. Updated UI design evidence guide at docs/ADOFAI_UI_DESIGN_GUIDE.md.
+- Installs into a locally purchased Android 3.3.1 copy only; does not include paid original game binaries. Existing original backup and opt-in installed-stage resource pruning continue to be supported.
