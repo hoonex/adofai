@@ -61,3 +61,11 @@ Verification: Gradle build and apksigner verification passed and installer 1.0.0
 ## 1.0.13
 
 - Safety follow-up to 1.0.12: stronger scoped visual-state restoration and exact Unity 6000 Type/bool overload resolution validated against local IL2CPP metadata. Stage and hit mechanics are unmodified. Device runtime test pending.
+
+## v1.0.14 — Fast-input and Tiles+Music capability fixes
+
+- Fixed a reproduced mobile fast-tap loss path: dismissing the overlay formerly blocked ALL gameplay input until Unity reported touchCount==0. Now only overlay-owned finger IDs are quarantined, and other live/recycled fingers pass through without timing changes. Original 68-byte Touch values remain intact. The non-input settings/event poll is bounded to one call per 8ms; actual touch callbacks are not rate limited. Host tests cover 2,500 overlapping rapid bursts, 32-pointer boundaries, mouse transition and repeated touchCount queries.
+- Fixed the Tiles+Music unsupported toggle in ADOFAI 3.3.1: ffxPlusBase.runOnHit is a virtual get_runOnHit() property, not a field. Exact subclass getter and GameObject.GetComponent(Type) signatures are validated. Unknown versions fail safely with the diagnostics shown in Settings. The stronger visual mode also includes original VisualEffects.Minimum internally; chart hit/timing/audio remain untouched, and only known decorative components/backgrounds are targeted.
+- Simplified installer home: the only default workflow is **1. Official-stage asset removal + patch** and **2. Install patched game**. Other patch modes, original restore, backup and cache management are under a collapsible advanced section; no recovery features removed.
+- Stage pruning remains an exact, SHA-256/ZIP-inventory-verified transformation of the user's own installed 3.3.1 assets, with original APK backup intact. The installer does not contain the paid original game.
+- Verification: Android NDK AArch64 full link, Gradle 8.9/SDK35 assembleDebug, APK v2 signing/zipalign/CRC, embedded native SHA and stage prune plan, native input host regression. No live Android device was connected: runtime tap handling and custom noFX scene/render restoration are not claimed verified on device.
