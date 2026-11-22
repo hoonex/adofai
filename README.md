@@ -43,3 +43,10 @@ Personal Android 14+ ARM64 installer for the officially purchased ADOFAI 3.3.1 (
 Build: Android Gradle Plugin 8.6.1, JDK 17, SDK 35, Gradle 8.9, :app:assembleDebug. Reuse the original private signing identity for a compatible update; never commit signing keys. For subsequent versions bump versionCode, publish the signed versioned APK, and update dist/update.json atomically in the same commit.
 
 Verification: Gradle build and apksigner verification passed and installer 1.0.0 and 1.0.1 certificate digests matched. Physical-device launch and in-game patch execution are not verified.
+## 1.0.11
+
+- Self-update from inside the installer: a single button fetches update.json, validates SHA-256, installed signing certificate and version, then opens the Android installer approval. No silent update bypass.
+- Replace the old hourly persistent JobScheduler with foreground/resume/network-recovery checks, throttled to 4 hours; background recurring jobs are removed.
+- Game-facing custom home now has red/cyan orbit graphics, access to the original game's PauseMenu SettingsMenu (mobile resolution / effects), and an opt-in custom-map minimal-visual-effects switch. Engine hit timing and chart data are not modified.
+- Stage media pruning remains opt-in/experimental: exact-version inventory validation and preserved original backup. Android device regression is still pending.
+
