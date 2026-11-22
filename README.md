@@ -57,3 +57,7 @@ Verification: Gradle build and apksigner verification passed and installer 1.0.0
 - Added a mutually exclusive opt-in experimental 'Tiles + Music' visual mode distinct from the original minimum-effects switch. It suppresses a conservative subset of known visual-only custom stage events and background GameObjects, captures original enabled/active state for restoration and preserves input/rhythm/music/tile/planet logic. Not guaranteed to remove every decoration in arbitrary maps; no runtime smoke test on a connected Android device yet.
 - Original graphics/resolution SettingsMenu access remains intact. Correct original calibration API overload selection based on Unity 6000.3.10f1 metadata. Updated UI design evidence guide at docs/ADOFAI_UI_DESIGN_GUIDE.md.
 - Installs into a locally purchased Android 3.3.1 copy only; does not include paid original game binaries. Existing original backup and opt-in installed-stage resource pruning continue to be supported.
+
+## 1.0.13
+
+- Safety follow-up to 1.0.12: stronger scoped visual-state restoration and exact Unity 6000 Type/bool overload resolution validated against local IL2CPP metadata. Stage and hit mechanics are unmodified. Device runtime test pending.
