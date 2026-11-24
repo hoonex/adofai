@@ -1,0 +1,11 @@
+{
+    "package":  "dev.hoonex.adofai.loaderinstaller",
+    "versionName":  "1.0.16-diagnostic",
+    "versionCode":  18,
+    "file":  "ADOFAI-Loader-Installer-v1.0.16-diagnostic.apk",
+    "size":  11677462,
+    "sha256":  "4b1063eb354f5e90b640c05bbd1aa5aa3f77080342715c1bb9430cd0c3aa538e",
+    "scope":  "Independent Android MotionEvent tap tester, no game judgment or loader modifications",
+    "releaseChannel":  "manual-diagnostic",
+    "autoUpdateEnabled":  false
+}
